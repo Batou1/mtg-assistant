@@ -14,5 +14,8 @@ data/*.log
 *.cloudflared.json
 cloudflared/config.yml
 
+# Local secrets / env (never commit) — e.g. MTG_BRAVE_API_KEY
+.env
+
 # OS
 .DS_Store

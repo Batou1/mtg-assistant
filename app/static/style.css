@@ -176,6 +176,10 @@ button:disabled { background: var(--border); color: var(--muted); cursor: not-al
 .export summary { cursor: pointer; color: var(--muted); }
 .export textarea { margin-top: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
 
+/* Sources list (60-card research) */
+.sources { margin: 8px 0 0; padding-left: 18px; font-size: .9rem; }
+.sources li { margin: 4px 0; }
+
 /* Collection table */
 .collection-table { width: 100%; border-collapse: collapse; margin-top: 14px; }
 .collection-table th, .collection-table td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); }

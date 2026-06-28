@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Archétype {{ data.format }} · MTG Assistant{% endblock %}
+{% block content %}
+
+<a class="link back" href="/">← Nouvelle recherche</a>
+
+<section class="intent-summary card">
+  <h2>Ton envie</h2>
+  <p class="wish">« {{ wish }} »</p>
+  <ul class="chips">
+    <li class="chip">Format : {{ data.format }}</li>
+    {% if intent.budget_eur is not none %}<li class="chip">Budget : {{ "%.0f"|format(intent.budget_eur) }} €</li>{% endif %}
+    {% if intent.keywords %}<li class="chip">Thèmes : {{ intent.keywords|join(", ") }}</li>{% endif %}
+    <li class="chip muted">Analyse : {{ "LLM" if intent.source == "llm" else "heuristique" }}</li>
+  </ul>
+</section>
+
+{% if data.llm_unavailable %}
+  <div class="notice warn">
+    Le LLM local (Ollama) est nécessaire pour la recherche d'archétype 60 cartes et
+    n'est pas joignable. Lance Ollama puis réessaie.
+    {% if data.sources %}<br>Pages récentes trouvées pour t'orienter :{% endif %}
+  </div>
+  {% if data.sources %}
+  <ul class="sources">
+    {% for s in data.sources %}<li><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a></li>{% endfor %}
+  </ul>
+  {% endif %}
+{% else %}
+
+  <section class="card">
+    <h2>{{ data.archetype.name }}
+      <span class="pips">{% for c in data.archetype.colors %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}</span>
+    </h2>
+    {% if data.archetype.strategy %}<p>{{ data.archetype.strategy }}</p>{% endif %}
+
+    <div class="completion">
+      <div class="bar"><span style="width: {{ (100 * data.owned_count / data.valid_count) if data.valid_count else 0 }}%"></span></div>
+      <p><strong>{{ data.owned_count }}</strong> / {{ data.valid_count }} cartes maîtresses possédées</p>
+    </div>
+
+    <p class="notice info small">
+      Cartes maîtresses de l'archétype, validées via Scryfall (légalité {{ data.format }}).
+      Ce n'est pas une liste de tournoi exacte mais une base à compléter.
+      {% if data.dropped %}<br>{{ data.dropped|length }} suggestion(s) écartée(s) (carte inexistante ou illégale).{% endif %}
+    </p>
+  </section>
+
+  <div class="grid-2">
+    <section class="card">
+      <h2>Tu possèdes déjà <span class="muted small">({{ data.owned_count }})</span></h2>
+      {% if data.owned_cards %}
+        <div class="buy-grid">
+          {% for c in data.owned_cards %}
+          <div class="buy-item">
+            {% if c.image %}<img src="{{ c.image }}" alt="{{ c.name }}" loading="lazy">{% endif %}
+            <span class="buy-name">{{ c.name }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted">Aucune carte maîtresse de cet archétype dans ta collection.</p>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <h2>À acheter
+        {% if data.buylist.budget_eur is not none %}<span class="muted small">(budget {{ "%.0f"|format(data.buylist.budget_eur) }} €)</span>{% endif %}
+      </h2>
+      {% if data.buylist.to_buy %}
+        <p class="muted small">
+          {{ data.buylist.bought_count }} carte(s) · total <strong>{{ "%.2f"|format(data.buylist.total_eur) }} €</strong>
+          {% if data.buylist.missing_total > data.buylist.bought_count %}
+            · {{ data.buylist.missing_total - data.buylist.bought_count }} autre(s) hors budget
+          {% endif %}
+        </p>
+        <div class="buy-grid">
+          {% for item in data.buylist.to_buy %}
+          <div class="buy-item">
+            {% if item.image %}<img src="{{ item.image }}" alt="{{ item.name }}" loading="lazy">{% endif %}
+            <span class="buy-name">{{ item.name }}</span>
+            <span class="buy-price">{{ "%.2f"|format(item.price_eur) }} €</span>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted">Rien à acheter dans ce budget (ou prix indisponibles).</p>
+      {% endif %}
+    </section>
+  </div>
+
+  {% if data.sources %}
+  <section class="card">
+    <h3>Sources récentes (métagame)</h3>
+    <ul class="sources">
+      {% for s in data.sources %}<li><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a></li>{% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+{% endif %}
+
+{% endblock %}

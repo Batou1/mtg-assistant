@@ -3,6 +3,14 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Load local secrets (e.g. MTG_BRAVE_API_KEY) from .env if present (gitignored).
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
 if [ ! -d .venv ]; then
   python3 -m venv .venv
 fi

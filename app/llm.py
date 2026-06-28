@@ -77,6 +77,39 @@ def chat_text(system: str, user: str) -> str | None:
     return content or None
 
 
+def archetype_research(fmt: str, intent: dict, context: str) -> dict | None:
+    """Propose a structured archetype for a 60-card format.
+
+    Given the format, the player's wish and recent web-search context, return a
+    JSON archetype. Every card name is validated against Scryfall downstream, so
+    a few hallucinated names are filtered out rather than trusted.
+    """
+    system = (
+        f"Tu es un expert Magic: the Gathering, format {fmt}. À partir de l'envie "
+        "du joueur et d'extraits web récents sur le métagame, propose UN archétype "
+        "compétitif et réaliste, FIDÈLE aux couleurs et à la stratégie demandées. "
+        "Réponds UNIQUEMENT en JSON avec ces clés :\n"
+        '- "archetype": nom court de l\'archétype.\n'
+        '- "colors": liste de symboles parmi "W","U","B","R","G".\n'
+        '- "strategy": 2-3 phrases en français décrivant le plan de jeu.\n'
+        '- "key_cards": liste de 30 à 40 noms de cartes RÉELLES, en anglais, avec '
+        f"l'orthographe EXACTE (telle que sur la carte), toutes légales en {fmt} : "
+        "les cartes les plus jouées de cet archétype (sorts ET terrains non-basiques). "
+        "N'invente AUCUNE carte ; si tu n'es pas certain qu'une carte existe et est "
+        f"légale en {fmt}, ne la mets pas. Privilégie les staples reconnus."
+    )
+    parts = [f"Format : {fmt}"]
+    if intent.get("theme"):
+        parts.append(f"Envie du joueur : {intent['theme']}")
+    if intent.get("keywords"):
+        parts.append(f"Mots-clés : {', '.join(intent['keywords'])}")
+    if intent.get("colors"):
+        parts.append(f"Couleurs souhaitées : {', '.join(intent['colors'])}")
+    if context:
+        parts.append(f"\nExtraits web récents (métagame) :\n{context}")
+    return chat_json(system, "\n".join(parts))
+
+
 def deck_gameplan(commander_name: str, card_names: list[str], theme: str = "") -> str | None:
     """Write a short French game-plan summary from the chosen cards.
 

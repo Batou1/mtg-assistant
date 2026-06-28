@@ -5,10 +5,11 @@ collection. Import your cards, describe in plain French the deck you want, and
 get Commander suggestions you can actually build — with a completeness analysis
 and a budget-constrained buylist priced in EUR.
 
-> Phases 0–2a (this release): ManaBox import, French natural-language intent via
-> a local LLM, Commander suggestions with gap analysis and an EUR buylist, and
-> full Commander decklist generation. Phase 2b (planned): 60-card formats with
-> web research of recent tournament decks (curated sources + Brave Search).
+> This release: ManaBox import, French natural-language intent via a local LLM,
+> Commander suggestions with gap analysis and an EUR buylist, full Commander
+> decklist generation, and **60-card format archetype research** (Standard,
+> Pauper, Modern, Pioneer…) grounded by Brave Search + validated against
+> Scryfall.
 
 ## How it works
 
@@ -33,6 +34,18 @@ and a budget-constrained buylist priced in EUR.
    budget (ranked by popularity-per-euro so the deck stays complete), lands
    topped up with basics. Each card is tagged *owned* / *to buy*, with a
    copy-paste export and an optional LLM-written game-plan summary.
+6. **60-card formats** — describe a wish for Standard, Pauper, Modern… and the
+   app researches the **archetype**: Brave Search surfaces recent meta pages, the
+   LLM proposes the archetype's key cards, **every card is validated against
+   Scryfall** (it must exist and be legal in the format, else it's dropped), then
+   gap analysis vs your collection + an EUR buylist. This is an archetype base —
+   not an exact tournament list — because the popular decklist sites are
+   Cloudflare-blocked.
+
+> **60-card quality depends on the model.** `qwen2.5:7b-instruct` knows the exact
+> 60-card card pool only roughly, so many of its suggestions get filtered out by
+> Scryfall validation. For noticeably better archetypes, set
+> `MTG_OLLAMA_MODEL=qwen2.5:14b-instruct` (~9 GB, fits a 16 GB Mac mini).
 
 Card data, prices and EDHREC pages are resolved **on demand and cached** in
 SQLite — no multi-gigabyte bulk download, minimal disk footprint.
@@ -57,6 +70,19 @@ SQLite — no multi-gigabyte bulk download, minimal disk footprint.
 ```
 
 Then open <http://127.0.0.1:8000>.
+
+### Web research (60-card formats)
+
+60-card archetype research uses the [Brave Search API](https://brave.com/search/api/)
+(free tier ≈ 2000 req/month). Put your key in a local **`.env`** file (gitignored —
+never committed); `run.sh` loads it automatically:
+
+```bash
+echo 'MTG_BRAVE_API_KEY=your-key-here' > .env
+```
+
+Without a key, 60-card research still runs but ungrounded (the LLM proposes from
+its own knowledge only). Commander features need no key.
 
 ### Configuration (environment variables)
 
@@ -94,11 +120,17 @@ Cloudflare Access policy. Remove later with `./deploy/uninstall-service.sh`.
 
 ## Notes & limitations
 
-- **Commander only** for now (EDHREC-based). 60-card formats arrive in Phase 2.
+- **Commander** is the strongest path (EDHREC-backed, fully data-driven).
+- **60-card formats** are archetype suggestions, not exact tournament lists: the
+  popular decklist sites (MTGGoldfish, mtgdecks) are Cloudflare-blocked, so the
+  app researches the archetype with Brave + the LLM and validates every card via
+  Scryfall. Quality scales with the model (see the 60-card note above).
 - **EDHREC has no official API**; this uses its public JSON endpoints. If the
   payload shape changes, `app/edhrec.py` is the single place to adjust.
-- The LLM never names cards itself — it only structures your request and
-  summarises a chosen list — so card suggestions can't be hallucinated.
+- For Commander, the LLM never names cards — it only structures your request and
+  summarises a chosen list — so suggestions can't be hallucinated. For 60-card,
+  the LLM does name cards, but Scryfall validation filters out anything that
+  isn't a real, format-legal card.
 - First analysis of a large collection makes many Scryfall/EDHREC calls;
   caching makes later runs fast.
 
@@ -118,6 +150,8 @@ app/
   analysis.py   intent-aware commander ranking + gap analysis
   buylist.py    budget-constrained EUR shopping list
   deckgen.py    full 100-card Commander decklist builder
+  research.py   Brave Search client (web research)
+  formats60.py  60-card archetype pipeline (research + Scryfall validation)
   main.py       FastAPI routes + templates
 deploy/         launchd service + Cloudflare tunnel snippet
 tests/          pytest
