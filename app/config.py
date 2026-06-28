@@ -27,10 +27,10 @@ class Settings:
         "MTG_USER_AGENT", "mtg-assistant/0.1 (local personal tool)"
     )
 
-    # --- Local LLM (Ollama) ------------------------------------------------
-    ollama_url: str = os.environ.get("MTG_OLLAMA_URL", "http://127.0.0.1:11434")
-    ollama_model: str = os.environ.get("MTG_OLLAMA_MODEL", "qwen2.5:7b-instruct")
-    ollama_timeout: float = float(os.environ.get("MTG_OLLAMA_TIMEOUT", "60"))
+    # --- LLM (Anthropic / Claude) ------------------------------------------
+    # The API key is read by the SDK from ANTHROPIC_API_KEY (kept in .env).
+    anthropic_model: str = os.environ.get("MTG_ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    anthropic_max_tokens: int = int(os.environ.get("MTG_ANTHROPIC_MAX_TOKENS", "2048"))
 
     # --- Deck generation ---------------------------------------------------
     deck_size: int = int(os.environ.get("MTG_DECK_SIZE", "100"))

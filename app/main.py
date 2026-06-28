@@ -13,7 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 import httpx
 
-from . import analysis, db, deckgen, intent, llm, manabox, scryfall
+from . import analysis, db, deckgen, formats60, intent, llm, manabox, scryfall
 from .config import settings
 
 app = FastAPI(title="MTG Assistant")
@@ -62,8 +62,8 @@ def _home_context(request: Request, profile: dict, **extra) -> dict:
         distinct=distinct,
         total=total,
         source=profile.get("collection_source"),
-        ollama_ok=llm.is_available(),
-        ollama_model=settings.ollama_model,
+        llm_ok=llm.is_available(),
+        llm_model=settings.anthropic_model,
         **extra,
     )
 
@@ -157,6 +157,12 @@ async def suggest(request: Request, wish: str = Form("")):
             request, profile, wish=wish, intent=parsed, data=None, empty_collection=True
         )
         return _render(request, profile, "results.html", ctx)
+
+    # 60-card formats use the archetype-research pipeline; Commander uses EDHREC.
+    if parsed.get("format") in formats60.FORMATS:
+        data = await run_in_threadpool(formats60.analyze, parsed, profile["id"])
+        ctx = _base_context(request, profile, wish=wish, intent=parsed, data=data)
+        return _render(request, profile, "archetype.html", ctx)
 
     data = await run_in_threadpool(analysis.analyze, parsed, profile["id"])
     ctx = _base_context(
