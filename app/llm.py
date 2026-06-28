@@ -49,6 +49,29 @@ def _message(system: str, user: str, max_tokens: int) -> str | None:
     return "".join(b.text for b in resp.content if b.type == "text").strip()
 
 
+def create_message(system: str, messages: list[dict], tools: list[dict] | None = None,
+                   max_tokens: int | None = None):
+    """Low-level call returning the full Anthropic response (or None on failure).
+
+    Unlike ``chat_json``/``chat_text``, this exposes the raw response so callers
+    can inspect ``stop_reason`` and ``tool_use`` blocks to drive an agent loop.
+    """
+    if not is_available():
+        return None
+    kwargs = {
+        "model": settings.anthropic_model,
+        "max_tokens": max_tokens or settings.anthropic_max_tokens,
+        "system": system,
+        "messages": messages,
+    }
+    if tools:
+        kwargs["tools"] = tools
+    try:
+        return _get_client().messages.create(**kwargs)
+    except anthropic.APIError:
+        return None
+
+
 def chat_json(system: str, user: str) -> dict | None:
     """Ask for a strict JSON object back. Returns the parsed dict or None."""
     system = (

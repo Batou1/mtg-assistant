@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% import "_artifacts.html" as artifacts %}
+{% block title %}Chat · MTG Assistant{% endblock %}
+{% block content %}
+
+<div class="chat-layout">
+  <!-- Conversations sidebar -->
+  <aside class="chat-sidebar">
+    <form method="post" action="/chat/new"><button type="submit" class="new-chat">+ Nouvelle conversation</button></form>
+    <ul class="conv-list">
+      {% for c in conversations %}
+      <li class="{{ 'active' if c.id == conversation.id else '' }}">
+        <form method="post" action="/chat/message" class="conv-open">
+          <input type="hidden" name="conversation_id" value="{{ c.id }}">
+          <button type="submit" class="conv-name">{{ c.title or "Nouvelle conversation" }}</button>
+        </form>
+        <form method="post" action="/chat/{{ c.id }}/delete"
+              onsubmit="return confirm('Supprimer cette conversation ?');">
+          <button type="submit" class="conv-del" title="Supprimer">✕</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+  </aside>
+
+  <!-- Conversation thread -->
+  <section class="chat-main">
+    <p class="status small">
+      LLM :
+      {% if llm_ok %}<span class="badge ok">connecté</span> <span class="muted">(Claude · {{ llm_model }})</span>
+      {% else %}<span class="badge warn">non configuré</span>
+        <span class="muted">repli ponctuel actif — ajoute ANTHROPIC_API_KEY pour le vrai chat</span>{% endif %}
+    </p>
+
+    <div class="chat-thread">
+      {% if not messages %}
+        <div class="chat-empty muted">
+          <p>👋 Décris ce que tu veux construire et on itère ensemble.</p>
+          <ul>
+            <li>« un deck Commander aristocrats sacrifice en noir/rouge, budget 50€ »</li>
+            <li>« plutôt quelque chose de monocouleur noir »</li>
+            <li>« un deck Pauper agressif rouge »</li>
+          </ul>
+        </div>
+      {% endif %}
+
+      {% for m in messages %}
+      <div class="msg msg-{{ m.role }}">
+        <div class="bubble">
+          {% for para in m.content.split("\n") %}{% if para.strip() %}<p>{{ para }}</p>{% endif %}{% endfor %}
+        </div>
+        {% if m.artifacts %}
+        <div class="msg-artifacts">
+          {% for art in m.artifacts %}{{ artifacts.render(art) }}{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    <form method="post" action="/chat/message" class="chat-input" id="chat-input">
+      <input type="hidden" name="conversation_id" value="{{ conversation.id }}">
+      <textarea name="message" rows="2" placeholder="Écris ton message…" required autofocus
+                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit();}"></textarea>
+      <button type="submit">Envoyer</button>
+    </form>
+  </section>
+</div>
+
+<script>
+  // Keep the latest message in view on load.
+  (function () {
+    var t = document.querySelector('.chat-thread');
+    if (t) t.scrollTop = t.scrollHeight;
+  })();
+</script>
+
+{% endblock %}

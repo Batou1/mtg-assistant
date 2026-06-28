@@ -76,12 +76,33 @@ def init_db() -> None:
                 key TEXT PRIMARY KEY,
                 value TEXT
             );
+            CREATE TABLE IF NOT EXISTS conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                profile_id INTEGER NOT NULL,
+                title TEXT NOT NULL DEFAULT '',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                artifacts_json TEXT,
+                created_at REAL NOT NULL
+            );
             """
         )
         _migrate_collection(conn)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_collection_name ON collection(name_key)")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_collection_profile ON collection(profile_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_conversations_profile ON conversations(profile_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)"
         )
 
 
@@ -223,6 +244,15 @@ def delete_profile(profile_id: int) -> None:
     pid = int(profile_id)
     with get_conn() as conn:
         conn.execute("DELETE FROM collection WHERE profile_id=?", (pid,))
+        ids = [
+            r["id"]
+            for r in conn.execute(
+                "SELECT id FROM conversations WHERE profile_id=?", (pid,)
+            ).fetchall()
+        ]
+        for cid in ids:
+            conn.execute("DELETE FROM messages WHERE conversation_id=?", (cid,))
+        conn.execute("DELETE FROM conversations WHERE profile_id=?", (pid,))
         conn.execute("DELETE FROM profiles WHERE id=?", (pid,))
         _ensure_default_profile(conn)
 
@@ -320,3 +350,99 @@ def get_meta(key: str):
     with get_conn() as conn:
         row = conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
     return row["value"] if row else None
+
+
+# --- Chat: conversations + messages (per profile) ------------------------
+
+def create_conversation(profile_id: int, title: str = "") -> int:
+    now = time.time()
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO conversations (profile_id, title, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?)",
+            (int(profile_id), (title or "").strip()[:80], now, now),
+        )
+        return cur.lastrowid
+
+
+def list_conversations(profile_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, title, created_at, updated_at FROM conversations "
+            "WHERE profile_id=? ORDER BY updated_at DESC",
+            (int(profile_id),),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_conversation(conversation_id) -> dict | None:
+    try:
+        cid = int(conversation_id)
+    except (TypeError, ValueError):
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id, profile_id, title, created_at, updated_at "
+            "FROM conversations WHERE id=?",
+            (cid,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def delete_conversation(conversation_id: int) -> None:
+    cid = int(conversation_id)
+    with get_conn() as conn:
+        conn.execute("DELETE FROM messages WHERE conversation_id=?", (cid,))
+        conn.execute("DELETE FROM conversations WHERE id=?", (cid,))
+
+
+def add_message(conversation_id: int, role: str, content: str, artifacts=None) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO messages (conversation_id, role, content, artifacts_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                int(conversation_id),
+                role,
+                content or "",
+                json.dumps(artifacts) if artifacts else None,
+                time.time(),
+            ),
+        )
+        return cur.lastrowid
+
+
+def get_messages(conversation_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT role, content, artifacts_json, created_at FROM messages "
+            "WHERE conversation_id=? ORDER BY id",
+            (int(conversation_id),),
+        ).fetchall()
+    out = []
+    for r in rows:
+        out.append(
+            {
+                "role": r["role"],
+                "content": r["content"],
+                "artifacts": json.loads(r["artifacts_json"]) if r["artifacts_json"] else [],
+                "created_at": r["created_at"],
+            }
+        )
+    return out
+
+
+def touch_conversation(conversation_id: int, title: str | None = None) -> None:
+    """Bump updated_at; set the title only if it's still empty."""
+    cid = int(conversation_id)
+    with get_conn() as conn:
+        if title:
+            conn.execute(
+                "UPDATE conversations SET updated_at=?, "
+                "title=CASE WHEN title='' THEN ? ELSE title END WHERE id=?",
+                (time.time(), title.strip()[:80], cid),
+            )
+        else:
+            conn.execute(
+                "UPDATE conversations SET updated_at=? WHERE id=?", (time.time(), cid)
+            )

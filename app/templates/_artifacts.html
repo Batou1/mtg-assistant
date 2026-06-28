@@ -1,0 +1,142 @@
+{# Reusable renderers for chat artifacts (Commander suggestions, 60-card
+   archetype, full decklist). Each macro takes the artifact's data dict. #}
+
+{% macro commanders(art) %}
+  {% for n in art.notices %}<div class="notice info">{{ n }}</div>{% endfor %}
+  {% for r in art.results %}
+  <section class="commander card art-card">
+    <div class="commander-head">
+      {% if r.image %}<img class="card-img" src="{{ r.image }}" alt="{{ r.name }}" loading="lazy">{% endif %}
+      <div class="commander-meta">
+        <h3>{{ r.name }}</h3>
+        <p class="pips">
+          {% for c in r.color_identity %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}
+          {% if not r.color_identity %}<span class="pip pip-C">incolore</span>{% endif %}
+        </p>
+        <p class="muted small">{{ "{:,}".format(r.num_decks).replace(",", " ") }} decks sur EDHREC</p>
+        <div class="completion">
+          <div class="bar"><span style="width: {{ r.pct }}%"></span></div>
+          <p><strong>{{ r.owned_count }}</strong> / {{ r.total_recommended }} cartes recommandées possédées
+            (<strong>{{ r.pct }}%</strong>)</p>
+        </div>
+        <form method="post" action="/chat/message" class="generate-form">
+          <input type="hidden" name="message" value="Génère la decklist complète pour {{ r.name }}{% if art.intent.budget_eur is not none %} avec un budget de {{ '%.0f'|format(art.intent.budget_eur) }} €{% endif %}.">
+          <button type="submit">⚙ Générer la decklist complète</button>
+        </form>
+      </div>
+    </div>
+    {% if r.buylist and r.buylist.to_buy %}
+    <div class="buylist">
+      <h4>Liste d'achat
+        {% if r.buylist.budget_eur is not none %}<span class="muted small">(budget {{ "%.0f"|format(r.buylist.budget_eur) }} €)</span>{% endif %}
+      </h4>
+      <p class="muted small">{{ r.buylist.bought_count }} carte(s) · total
+        <strong>{{ "%.2f"|format(r.buylist.total_eur) }} €</strong></p>
+      <div class="buy-grid">
+        {% for item in r.buylist.to_buy %}
+        <div class="buy-item">
+          {% if item.image %}<img src="{{ item.image }}" alt="{{ item.name }}" loading="lazy">{% endif %}
+          <span class="buy-name">{{ item.name }}</span>
+          <span class="buy-price">{{ "%.2f"|format(item.price_eur) }} €</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% if r.owned_cards %}
+    <details class="owned-list">
+      <summary>{{ r.owned_count }} carte(s) synergiques déjà possédées</summary>
+      <ul class="namelist">{% for name in r.owned_cards %}<li>{{ name }}</li>{% endfor %}</ul>
+    </details>
+    {% endif %}
+  </section>
+  {% endfor %}
+{% endmacro %}
+
+
+{% macro archetype(data) %}
+  <section class="card art-card">
+    <h3>{{ data.archetype.name }}
+      <span class="pips">{% for c in data.archetype.colors %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}</span>
+    </h3>
+    {% if data.archetype.strategy %}<p>{{ data.archetype.strategy }}</p>{% endif %}
+    <div class="completion">
+      <div class="bar"><span style="width: {{ (100 * data.owned_count / data.valid_count) if data.valid_count else 0 }}%"></span></div>
+      <p><strong>{{ data.owned_count }}</strong> / {{ data.valid_count }} cartes maîtresses possédées</p>
+    </div>
+    {% if data.buylist and data.buylist.to_buy %}
+    <div class="buylist">
+      <h4>À acheter
+        {% if data.buylist.budget_eur is not none %}<span class="muted small">(budget {{ "%.0f"|format(data.buylist.budget_eur) }} €)</span>{% endif %}
+      </h4>
+      <p class="muted small">{{ data.buylist.bought_count }} carte(s) · total
+        <strong>{{ "%.2f"|format(data.buylist.total_eur) }} €</strong></p>
+      <div class="buy-grid">
+        {% for item in data.buylist.to_buy %}
+        <div class="buy-item">
+          {% if item.image %}<img src="{{ item.image }}" alt="{{ item.name }}" loading="lazy">{% endif %}
+          <span class="buy-name">{{ item.name }}</span>
+          <span class="buy-price">{{ "%.2f"|format(item.price_eur) }} €</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    <p class="notice info small">Cartes validées via Scryfall (légalité {{ data.format }}).
+      Base d'archétype à compléter, pas une liste de tournoi exacte.
+      {% if data.dropped %}<br>{{ data.dropped|length }} suggestion(s) écartée(s).{% endif %}</p>
+  </section>
+{% endmacro %}
+
+
+{% macro decklist(art) %}
+  {% set deck = art.deck %}
+  <section class="card art-card">
+    <div class="commander-head">
+      {% if deck.commander.image %}<img class="card-img" src="{{ deck.commander.image }}" alt="{{ deck.commander.name }}" loading="lazy">{% endif %}
+      <div class="commander-meta">
+        <h3>{{ deck.commander.name }}</h3>
+        <ul class="chips">
+          <li class="chip">{{ deck.counts.total }} cartes</li>
+          <li class="chip">{{ deck.counts.owned }} possédées</li>
+          <li class="chip">{{ deck.counts.to_buy }} à acheter</li>
+          <li class="chip">Achat : <strong>{{ "%.2f"|format(deck.buy_total_eur) }} €</strong>
+            {% if deck.budget_eur is not none %} / {{ "%.0f"|format(deck.budget_eur) }} € budget{% endif %}</li>
+        </ul>
+        {% if deck.unfilled_spells %}
+        <p class="notice warn small">{{ deck.unfilled_spells }} emplacement(s) non rempli(s) dans le budget.</p>
+        {% endif %}
+      </div>
+    </div>
+    {% if deck.gameplan %}<div class="gameplan"><h4>Plan de jeu</h4><p>{{ deck.gameplan }}</p></div>{% endif %}
+    <details class="owned-list">
+      <summary>Voir la decklist ({{ deck.counts.total }} cartes)</summary>
+      {% for group in deck.groups %}
+      <div class="deck-group">
+        <h4>{{ group.label }} <span class="muted small">({{ group.cards|sum(attribute='qty') }})</span></h4>
+        <ul class="decklist">
+          {% for c in group.cards %}
+          <li class="{{ 'to-buy' if not c.owned else 'owned' }}">
+            <span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span>
+            {% if c.owned %}<span class="tag owned-tag">{{ 'terrain' if c.is_basic else 'possédée' }}</span>
+            {% else %}<span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur) }} €{% else %}à acheter{% endif %}</span>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+    </details>
+    <details class="export">
+      <summary>Exporter la decklist (texte)</summary>
+      <textarea readonly rows="12" onclick="this.select()">{{ deck.decklist_text }}</textarea>
+    </details>
+  </section>
+{% endmacro %}
+
+
+{% macro render(art) %}
+  {% if art.type == "commanders" %}{{ commanders(art) }}
+  {% elif art.type == "archetype" %}{{ archetype(art.data) }}
+  {% elif art.type == "decklist" %}{{ decklist(art) }}
+  {% endif %}
+{% endmacro %}

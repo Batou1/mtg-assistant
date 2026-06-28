@@ -32,6 +32,12 @@ class Settings:
     anthropic_model: str = os.environ.get("MTG_ANTHROPIC_MODEL", "claude-sonnet-4-6")
     anthropic_max_tokens: int = int(os.environ.get("MTG_ANTHROPIC_MAX_TOKENS", "2048"))
 
+    # --- Iterative chat (Phase 3) ------------------------------------------
+    # How many tool-call rounds a single chat turn may take before stopping.
+    chat_max_tool_iterations: int = int(os.environ.get("MTG_CHAT_MAX_TOOL_ITERS", "6"))
+    # How many past messages to replay to the API (bounds tokens/cost).
+    chat_history_limit: int = int(os.environ.get("MTG_CHAT_HISTORY", "16"))
+
     # --- Deck generation ---------------------------------------------------
     deck_size: int = int(os.environ.get("MTG_DECK_SIZE", "100"))
     deck_lands: int = int(os.environ.get("MTG_DECK_LANDS", "36"))
