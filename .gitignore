@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# App data / local DB
+data/*.db
+data/*.sqlite
+data/*.log
+
+# Cloudflare credentials (never commit)
+*.cloudflared.json
+cloudflared/config.yml
+
+# OS
+.DS_Store

@@ -1,0 +1,18 @@
+# Add the SECOND rule below to the `ingress:` list in your existing tunnel's
+# config.yml (the one your com.phase.tunnel service runs, usually
+# ~/.cloudflared/config.yml). Keep your existing app's rule, and make sure the
+# catch-all `http_status:404` stays LAST.
+#
+# Example of the resulting ingress section:
+
+ingress:
+  # --- your existing app (leave as-is) ---
+  - hostname: <your-existing-app>.mtg-app-perso.com
+    service: http://localhost:<existing-port>
+
+  # --- new: Commander Opportunity Finder ---
+  - hostname: edh.mtg-app-perso.com
+    service: http://localhost:8770
+
+  # --- catch-all, must be last ---
+  - service: http_status:404

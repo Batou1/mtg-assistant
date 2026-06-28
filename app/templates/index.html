@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+
+<section class="hero">
+  <h1>Construis ton prochain deck Commander</h1>
+  <p class="muted">
+    Importe ta collection, décris ce que tu veux en français, et l'assistant te
+    propose des commandants jouables avec tes cartes — avec analyse de complétude
+    et liste d'achat dans ton budget.
+  </p>
+</section>
+
+<div class="grid-2">
+  <!-- Collection status + import -->
+  <section class="card">
+    <h2>1 · Ma collection</h2>
+    {% if total %}
+      <p class="stat"><strong>{{ total }}</strong> cartes ({{ distinct }} uniques)</p>
+      {% if source %}<p class="muted small">Source : {{ source }}</p>{% endif %}
+      <p><a class="link" href="/collection">Voir la collection →</a></p>
+    {% else %}
+      <p class="muted">Aucune collection importée pour l'instant.</p>
+    {% endif %}
+
+    {% if import_done %}
+      <div class="notice ok">
+        Import réussi : {{ imported_rows }} lignes enregistrées.
+        {% if import_error_count %}<br>{{ import_error_count }} ligne(s) ignorée(s).{% endif %}
+      </div>
+    {% endif %}
+
+    <form action="/import" method="post" enctype="multipart/form-data" class="stack">
+      <label class="filelabel">
+        Importer un export <strong>ManaBox (.csv)</strong>
+        <input type="file" name="file" accept=".csv,text/csv" required>
+      </label>
+      <button type="submit">Importer</button>
+    </form>
+  </section>
+
+  <!-- Deck wish -->
+  <section class="card">
+    <h2>2 · Mon envie de deck</h2>
+    <p class="status">
+      LLM local :
+      {% if ollama_ok %}
+        <span class="badge ok">en ligne</span> <span class="muted small">({{ ollama_model }})</span>
+      {% else %}
+        <span class="badge warn">hors ligne</span>
+        <span class="muted small">repli heuristique actif</span>
+      {% endif %}
+    </p>
+    <form action="/suggest" method="post" class="stack">
+      <textarea name="wish" rows="4" placeholder="Ex : un deck Commander aristocrats sacrifice en noir/rouge, budget 50€"></textarea>
+      <button type="submit" {% if not total %}disabled title="Importe d'abord ta collection"{% endif %}>
+        Proposer des decks
+      </button>
+      {% if not total %}<p class="muted small">Importe ta collection pour activer les suggestions.</p>{% endif %}
+    </form>
+    <details class="examples">
+      <summary>Exemples d'envies</summary>
+      <ul>
+        <li>« deck tokens vert/blanc qui fait beaucoup de jetons »</li>
+        <li>« reanimator noir, je veux ressusciter de grosses créatures, budget 40 euros »</li>
+        <li>« quelque chose de contrôle bleu/noir compétitif »</li>
+      </ul>
+    </details>
+  </section>
+</div>
+
+{% endblock %}
