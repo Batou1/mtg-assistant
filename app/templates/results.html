@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Suggestions · MTG Assistant{% endblock %}
+{% block content %}
+
+<a class="link back" href="/">← Nouvelle recherche</a>
+
+<section class="intent-summary card">
+  <h2>Ton envie</h2>
+  <p class="wish">« {{ wish }} »</p>
+  <ul class="chips">
+    {% if intent.format %}<li class="chip">Format : {{ intent.format }}</li>{% endif %}
+    {% if intent.colors %}
+      <li class="chip">Couleurs :
+        {% for c in intent.colors %}<span class="pip pip-{{ c }}">{{ COLOR_NAMES[c] }}</span>{% endfor %}
+      </li>
+    {% endif %}
+    {% if intent.budget_eur is not none %}<li class="chip">Budget : {{ "%.0f"|format(intent.budget_eur) }} €</li>{% endif %}
+    {% if intent.keywords %}<li class="chip">Thèmes : {{ intent.keywords|join(", ") }}</li>{% endif %}
+    <li class="chip muted">Analyse : {{ "LLM" if intent.source == "llm" else "heuristique" }}</li>
+  </ul>
+</section>
+
+{% if empty_collection %}
+  <div class="notice warn">Ta collection est vide. Importe d'abord un export ManaBox depuis l'accueil.</div>
+{% elif not data.results %}
+  <div class="notice warn">
+    Aucun commandant correspondant trouvé dans ta collection
+    ({{ data.candidate_count }} candidat(s) examiné(s)).
+    {% if intent.colors %}Essaie d'élargir les couleurs{% endif %}
+    {% if data.below_threshold %} ou de baisser le seuil de popularité (actuellement {{ data.min_decks }} decks).{% endif %}
+  </div>
+{% else %}
+
+  {% for n in data.notices %}<div class="notice info">{{ n }}</div>{% endfor %}
+
+  <h2 class="section-title">{{ data.results|length }} commandant(s) suggéré(s)</h2>
+
+  {% for r in data.results %}
+  <section class="commander card">
+    <div class="commander-head">
+      {% if r.image %}<img class="card-img" src="{{ r.image }}" alt="{{ r.name }}" loading="lazy">{% endif %}
+      <div class="commander-meta">
+        <h3>{{ r.name }}</h3>
+        <p class="pips">
+          {% for c in r.color_identity %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}
+          {% if not r.color_identity %}<span class="pip pip-C">incolore</span>{% endif %}
+        </p>
+        <p class="muted small">{{ "{:,}".format(r.num_decks).replace(",", " ") }} decks sur EDHREC</p>
+
+        <div class="completion">
+          <div class="bar"><span style="width: {{ r.pct }}%"></span></div>
+          <p><strong>{{ r.owned_count }}</strong> / {{ r.total_recommended }} cartes recommandées possédées
+            (<strong>{{ r.pct }}%</strong>)</p>
+        </div>
+      </div>
+    </div>
+
+    {% if r.buylist %}
+    <div class="buylist">
+      <h4>
+        Liste d'achat
+        {% if r.buylist.budget_eur is not none %}<span class="muted small">(budget {{ "%.0f"|format(r.buylist.budget_eur) }} €)</span>{% endif %}
+      </h4>
+      {% if r.buylist.to_buy %}
+        <p class="muted small">
+          {{ r.buylist.bought_count }} carte(s) ·
+          total <strong>{{ "%.2f"|format(r.buylist.total_eur) }} €</strong>
+          {% if r.buylist.missing_total > r.buylist.bought_count %}
+            · {{ r.buylist.missing_total - r.buylist.bought_count }} autre(s) carte(s) manquante(s)
+          {% endif %}
+        </p>
+        <div class="buy-grid">
+          {% for item in r.buylist.to_buy %}
+          <div class="buy-item">
+            {% if item.image %}<img src="{{ item.image }}" alt="{{ item.name }}" loading="lazy">{% endif %}
+            <span class="buy-name">{{ item.name }}</span>
+            <span class="buy-price">{{ "%.2f"|format(item.price_eur) }} €</span>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted small">Aucune carte à acheter dans ce budget (ou prix indisponibles).</p>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <details class="owned-list">
+      <summary>{{ r.owned_count }} carte(s) synergiques déjà possédées</summary>
+      <ul class="namelist">{% for name in r.owned_cards %}<li>{{ name }}</li>{% endfor %}</ul>
+    </details>
+  </section>
+  {% endfor %}
+
+  <div class="diagnostics muted small">
+    {% if data.below_threshold %}{{ data.below_threshold|length }} commandant(s) sous le seuil de {{ data.min_decks }} decks. {% endif %}
+    {% if data.not_on_edhrec %}{{ data.not_on_edhrec }} absent(s) d'EDHREC. {% endif %}
+    {% if data.skipped %}{{ data.skipped|length }} ignoré(s) (EDHREC indisponible). {% endif %}
+  </div>
+
+{% endif %}
+
+{% endblock %}

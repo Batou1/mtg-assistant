@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd LaunchAgent for MTG Assistant.
+  TEMPLATE: deploy/install-service.sh fills in __LABEL__, __APP_DIR__ and
+  __PORT__ and writes the result to ~/Library/LaunchAgents/<label>.plist.
+  Do not load this file directly.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>__LABEL__</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__APP_DIR__/deploy/serve.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__APP_DIR__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>MTG_PORT</key>
+        <string>__PORT__</string>
+        <key>MTG_OLLAMA_MODEL</key>
+        <string>qwen2.5:7b-instruct</string>
+        <key>MTG_OLLAMA_URL</key>
+        <string>http://127.0.0.1:11434</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>__APP_DIR__/data/service.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__APP_DIR__/data/service.err.log</string>
+</dict>
+</plist>

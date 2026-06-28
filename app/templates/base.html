@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}MTG Assistant{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">🃏 MTG Assistant</a>
+    <nav>
+      <a href="/">Accueil</a>
+      <a href="/collection">Ma collection</a>
+    </nav>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="footer">
+    Données : <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a>
+    &amp; <a href="https://edhrec.com" target="_blank" rel="noopener">EDHREC</a> ·
+    LLM local via Ollama · Prix Cardmarket (EUR)
+  </footer>
+</body>
+</html>
