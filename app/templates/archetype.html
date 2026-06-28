@@ -17,8 +17,8 @@
 
 {% if data.llm_unavailable %}
   <div class="notice warn">
-    Le LLM local (Ollama) est nécessaire pour la recherche d'archétype 60 cartes et
-    n'est pas joignable. Lance Ollama puis réessaie.
+    Le LLM (Claude) est nécessaire pour la recherche d'archétype 60 cartes mais
+    n'est pas configuré. Ajoute ANTHROPIC_API_KEY dans .env puis réessaie.
     {% if data.sources %}<br>Pages récentes trouvées pour t'orienter :{% endif %}
   </div>
   {% if data.sources %}

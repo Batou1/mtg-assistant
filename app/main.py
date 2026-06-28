@@ -62,8 +62,8 @@ def _home_context(request: Request, profile: dict, **extra) -> dict:
         distinct=distinct,
         total=total,
         source=profile.get("collection_source"),
-        ollama_ok=llm.is_available(),
-        ollama_model=settings.ollama_model,
+        llm_ok=llm.is_available(),
+        llm_model=settings.anthropic_model,
         **extra,
     )
 

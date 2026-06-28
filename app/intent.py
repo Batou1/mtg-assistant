@@ -1,7 +1,8 @@
 """Turn a free-text deck wish into a structured intent.
 
-Primary path: the local LLM (Ollama). Fallback path: a small heuristic parser
-so the app stays useful even when Ollama is down. Both produce the same shape:
+Primary path: the LLM (Claude via the Anthropic API). Fallback path: a small
+heuristic parser so the app stays useful when no API key is set. Both produce
+the same shape:
 
     {
       "format": "commander" | "standard" | "modern" | "pioneer" | "pauper" | None,

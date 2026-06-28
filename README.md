@@ -5,11 +5,11 @@ collection. Import your cards, describe in plain French the deck you want, and
 get Commander suggestions you can actually build — with a completeness analysis
 and a budget-constrained buylist priced in EUR.
 
-> This release: ManaBox import, French natural-language intent via a local LLM,
-> Commander suggestions with gap analysis and an EUR buylist, full Commander
-> decklist generation, and **60-card format archetype research** (Standard,
-> Pauper, Modern, Pioneer…) grounded by Brave Search + validated against
-> Scryfall.
+> This release: ManaBox import, French natural-language intent via **Claude
+> (Anthropic API)**, Commander suggestions with gap analysis and an EUR buylist,
+> full Commander decklist generation, and **60-card format archetype research**
+> (Standard, Pauper, Modern, Pioneer…) grounded by Brave Search + validated
+> against Scryfall.
 
 ## How it works
 
@@ -20,9 +20,9 @@ and a budget-constrained buylist priced in EUR.
    per profile in a local SQLite database (quantity, set, foil, condition,
    Scryfall id).
 2. **Describe your wish** — e.g. *« un deck Commander aristocrats sacrifice en
-   noir/rouge, budget 50€ »*. A **local LLM (Ollama)** turns it into a structured
-   intent (format, colours, theme, budget). If Ollama is offline, a heuristic
-   parser takes over so the app keeps working.
+   noir/rouge, budget 50€ »*. **Claude** (Anthropic API) turns it into a
+   structured intent (format, colours, theme, budget). If no API key is set, a
+   heuristic parser takes over so the app keeps working.
 3. **Get suggestions** — for the legal commanders you own that match the
    requested colours, the app looks up [EDHREC](https://edhrec.com) and reports
    how many of each commander's most-played cards you already have.
@@ -42,26 +42,23 @@ and a budget-constrained buylist priced in EUR.
    not an exact tournament list — because the popular decklist sites are
    Cloudflare-blocked.
 
-> **60-card quality depends on the model.** `qwen2.5:7b-instruct` knows the exact
-> 60-card card pool only roughly, so many of its suggestions get filtered out by
-> Scryfall validation. For noticeably better archetypes, set
-> `MTG_OLLAMA_MODEL=qwen2.5:14b-instruct` (~9 GB, fits a 16 GB Mac mini).
-
 Card data, prices and EDHREC pages are resolved **on demand and cached** in
 SQLite — no multi-gigabyte bulk download, minimal disk footprint.
 
 ## Requirements
 
 - Python 3.11+
-- [Ollama](https://ollama.com) running locally with the recommended model:
+- An **Anthropic API key** for the LLM (intent parsing, 60-card archetypes, deck
+  game-plans). Uses **`claude-sonnet-4-6`** by default — strong card-pool
+  knowledge and French, a few cents/month for personal use. Put it in `.env`:
 
   ```bash
-  ollama pull qwen2.5:7b-instruct
+  echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env
   ```
 
-  Chosen for strong structured-JSON output and French handling; ~4.7 GB (Q4),
-  comfortable on a 16 GB Mac mini. The app still runs (heuristic fallback) if
-  Ollama is unavailable.
+  Without a key the app still runs: intent parsing falls back to a heuristic and
+  60-card research / game-plans are skipped. Commander suggestions, gap analysis,
+  buylist and full decklist generation all work key-free (EDHREC + Scryfall).
 
 ## Run locally
 
@@ -71,18 +68,18 @@ SQLite — no multi-gigabyte bulk download, minimal disk footprint.
 
 Then open <http://127.0.0.1:8000>.
 
-### Web research (60-card formats)
+### Secrets (`.env`)
 
-60-card archetype research uses the [Brave Search API](https://brave.com/search/api/)
-(free tier ≈ 2000 req/month). Put your key in a local **`.env`** file (gitignored —
-never committed); `run.sh` loads it automatically:
+Keys live in a local **`.env`** file (gitignored — never committed); both
+`run.sh` and the launchd service load it automatically:
 
 ```bash
-echo 'MTG_BRAVE_API_KEY=your-key-here' > .env
+ANTHROPIC_API_KEY=sk-ant-...      # LLM (intent, 60-card archetypes, game plans)
+MTG_BRAVE_API_KEY=your-brave-key  # 60-card web research (free tier ≈ 2000 req/mo)
 ```
 
-Without a key, 60-card research still runs but ungrounded (the LLM proposes from
-its own knowledge only). Commander features need no key.
+Without the Brave key, 60-card research still runs but ungrounded (Claude
+proposes from its own knowledge only, still Scryfall-validated).
 
 ### Configuration (environment variables)
 
@@ -90,8 +87,8 @@ its own knowledge only). Commander features need no key.
 | -------------------- | --------------------------- | ------------------------------------ |
 | `MTG_DB_PATH`        | `data/app.db`               | SQLite database location             |
 | `MTG_MIN_DECKS`      | `300`                       | Min EDHREC decks for a commander     |
-| `MTG_OLLAMA_URL`     | `http://127.0.0.1:11434`    | Ollama server                        |
-| `MTG_OLLAMA_MODEL`   | `qwen2.5:7b-instruct`       | Local model used for intent parsing  |
+| `ANTHROPIC_API_KEY`  | *(empty)*                   | Anthropic API key (read by the SDK)  |
+| `MTG_ANTHROPIC_MODEL`| `claude-sonnet-4-6`         | Claude model used for all LLM tasks  |
 | `MTG_CACHE_TTL_DAYS` | `7`                         | Card / EDHREC cache freshness        |
 | `MTG_PRICE_TTL_DAYS` | `1`                         | Price cache freshness                |
 | `MTG_CURRENCY`       | `EUR`                       | Budget currency (Cardmarket)         |
@@ -123,8 +120,8 @@ Cloudflare Access policy. Remove later with `./deploy/uninstall-service.sh`.
 - **Commander** is the strongest path (EDHREC-backed, fully data-driven).
 - **60-card formats** are archetype suggestions, not exact tournament lists: the
   popular decklist sites (MTGGoldfish, mtgdecks) are Cloudflare-blocked, so the
-  app researches the archetype with Brave + the LLM and validates every card via
-  Scryfall. Quality scales with the model (see the 60-card note above).
+  app researches the archetype with Brave + Claude and validates every card via
+  Scryfall.
 - **EDHREC has no official API**; this uses its public JSON endpoints. If the
   payload shape changes, `app/edhrec.py` is the single place to adjust.
 - For Commander, the LLM never names cards — it only structures your request and
@@ -145,7 +142,7 @@ app/
   scryfall.py   card resolution, prices (EUR), images, legality
   edhrec.py     commander pages: popularity + recommended cards
   commanders.py legal-commander detection
-  llm.py        Ollama client (JSON mode + free-text game plan)
+  llm.py        Anthropic (Claude) client: JSON intent, archetypes, game plans
   intent.py     French wish → structured intent (LLM + heuristic fallback)
   analysis.py   intent-aware commander ranking + gap analysis
   buylist.py    budget-constrained EUR shopping list

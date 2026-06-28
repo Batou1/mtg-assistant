@@ -23,10 +23,9 @@
     <dict>
         <key>MTG_PORT</key>
         <string>__PORT__</string>
-        <key>MTG_OLLAMA_MODEL</key>
-        <string>qwen2.5:7b-instruct</string>
-        <key>MTG_OLLAMA_URL</key>
-        <string>http://127.0.0.1:11434</string>
+        <!-- The LLM needs ANTHROPIC_API_KEY. Don't hardcode it here (this file is
+             rendered into ~/Library/LaunchAgents and could leak). serve.sh loads
+             it from the gitignored .env before launching uvicorn. -->
     </dict>
 
     <key>RunAtLoad</key>

@@ -1,52 +1,65 @@
-"""Thin client for a local Ollama server.
+"""LLM access via the Anthropic API (Claude).
 
-The LLM's only job in Phase 1 is to turn a free-text wish (in French) into a
-structured intent. Card selection stays deterministic elsewhere, so the model
-never needs to name real cards — this keeps hallucinations out of results.
+The LLM turns a free-text wish into a structured intent, proposes 60-card
+archetypes, and writes deck game-plan summaries. Card selection stays
+deterministic elsewhere; for 60-card formats the model names cards but every
+card is validated against Scryfall downstream, so nothing fake/illegal shows.
+
+The API key is read by the SDK from the ANTHROPIC_API_KEY environment variable
+(kept in a gitignored .env). If it's absent, is_available() is False and callers
+fall back gracefully (heuristic intent parsing, no game plan, etc.).
 """
 import json
+import os
+import re
 
-import httpx
+import anthropic
 
 from .config import settings
 
+_client: anthropic.Anthropic | None = None
+_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
+
 
 def is_available() -> bool:
-    """True if the Ollama server answers. Used to fall back gracefully."""
+    """True if an Anthropic API key is configured."""
+    return bool(os.environ.get("ANTHROPIC_API_KEY"))
+
+
+def _get_client() -> anthropic.Anthropic:
+    global _client
+    if _client is None:
+        _client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from the env
+    return _client
+
+
+def _message(system: str, user: str, max_tokens: int) -> str | None:
+    """Single-turn request; returns the concatenated text, or None on failure."""
+    if not is_available():
+        return None
     try:
-        resp = httpx.get(f"{settings.ollama_url}/api/tags", timeout=2)
-        return resp.status_code == 200
-    except httpx.HTTPError:
-        return False
+        resp = _get_client().messages.create(
+            model=settings.anthropic_model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+    except anthropic.APIError:
+        return None
+    return "".join(b.text for b in resp.content if b.type == "text").strip()
 
 
 def chat_json(system: str, user: str) -> dict | None:
-    """Send a chat request asking for a strict JSON object back.
-
-    Returns the parsed dict, or None if Ollama is unreachable or the reply
-    wasn't valid JSON (caller falls back to a heuristic).
-    """
-    payload = {
-        "model": settings.ollama_model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        "format": "json",
-        "stream": False,
-        "options": {"temperature": 0.1},
-    }
-    try:
-        resp = httpx.post(
-            f"{settings.ollama_url}/api/chat",
-            json=payload,
-            timeout=settings.ollama_timeout,
-        )
-        resp.raise_for_status()
-        content = resp.json().get("message", {}).get("content", "")
-    except httpx.HTTPError:
+    """Ask for a strict JSON object back. Returns the parsed dict or None."""
+    system = (
+        system
+        + "\n\nRéponds UNIQUEMENT avec un objet JSON valide, sans texte autour "
+        "ni balises Markdown."
+    )
+    content = _message(system, user, settings.anthropic_max_tokens)
+    if content is None:
         return None
-
+    content = _FENCE_RE.sub("", content).strip()
     try:
         return json.loads(content)
     except (json.JSONDecodeError, TypeError):
@@ -54,27 +67,8 @@ def chat_json(system: str, user: str) -> dict | None:
 
 
 def chat_text(system: str, user: str) -> str | None:
-    """Send a chat request expecting free-form text back, or None if unreachable."""
-    payload = {
-        "model": settings.ollama_model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        "stream": False,
-        "options": {"temperature": 0.4},
-    }
-    try:
-        resp = httpx.post(
-            f"{settings.ollama_url}/api/chat",
-            json=payload,
-            timeout=settings.ollama_timeout,
-        )
-        resp.raise_for_status()
-        content = (resp.json().get("message", {}).get("content") or "").strip()
-    except httpx.HTTPError:
-        return None
-    return content or None
+    """Ask for free-form text back, or None if unavailable."""
+    return _message(system, user, 600) or None
 
 
 def archetype_research(fmt: str, intent: dict, context: str) -> dict | None:
@@ -114,7 +108,7 @@ def deck_gameplan(commander_name: str, card_names: list[str], theme: str = "") -
     """Write a short French game-plan summary from the chosen cards.
 
     The model is given the actual card names, so it describes the deck rather
-    than inventing cards. Returns None when Ollama is unavailable.
+    than inventing cards. Returns None when the LLM is unavailable.
     """
     system = (
         "Tu es un expert Magic: the Gathering (format Commander). On te donne un "

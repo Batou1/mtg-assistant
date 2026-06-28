@@ -42,12 +42,12 @@
   <section class="card">
     <h2>2 · Mon envie de deck</h2>
     <p class="status">
-      LLM local :
-      {% if ollama_ok %}
-        <span class="badge ok">en ligne</span> <span class="muted small">({{ ollama_model }})</span>
+      LLM :
+      {% if llm_ok %}
+        <span class="badge ok">connecté</span> <span class="muted small">(Claude · {{ llm_model }})</span>
       {% else %}
-        <span class="badge warn">hors ligne</span>
-        <span class="muted small">repli heuristique actif</span>
+        <span class="badge warn">non configuré</span>
+        <span class="muted small">ajoute ANTHROPIC_API_KEY dans .env (repli heuristique actif)</span>
       {% endif %}
     </p>
     <form action="/suggest" method="post" class="stack">
