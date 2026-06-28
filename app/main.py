@@ -11,7 +11,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
-from . import analysis, db, intent, llm, manabox
+import httpx
+
+from . import analysis, db, deckgen, intent, llm, manabox, scryfall
 from .config import settings
 
 app = FastAPI(title="MTG Assistant")
@@ -161,3 +163,60 @@ async def suggest(request: Request, wish: str = Form("")):
         request, profile, wish=wish, intent=parsed, data=data, empty_collection=False
     )
     return _render(request, profile, "results.html", ctx)
+
+
+# --- Deck generation -----------------------------------------------------
+
+def _parse_budget(raw: str) -> float | None:
+    raw = (raw or "").strip().replace(",", ".")
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+def _generate_deck(commander_name: str, budget, theme: str, profile_id: int):
+    """Blocking: resolve cards, build the decklist, write the LLM game plan."""
+    from . import edhrec
+
+    data = edhrec.fetch_commander(commander_name)
+    if data.get("_not_found") or data.get("_error"):
+        return None, data
+
+    with httpx.Client(timeout=30, headers={"User-Agent": settings.user_agent}) as client:
+        nonland, lands = deckgen.candidate_names(data, commander_name)
+        to_resolve = [commander_name] + nonland + lands + deckgen.BASIC_NAMES
+        resolved, _nf = scryfall.resolve_cards(to_resolve, client=client)
+
+    commander_card = resolved.get(commander_name.split("//")[0].strip().lower())
+    if not commander_card:
+        return None, {"_error": True}
+
+    owned = db.owned_name_keys(profile_id)
+    deck = deckgen.build_deck(
+        commander_card, data, owned, budget, resolved,
+        target_lands=settings.deck_lands, deck_size=settings.deck_size,
+    )
+
+    key_cards = [c["name"] for g in deck["groups"] for c in g["cards"] if not c["is_basic"]]
+    deck["gameplan"] = llm.deck_gameplan(commander_name, key_cards, theme=theme)
+    return deck, data
+
+
+@app.post("/generate", response_class=HTMLResponse)
+async def generate(
+    request: Request,
+    commander: str = Form(...),
+    budget: str = Form(""),
+    theme: str = Form(""),
+):
+    profile = current_profile(request)
+    deck, _data = await run_in_threadpool(
+        _generate_deck, commander, _parse_budget(budget), theme, profile["id"]
+    )
+    ctx = _base_context(
+        request, profile, commander=commander, budget=_parse_budget(budget), deck=deck
+    )
+    return _render(request, profile, "deck.html", ctx)

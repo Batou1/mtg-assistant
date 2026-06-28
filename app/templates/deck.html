@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Deck {{ commander }} · MTG Assistant{% endblock %}
+{% block content %}
+
+<a class="link back" href="javascript:history.back()">← Retour aux suggestions</a>
+
+{% if not deck %}
+  <div class="notice warn">
+    Impossible de générer le deck pour « {{ commander }} » — page EDHREC introuvable
+    ou commandant non reconnu par Scryfall.
+  </div>
+{% else %}
+
+<section class="deck-header card">
+  <div class="commander-head">
+    {% if deck.commander.image %}<img class="card-img" src="{{ deck.commander.image }}" alt="{{ deck.commander.name }}">{% endif %}
+    <div class="commander-meta">
+      <h1>{{ deck.commander.name }}</h1>
+      <p class="pips">
+        {% for c in deck.commander.color_identity %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}
+        {% if not deck.commander.color_identity %}<span class="pip pip-C">incolore</span>{% endif %}
+      </p>
+
+      <ul class="chips">
+        <li class="chip">{{ deck.counts.total }} cartes</li>
+        <li class="chip">{{ deck.counts.owned }} possédées</li>
+        <li class="chip">{{ deck.counts.to_buy }} à acheter</li>
+        <li class="chip">{{ deck.counts.lands }} terrains</li>
+        <li class="chip">Achat : <strong>{{ "%.2f"|format(deck.buy_total_eur) }} €</strong>
+          {% if deck.budget_eur is not none %} / {{ "%.0f"|format(deck.budget_eur) }} € budget{% endif %}
+        </li>
+      </ul>
+
+      {% if deck.unfilled_spells %}
+      <p class="notice warn small">
+        {{ deck.unfilled_spells }} emplacement(s) de sort non rempli(s) dans le budget —
+        augmente le budget pour compléter le deck.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if deck.gameplan %}
+  <div class="gameplan">
+    <h3>Plan de jeu</h3>
+    <p>{{ deck.gameplan }}</p>
+  </div>
+  {% endif %}
+</section>
+
+<div class="grid-2">
+  <section class="card">
+    <h2>Decklist</h2>
+    {% for group in deck.groups %}
+    <div class="deck-group">
+      <h4>{{ group.label }} <span class="muted small">({{ group.cards|sum(attribute='qty') }})</span></h4>
+      <ul class="decklist">
+        {% for c in group.cards %}
+        <li class="{{ 'to-buy' if not c.owned else 'owned' }}">
+          <span class="qty">{{ c.qty }}</span>
+          <span class="dname">{{ c.name }}</span>
+          {% if c.owned %}
+            <span class="tag owned-tag">{{ 'terrain' if c.is_basic else 'possédée' }}</span>
+          {% else %}
+            <span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur) }} €{% else %}à acheter{% endif %}</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="card">
+    <h2>À acheter <span class="muted small">({{ deck.counts.to_buy }})</span></h2>
+    {% if deck.buy_list %}
+      <p class="muted small">Total <strong>{{ "%.2f"|format(deck.buy_total_eur) }} €</strong> (prix Cardmarket)</p>
+      <div class="buy-grid">
+        {% for c in deck.buy_list %}
+        <div class="buy-item">
+          {% if c.image %}<img src="{{ c.image }}" alt="{{ c.name }}" loading="lazy">{% endif %}
+          <span class="buy-name">{{ c.name }}</span>
+          <span class="buy-price">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur) }} €{% else %}—{% endif %}</span>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">Rien à acheter : ce deck est entièrement dans ta collection 🎉</p>
+    {% endif %}
+
+    <details class="export">
+      <summary>Exporter la decklist (texte)</summary>
+      <textarea readonly rows="12" onclick="this.select()">{{ deck.decklist_text }}</textarea>
+    </details>
+  </section>
+</div>
+
+{% endif %}
+
+{% endblock %}

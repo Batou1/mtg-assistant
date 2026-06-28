@@ -52,6 +52,13 @@
           <p><strong>{{ r.owned_count }}</strong> / {{ r.total_recommended }} cartes recommandées possédées
             (<strong>{{ r.pct }}%</strong>)</p>
         </div>
+
+        <form method="post" action="/generate" class="generate-form">
+          <input type="hidden" name="commander" value="{{ r.name }}">
+          <input type="hidden" name="theme" value="{{ intent.theme }}">
+          {% if intent.budget_eur is not none %}<input type="hidden" name="budget" value="{{ intent.budget_eur }}">{% endif %}
+          <button type="submit">⚙ Générer la decklist complète</button>
+        </form>
       </div>
     </div>
 
