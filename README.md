@@ -12,8 +12,12 @@ and a budget-constrained buylist priced in EUR.
 
 ## How it works
 
+0. **Pick a profile** — several people can share the app, each with their own
+   collection. Switch profiles from the top bar (create/delete too). No accounts
+   or passwords; the active profile is remembered in a cookie.
 1. **Import your collection** — upload a **ManaBox CSV** export. Cards are stored
-   in a local SQLite database (quantity, set, foil, condition, Scryfall id).
+   per profile in a local SQLite database (quantity, set, foil, condition,
+   Scryfall id).
 2. **Describe your wish** — e.g. *« un deck Commander aristocrats sacrifice en
    noir/rouge, budget 50€ »*. A **local LLM (Ollama)** turns it into a structured
    intent (format, colours, theme, budget). If Ollama is offline, a heuristic
@@ -98,7 +102,7 @@ Cloudflare Access policy. Remove later with `./deploy/uninstall-service.sh`.
 ```
 app/
   config.py     settings (env-overridable)
-  db.py         SQLite: collection + Scryfall/EDHREC caches
+  db.py         SQLite: profiles + per-profile collection + Scryfall/EDHREC caches
   manabox.py    ManaBox CSV → collection rows
   parsing.py    plain-text decklist parser (reused)
   scryfall.py   card resolution, prices (EUR), images, legality
