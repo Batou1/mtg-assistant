@@ -13,7 +13,7 @@
 <div class="grid-2">
   <!-- Collection status + import -->
   <section class="card">
-    <h2>1 · Ma collection</h2>
+    <h2>1 · Collection de {{ profile.name }}</h2>
     {% if total %}
       <p class="stat"><strong>{{ total }}</strong> cartes ({{ distinct }} uniques)</p>
       {% if source %}<p class="muted small">Source : {{ source }}</p>{% endif %}

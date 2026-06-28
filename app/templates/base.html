@@ -9,14 +9,47 @@
 <body>
   <header class="topbar">
     <a class="brand" href="/">🃏 MTG Assistant</a>
-    <nav>
-      <a href="/">Accueil</a>
-      <a href="/collection">Ma collection</a>
-    </nav>
+
+    <div class="topbar-right">
+      <nav>
+        <a href="/">Accueil</a>
+        <a href="/collection">Ma collection</a>
+      </nav>
+
+      {% if profile %}
+      <div class="profile-area">
+        <form method="post" action="/profiles/switch" class="profile-switch" title="Profil actif">
+          <span class="profile-icon">👤</span>
+          <select name="profile_id" onchange="this.form.submit()" aria-label="Profil">
+            {% for p in profiles %}
+              <option value="{{ p.id }}" {% if p.id == profile.id %}selected{% endif %}>{{ p.name }}</option>
+            {% endfor %}
+          </select>
+        </form>
+
+        <details class="profile-menu">
+          <summary aria-label="Gérer les profils">⚙</summary>
+          <div class="profile-dropdown">
+            <form method="post" action="/profiles/create" class="row">
+              <input name="name" placeholder="Nouveau profil" maxlength="40" required>
+              <button type="submit">Créer</button>
+            </form>
+            <form method="post" action="/profiles/delete"
+                  onsubmit="return confirm('Supprimer le profil « {{ profile.name }} » et sa collection ?');">
+              <input type="hidden" name="profile_id" value="{{ profile.id }}">
+              <button type="submit" class="danger-link">Supprimer « {{ profile.name }} »</button>
+            </form>
+          </div>
+        </details>
+      </div>
+      {% endif %}
+    </div>
   </header>
+
   <main class="container">
     {% block content %}{% endblock %}
   </main>
+
   <footer class="footer">
     Données : <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a>
     &amp; <a href="https://edhrec.com" target="_blank" rel="noopener">EDHREC</a> ·

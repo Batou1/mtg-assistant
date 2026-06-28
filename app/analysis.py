@@ -44,8 +44,8 @@ def _theme_score(intent: dict, recommended: list[str], tags: list[str]) -> int:
     return score
 
 
-def analyze(intent: dict, limit: int = 12):
-    """Return ranked commander suggestions for the stored collection + intent."""
+def analyze(intent: dict, profile_id: int, limit: int = 12):
+    """Return ranked commander suggestions for a profile's collection + intent."""
     notices = []
     fmt = intent.get("format")
     if fmt and fmt != "commander":
@@ -54,8 +54,8 @@ def analyze(intent: dict, limit: int = 12):
             "affichage des suggestions Commander en attendant."
         )
 
-    owned_ids = db.collection_scryfall_ids()
-    owned_keys = db.owned_name_keys()
+    owned_ids = db.collection_scryfall_ids(profile_id)
+    owned_keys = db.owned_name_keys(profile_id)
     budget = intent.get("budget_eur")
 
     with httpx.Client(timeout=30, headers={"User-Agent": settings.user_agent}) as client:
@@ -63,7 +63,7 @@ def analyze(intent: dict, limit: int = 12):
         # them); fall back to name resolution for any row without an id.
         by_id = scryfall.resolve_ids(owned_ids, client=client) if owned_ids else {}
         covered = {_norm(c["name"]) for c in by_id.values()}
-        named = [n for n, k, _q in db.collection_names() if k not in covered]
+        named = [n for n, k, _q in db.collection_names(profile_id) if k not in covered]
         by_name, not_found = scryfall.resolve_cards(named, client=client) if named else ({}, [])
 
         owned_cards = list(by_id.values()) + list(by_name.values())

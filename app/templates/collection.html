@@ -3,7 +3,7 @@
 {% block content %}
 
 <a class="link back" href="/">← Accueil</a>
-<h1>Ma collection</h1>
+<h1>Collection — {{ profile.name }}</h1>
 
 {% if cards %}
   <p class="muted">{{ total }} cartes · {{ distinct }} uniques</p>
