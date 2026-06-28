@@ -31,3 +31,19 @@ def test_coerce_filters_invalid_values():
 def test_parse_intent_empty():
     out = intent.parse_intent("   ")
     assert out["colors"] == [] and out["budget_eur"] is None
+
+
+def test_heuristic_mono_lifegain_black_or_white():
+    parsed = intent._heuristic(
+        "Un deck gain de vie monocouleur en noir ou en blanc. Budget max 50€"
+    )
+    assert set(parsed["colors"]) == {"B", "W"}
+    assert parsed["max_colors"] == 1
+    assert parsed["budget_eur"] == 50.0
+
+
+def test_coerce_max_colors():
+    assert intent._coerce({"max_colors": 2})["max_colors"] == 2
+    assert intent._coerce({"max_colors": 0})["max_colors"] is None  # < 1 -> none
+    assert intent._coerce({"max_colors": "x"})["max_colors"] is None
+    assert intent._coerce({})["max_colors"] is None

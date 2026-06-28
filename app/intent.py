@@ -62,7 +62,13 @@ _SYSTEM_PROMPT = (
     '- "theme": courte description du theme/archetype en quelques mots.\n'
     '- "keywords": liste de mots-cles en anglais decrivant la strategie '
     '(ex: "aristocrats","tokens","reanimator","ramp").\n'
+    '- "max_colors": entier = nombre MAXIMUM de couleurs autorisees si '
+    'l\'utilisateur le precise ("monocouleur"/"mono"/"monocolore" => 1, '
+    '"bicolore"/"deux couleurs" => 2), sinon null.\n'
     '- "budget_eur": nombre (euros) si un budget est mentionne, sinon null.\n'
+    "RESPECTE STRICTEMENT les couleurs, le nombre de couleurs et le theme "
+    'demandes. Pour "noir OU blanc monocouleur", colors=["B","W"] et '
+    "max_colors=1 (chaque deck propose sera mono-noir OU mono-blanc). "
     "N'invente jamais de noms de cartes."
 )
 
@@ -92,9 +98,18 @@ def _coerce(data: dict) -> dict:
     except (TypeError, ValueError):
         budget = None
 
+    max_colors = data.get("max_colors")
+    try:
+        max_colors = int(max_colors) if max_colors is not None else None
+    except (TypeError, ValueError):
+        max_colors = None
+    if max_colors is not None and max_colors < 1:
+        max_colors = None
+
     return {
         "format": fmt,
         "colors": colors,
+        "max_colors": max_colors,
         "theme": theme,
         "keywords": keywords,
         "budget_eur": budget,
@@ -119,6 +134,9 @@ def _heuristic(text: str) -> dict:
 
     keywords = [w for w in _THEME_WORDS if w in low]
 
+    # "monocouleur", "mono noir", "monocolore" -> at most one colour.
+    max_colors = 1 if re.search(r"\bmono", low) else None
+
     budget = None
     m = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:€|euros?|eur)\b", low)
     if not m:
@@ -130,6 +148,7 @@ def _heuristic(text: str) -> dict:
         {
             "format": fmt,
             "colors": colors,
+            "max_colors": max_colors,
             "theme": text.strip()[:120],
             "keywords": keywords,
             "budget_eur": budget,
@@ -147,12 +166,19 @@ def parse_intent(text: str) -> dict:
     data = llm.chat_json(_SYSTEM_PROMPT, text)
     if data is not None:
         intent = _coerce({**data, "source": "llm"})
+        heur = _heuristic(text)
         # If the model returned an empty theme, keep the user's text as theme.
         if not intent["theme"]:
             intent["theme"] = text[:120]
-        # Backfill keywords heuristically if the model gave none.
+        # Backfill from the heuristic whatever the model dropped. Colours and
+        # the mono constraint matter most: a missing colour list would silently
+        # disable the colour filter and surface off-colour commanders.
         if not intent["keywords"]:
-            intent["keywords"] = _heuristic(text)["keywords"]
+            intent["keywords"] = heur["keywords"]
+        if not intent["colors"]:
+            intent["colors"] = heur["colors"]
+        if intent["max_colors"] is None:
+            intent["max_colors"] = heur["max_colors"]
         return intent
 
     return _heuristic(text)
