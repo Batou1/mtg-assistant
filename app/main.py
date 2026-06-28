@@ -11,9 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
-import httpx
-
-from . import analysis, db, deckgen, formats60, intent, llm, manabox, scryfall
+from . import analysis, chat, db, deckgen, formats60, intent, llm, manabox
 from .config import settings
 
 app = FastAPI(title="MTG Assistant")
@@ -25,6 +23,7 @@ app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), na
 db.init_db()
 
 COOKIE = "profile_id"
+CONV_COOKIE = "conversation_id"
 COLOR_NAMES = {"W": "Blanc", "U": "Bleu", "B": "Noir", "R": "Rouge", "G": "Vert"}
 templates.env.globals["COLOR_NAMES"] = COLOR_NAMES
 
@@ -183,34 +182,6 @@ def _parse_budget(raw: str) -> float | None:
         return None
 
 
-def _generate_deck(commander_name: str, budget, theme: str, profile_id: int):
-    """Blocking: resolve cards, build the decklist, write the LLM game plan."""
-    from . import edhrec
-
-    data = edhrec.fetch_commander(commander_name)
-    if data.get("_not_found") or data.get("_error"):
-        return None, data
-
-    with httpx.Client(timeout=30, headers={"User-Agent": settings.user_agent}) as client:
-        nonland, lands = deckgen.candidate_names(data, commander_name)
-        to_resolve = [commander_name] + nonland + lands + deckgen.BASIC_NAMES
-        resolved, _nf = scryfall.resolve_cards(to_resolve, client=client)
-
-    commander_card = resolved.get(commander_name.split("//")[0].strip().lower())
-    if not commander_card:
-        return None, {"_error": True}
-
-    owned = db.owned_name_keys(profile_id)
-    deck = deckgen.build_deck(
-        commander_card, data, owned, budget, resolved,
-        target_lands=settings.deck_lands, deck_size=settings.deck_size,
-    )
-
-    key_cards = [c["name"] for g in deck["groups"] for c in g["cards"] if not c["is_basic"]]
-    deck["gameplan"] = llm.deck_gameplan(commander_name, key_cards, theme=theme)
-    return deck, data
-
-
 @app.post("/generate", response_class=HTMLResponse)
 async def generate(
     request: Request,
@@ -220,9 +191,80 @@ async def generate(
 ):
     profile = current_profile(request)
     deck, _data = await run_in_threadpool(
-        _generate_deck, commander, _parse_budget(budget), theme, profile["id"]
+        deckgen.generate_full_deck, commander, _parse_budget(budget), theme, profile["id"]
     )
     ctx = _base_context(
         request, profile, commander=commander, budget=_parse_budget(budget), deck=deck
     )
     return _render(request, profile, "deck.html", ctx)
+
+
+# --- Iterative chat (Phase 3) --------------------------------------------
+
+def _active_conversation(request: Request, profile: dict) -> dict:
+    """Resolve the active conversation for this profile, creating one if needed."""
+    conv = db.get_conversation(request.cookies.get(CONV_COOKIE))
+    # The cookie must point to a conversation owned by the active profile.
+    if conv is None or conv["profile_id"] != profile["id"]:
+        conv = None
+        existing = db.list_conversations(profile["id"])
+        if existing:
+            conv = db.get_conversation(existing[0]["id"])
+    if conv is None:
+        conv = db.get_conversation(db.create_conversation(profile["id"]))
+    return conv
+
+
+@app.get("/chat", response_class=HTMLResponse)
+def chat_page(request: Request):
+    profile = current_profile(request)
+    conv = _active_conversation(request, profile)
+    ctx = _base_context(
+        request,
+        profile,
+        conversation=conv,
+        conversations=db.list_conversations(profile["id"]),
+        messages=db.get_messages(conv["id"]),
+        llm_ok=llm.is_available(),
+        llm_model=settings.anthropic_model,
+    )
+    resp = _render(request, profile, "chat.html", ctx)
+    resp.set_cookie(CONV_COOKIE, str(conv["id"]), max_age=60 * 60 * 24 * 365, samesite="lax")
+    return resp
+
+
+@app.post("/chat/message")
+async def chat_message(
+    request: Request, message: str = Form(""), conversation_id: str = Form("")
+):
+    profile = current_profile(request)
+    conv = db.get_conversation(conversation_id)
+    if conv is None or conv["profile_id"] != profile["id"]:
+        conv = _active_conversation(request, profile)
+
+    if message.strip():
+        await run_in_threadpool(chat.run_turn, conv["id"], profile["id"], message)
+
+    resp = RedirectResponse(url="/chat", status_code=303)
+    resp.set_cookie(CONV_COOKIE, str(conv["id"]), max_age=60 * 60 * 24 * 365, samesite="lax")
+    return resp
+
+
+@app.post("/chat/new")
+def chat_new(request: Request):
+    profile = current_profile(request)
+    new_id = db.create_conversation(profile["id"])
+    resp = RedirectResponse(url="/chat", status_code=303)
+    resp.set_cookie(CONV_COOKIE, str(new_id), max_age=60 * 60 * 24 * 365, samesite="lax")
+    return resp
+
+
+@app.post("/chat/{conversation_id}/delete")
+def chat_delete(request: Request, conversation_id: int):
+    profile = current_profile(request)
+    conv = db.get_conversation(conversation_id)
+    if conv and conv["profile_id"] == profile["id"]:
+        db.delete_conversation(conversation_id)
+    resp = RedirectResponse(url="/chat", status_code=303)
+    resp.delete_cookie(CONV_COOKIE)
+    return resp

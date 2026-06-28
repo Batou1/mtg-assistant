@@ -7,9 +7,10 @@ and a budget-constrained buylist priced in EUR.
 
 > This release: ManaBox import, French natural-language intent via **Claude
 > (Anthropic API)**, Commander suggestions with gap analysis and an EUR buylist,
-> full Commander decklist generation, and **60-card format archetype research**
+> full Commander decklist generation, **60-card format archetype research**
 > (Standard, Pauper, Modern, Pioneer…) grounded by Brave Search + validated
-> against Scryfall.
+> against Scryfall, and an **iterative chat** that drives the whole pipeline by
+> conversation (tool-calling).
 
 ## How it works
 
@@ -41,6 +42,14 @@ and a budget-constrained buylist priced in EUR.
    gap analysis vs your collection + an EUR buylist. This is an archetype base —
    not an exact tournament list — because the popular decklist sites are
    Cloudflare-blocked.
+7. **Iterative chat** (`/chat`) — instead of one-shot forms, hold a conversation.
+   **Claude** drives the whole pipeline through **tool-calling**: it inspects your
+   collection, suggests commanders, researches 60-card archetypes, generates full
+   decklists and looks up cards — all on demand, replying in French and keeping
+   context, so you can refine (*« plutôt en mono-noir »*, *« monte le budget à
+   80 € »*) without re-typing everything. Conversations are saved per profile.
+   The model never names a card outside a tool result, so suggestions stay
+   grounded. Without an API key the chat falls back to a one-shot analysis.
 
 Card data, prices and EDHREC pages are resolved **on demand and cached** in
 SQLite — no multi-gigabyte bulk download, minimal disk footprint.
@@ -89,6 +98,8 @@ proposes from its own knowledge only, still Scryfall-validated).
 | `MTG_MIN_DECKS`      | `300`                       | Min EDHREC decks for a commander     |
 | `ANTHROPIC_API_KEY`  | *(empty)*                   | Anthropic API key (read by the SDK)  |
 | `MTG_ANTHROPIC_MODEL`| `claude-sonnet-4-6`         | Claude model used for all LLM tasks  |
+| `MTG_CHAT_MAX_TOOL_ITERS` | `6`                    | Max tool-call rounds per chat turn   |
+| `MTG_CHAT_HISTORY`   | `16`                        | Past messages replayed to the API    |
 | `MTG_CACHE_TTL_DAYS` | `7`                         | Card / EDHREC cache freshness        |
 | `MTG_PRICE_TTL_DAYS` | `1`                         | Price cache freshness                |
 | `MTG_CURRENCY`       | `EUR`                       | Budget currency (Cardmarket)         |
@@ -149,6 +160,7 @@ app/
   deckgen.py    full 100-card Commander decklist builder
   research.py   Brave Search client (web research)
   formats60.py  60-card archetype pipeline (research + Scryfall validation)
+  chat.py       iterative chat: agent loop + tools over the pipeline
   main.py       FastAPI routes + templates
 deploy/         launchd service + Cloudflare tunnel snippet
 tests/          pytest

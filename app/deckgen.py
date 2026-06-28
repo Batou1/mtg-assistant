@@ -239,3 +239,39 @@ def _decklist_text(commander_item: dict, groups: list) -> str:
         for c in group["cards"]:
             lines.append(f"{c['qty']} {c['name']}")
     return "\n".join(lines)
+
+
+def generate_full_deck(commander_name: str, budget, theme: str, profile_id: int):
+    """Resolve cards, build the decklist and write an LLM game plan.
+
+    Blocking (network I/O via Scryfall/EDHREC); run it in a threadpool. Shared by
+    the ``/generate`` route and the chat ``generate_decklist`` tool. Returns
+    ``(deck, data)`` where ``deck`` is None if the commander can't be resolved.
+    """
+    import httpx
+
+    from . import db, edhrec, llm
+    from .config import settings
+
+    data = edhrec.fetch_commander(commander_name)
+    if data.get("_not_found") or data.get("_error"):
+        return None, data
+
+    with httpx.Client(timeout=30, headers={"User-Agent": settings.user_agent}) as client:
+        nonland, lands = candidate_names(data, commander_name)
+        to_resolve = [commander_name] + nonland + lands + BASIC_NAMES
+        resolved, _nf = scryfall.resolve_cards(to_resolve, client=client)
+
+    commander_card = resolved.get(commander_name.split("//")[0].strip().lower())
+    if not commander_card:
+        return None, {"_error": True}
+
+    owned = db.owned_name_keys(profile_id)
+    deck = build_deck(
+        commander_card, data, owned, budget, resolved,
+        target_lands=settings.deck_lands, deck_size=settings.deck_size,
+    )
+
+    key_cards = [c["name"] for g in deck["groups"] for c in g["cards"] if not c["is_basic"]]
+    deck["gameplan"] = llm.deck_gameplan(commander_name, key_cards, theme=theme)
+    return deck, data
