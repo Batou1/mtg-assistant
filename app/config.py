@@ -32,7 +32,11 @@ class Settings:
     ollama_model: str = os.environ.get("MTG_OLLAMA_MODEL", "qwen2.5:7b-instruct")
     ollama_timeout: float = float(os.environ.get("MTG_OLLAMA_TIMEOUT", "60"))
 
-    # --- Web research (Phase 2; Brave Search complements curated sources) --
+    # --- Deck generation ---------------------------------------------------
+    deck_size: int = int(os.environ.get("MTG_DECK_SIZE", "100"))
+    deck_lands: int = int(os.environ.get("MTG_DECK_LANDS", "36"))
+
+    # --- Web research (Phase 2b; Brave Search complements curated sources) --
     brave_api_key: str = os.environ.get("MTG_BRAVE_API_KEY", "")
 
     # --- Pricing / budget --------------------------------------------------

@@ -5,10 +5,10 @@ collection. Import your cards, describe in plain French the deck you want, and
 get Commander suggestions you can actually build — with a completeness analysis
 and a budget-constrained buylist priced in EUR.
 
-> Phase 0 + 1 (this release): ManaBox import, French natural-language intent via
-> a local LLM, Commander suggestions with gap analysis and an EUR buylist.
-> Phase 2 (planned): full decklist generation and 60-card formats with web
-> research of recent tournament decks.
+> Phases 0–2a (this release): ManaBox import, French natural-language intent via
+> a local LLM, Commander suggestions with gap analysis and an EUR buylist, and
+> full Commander decklist generation. Phase 2b (planned): 60-card formats with
+> web research of recent tournament decks (curated sources + Brave Search).
 
 ## How it works
 
@@ -28,6 +28,11 @@ and a budget-constrained buylist priced in EUR.
 4. **Buylist** — the missing cards are priced in EUR from
    [Scryfall](https://scryfall.com)'s Cardmarket data, and the most synergistic
    ones are picked greedily within your budget.
+5. **Generate a full decklist** — from any suggested commander, build a complete
+   100-card Commander deck: owned cards are reused, missing ones bought within
+   budget (ranked by popularity-per-euro so the deck stays complete), lands
+   topped up with basics. Each card is tagged *owned* / *to buy*, with a
+   copy-paste export and an optional LLM-written game-plan summary.
 
 Card data, prices and EDHREC pages are resolved **on demand and cached** in
 SQLite — no multi-gigabyte bulk download, minimal disk footprint.
@@ -92,8 +97,8 @@ Cloudflare Access policy. Remove later with `./deploy/uninstall-service.sh`.
 - **Commander only** for now (EDHREC-based). 60-card formats arrive in Phase 2.
 - **EDHREC has no official API**; this uses its public JSON endpoints. If the
   payload shape changes, `app/edhrec.py` is the single place to adjust.
-- The LLM never names cards itself — it only structures your request — so card
-  suggestions can't be hallucinated.
+- The LLM never names cards itself — it only structures your request and
+  summarises a chosen list — so card suggestions can't be hallucinated.
 - First analysis of a large collection makes many Scryfall/EDHREC calls;
   caching makes later runs fast.
 
@@ -108,10 +113,11 @@ app/
   scryfall.py   card resolution, prices (EUR), images, legality
   edhrec.py     commander pages: popularity + recommended cards
   commanders.py legal-commander detection
-  llm.py        Ollama client (JSON mode)
+  llm.py        Ollama client (JSON mode + free-text game plan)
   intent.py     French wish → structured intent (LLM + heuristic fallback)
   analysis.py   intent-aware commander ranking + gap analysis
   buylist.py    budget-constrained EUR shopping list
+  deckgen.py    full 100-card Commander decklist builder
   main.py       FastAPI routes + templates
 deploy/         launchd service + Cloudflare tunnel snippet
 tests/          pytest
