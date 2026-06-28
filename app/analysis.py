@@ -16,12 +16,23 @@ def _norm(name: str) -> str:
     return name.split("//")[0].strip().lower()
 
 
-def _color_ok(card: dict, wanted: list[str]) -> bool:
-    """A commander fits if its color identity is within the requested colors."""
-    if not wanted:
-        return True
+def _color_ok(card: dict, wanted: list[str], max_colors: int | None) -> bool:
+    """Does the commander respect the requested colours and colour count?
+
+    With colours requested, the commander's colour identity must be non-empty
+    and a subset of them (so 'noir/blanc' never surfaces a blue or green card,
+    nor a colourless one). ``max_colors`` enforces e.g. mono-colour: 'monocouleur
+    noir ou blanc' is colours {B,W} with max_colors=1, keeping only mono-black or
+    mono-white commanders — not two-colour Orzhov.
+    """
     identity = set(scryfall.color_identity(card))
-    return identity.issubset(set(wanted))
+    if wanted:
+        allowed = set(wanted)
+        if not identity or not identity.issubset(allowed):
+            return False
+    if max_colors is not None and len(identity) > max_colors:
+        return False
+    return True
 
 
 def _theme_score(intent: dict, recommended: list[str], tags: list[str]) -> int:
@@ -76,7 +87,9 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
             if cid in seen:
                 continue
             seen.add(cid)
-            if commanders.is_commander(card) and _color_ok(card, intent.get("colors") or []):
+            if commanders.is_commander(card) and _color_ok(
+                card, intent.get("colors") or [], intent.get("max_colors")
+            ):
                 candidates.append(card)
 
         results = []
