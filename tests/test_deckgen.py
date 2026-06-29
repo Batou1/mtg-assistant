@@ -79,6 +79,28 @@ def test_decklist_text_has_commander_and_basics():
     assert "3 Mountain" in text
 
 
+def test_sideboard_holds_relevant_cards_not_in_main_deck():
+    # Under budget, Expensive Bomb is excluded from the 100 but is a relevant
+    # alternative -> it should surface in the sideboard, flagged to buy.
+    deck = _build(budget=5.0)
+    main = {c["name"] for g in deck["groups"] for c in g["cards"]}
+    sb_names = {c["name"] for c in deck["sideboard"]}
+    assert "Expensive Bomb" in sb_names
+    assert not (main & sb_names)  # no overlap with the main deck
+    assert deck["counts"]["sideboard"] == len(deck["sideboard"])
+    # Sideboard ignores the main budget so pricey staples still show up to buy.
+    assert deck["counts"]["sideboard_to_buy"] == 1
+    assert deck["sideboard_buy_total_eur"] == 100.0
+    assert "Sideboard" in deck["decklist_text"]
+
+
+def test_sideboard_empty_when_pool_fully_used():
+    # Without a budget every candidate enters the main deck, leaving no leftovers.
+    deck = _build(budget=None)
+    assert deck["sideboard"] == []
+    assert deck["counts"]["sideboard"] == 0
+
+
 def test_commander_excluded_from_candidates():
     nonland, lands = deckgen.candidate_names(DATA, "Krenko, Mob Boss")
     assert "Krenko, Mob Boss" not in nonland + lands

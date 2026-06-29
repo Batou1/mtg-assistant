@@ -107,7 +107,8 @@ def _basics_for(colors: list[str], count: int) -> list[tuple[str, int]]:
 
 def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
                budget: float | None, cards_by_name: dict,
-               target_lands: int = 36, deck_size: int = 100) -> dict:
+               target_lands: int = 36, deck_size: int = 100,
+               sideboard_size: int = 18) -> dict:
     """Assemble a decklist. See module docstring for the selection strategy."""
     pool = _pool(data, commander_card["name"])
 
@@ -191,6 +192,19 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
     ]
     basics_total = sum(b["qty"] for b in basic_items)
 
+    # --- Sideboard: relevant alternatives not in the main deck ------------
+    # The next most-played EDHREC cards that didn't make the 100 — swap-ins the
+    # player can consider. Prices/owned status are tracked like the main deck.
+    used = {_norm(c["name"]) for c in spells + nonbasic_lands}
+    used.add(_norm(commander_card["name"]))
+    sideboard = [
+        make_item(e)
+        for e in _sorted(pool, lands=False)
+        if _norm(e["name"]) not in used and card_of(e["name"]) is not None
+    ][:sideboard_size]
+    sideboard_to_buy = [c for c in sideboard if not c["owned"]]
+    sideboard_buy_total = round(sum(c["price_eur"] or 0 for c in sideboard_to_buy), 2)
+
     # --- Group spells by category for display -----------------------------
     groups = []
     for cat in CATEGORY_ORDER:
@@ -215,6 +229,8 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
     return {
         "commander": commander_item,
         "groups": groups,
+        "sideboard": sideboard,
+        "sideboard_buy_total_eur": sideboard_buy_total,
         "buy_list": sorted(to_buy, key=lambda c: c["price_eur"] or 0, reverse=True),
         "buy_total_eur": round(buy_total, 2),
         "budget_eur": budget,
@@ -227,16 +243,23 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
             "lands": lands_total,
             "spells": len(spells),
             "spells_target": spells_target,
+            "sideboard": len(sideboard),
+            "sideboard_to_buy": len(sideboard_to_buy),
         },
         "unfilled_spells": max(0, spells_target - len(spells)),
-        "decklist_text": _decklist_text(commander_item, groups),
+        "decklist_text": _decklist_text(commander_item, groups, sideboard),
     }
 
 
-def _decklist_text(commander_item: dict, groups: list) -> str:
+def _decklist_text(commander_item: dict, groups: list, sideboard: list | None = None) -> str:
     lines = [f"1 {commander_item['name']}"]
     for group in groups:
         for c in group["cards"]:
+            lines.append(f"{c['qty']} {c['name']}")
+    if sideboard:
+        lines.append("")
+        lines.append("Sideboard")
+        for c in sideboard:
             lines.append(f"{c['qty']} {c['name']}")
     return "\n".join(lines)
 
@@ -270,6 +293,7 @@ def generate_full_deck(commander_name: str, budget, theme: str, profile_id: int)
     deck = build_deck(
         commander_card, data, owned, budget, resolved,
         target_lands=settings.deck_lands, deck_size=settings.deck_size,
+        sideboard_size=settings.deck_sideboard,
     )
 
     key_cards = [c["name"] for g in deck["groups"] for c in g["cards"] if not c["is_basic"]]
