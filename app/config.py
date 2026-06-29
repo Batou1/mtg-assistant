@@ -15,10 +15,28 @@ class Settings:
     # Minimum number of EDHREC decks a commander needs to be considered.
     min_decks: int = int(os.environ.get("MTG_MIN_DECKS", "300"))
 
+    # --- Commander discovery (propose commanders you don't own) ------------
+    # Also surface commanders absent from the collection but linked to cards you
+    # own (via EDHREC card pages), matching the requested theme/colours/budget.
+    discovery_enabled: bool = os.environ.get("MTG_DISCOVERY", "1").lower() not in (
+        "0", "false", "no", "off", ""
+    )
+    # How many owned cards to query for "which commanders play this" (bounds I/O).
+    discovery_card_limit: int = int(os.environ.get("MTG_DISCOVERY_CARD_LIMIT", "40"))
+    # How many discovered candidate commanders to resolve + colour-filter.
+    discovery_pool: int = int(os.environ.get("MTG_DISCOVERY_POOL", "20"))
+    # How many proposed (unowned) commanders to fully score + display.
+    discovery_limit: int = int(os.environ.get("MTG_DISCOVERY_LIMIT", "4"))
+
     # --- External services -------------------------------------------------
     scryfall_api: str = os.environ.get("MTG_SCRYFALL_API", "https://api.scryfall.com")
     edhrec_json: str = os.environ.get(
         "MTG_EDHREC_JSON", "https://json.edhrec.com/pages/commanders"
+    )
+    # EDHREC per-card pages list the commanders that most play a card — the
+    # source for discovering commanders you don't own but that fit your cards.
+    edhrec_cards_json: str = os.environ.get(
+        "MTG_EDHREC_CARDS_JSON", "https://json.edhrec.com/pages/cards"
     )
     request_delay: float = float(os.environ.get("MTG_REQUEST_DELAY", "0.1"))
     error_retry_cooldown: float = float(os.environ.get("MTG_ERROR_RETRY_COOLDOWN", "6"))

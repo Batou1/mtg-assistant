@@ -85,7 +85,10 @@ TOOLS = [
         "description": (
             "Pour le format COMMANDER : à partir des cartes possédées, propose des "
             "commandants jouables qui collent aux couleurs/thème, avec le taux de "
-            "complétude EDHREC et une liste d'achat dans le budget."
+            "complétude EDHREC et une liste d'achat dans le budget. Inclut aussi "
+            "des commandants NON possédés mais liés à tes cartes (champ owned=false, "
+            "avec price_eur, link_count et total_cost_eur) qui respectent thème, "
+            "couleurs et budget."
         ),
         "input_schema": {"type": "object", "properties": dict(_INTENT_PROPS)},
     },
@@ -178,7 +181,10 @@ def _exec_suggest_commanders(args: dict, profile_id: int):
             None,
         )
 
-    top = results[:6]
+    # Keep both owned suggestions and proposed (unowned) commanders in the chat.
+    owned_res = [r for r in results if r.get("owned")]
+    proposed_res = [r for r in results if not r.get("owned")]
+    top = owned_res[:5] + proposed_res[:3]
     # Trim the heavy fields we don't render in the chat artifact.
     for r in top:
         r.pop("missing_cards", None)
@@ -188,11 +194,20 @@ def _exec_suggest_commanders(args: dict, profile_id: int):
     lines = []
     for r in top:
         buy = r.get("buylist") or {}
-        lines.append(
-            f"- {r['name']} : {r['pct']}% complété ({r['owned_count']}/"
-            f"{r['total_recommended']}), {r['num_decks']} decks EDHREC, "
-            f"achat {buy.get('total_eur', 0)} € ({buy.get('bought_count', 0)} cartes)"
-        )
+        if r.get("owned"):
+            lines.append(
+                f"- {r['name']} (possédé) : {r['pct']}% complété ({r['owned_count']}/"
+                f"{r['total_recommended']}), {r['num_decks']} decks EDHREC, "
+                f"achat {buy.get('total_eur', 0)} € ({buy.get('bought_count', 0)} cartes)"
+            )
+        else:
+            price = r.get("price_eur")
+            price_txt = f"{price} €" if price is not None else "prix indisponible"
+            lines.append(
+                f"- {r['name']} (à acquérir, {price_txt} ; {r.get('link_count', 0)} "
+                f"de tes cartes y mènent) : {r['pct']}% complété ({r['owned_count']}/"
+                f"{r['total_recommended']}), coût total ~{r.get('total_cost_eur', 0)} €"
+            )
     return "Commandants proposés :\n" + "\n".join(lines), artifact
 
 
@@ -346,8 +361,15 @@ def _snapshot_commanders(art: dict) -> str:
     lines = ["COMMANDANTS SUGGÉRÉS :"]
     for r in art.get("results") or []:
         buy = r.get("buylist") or {}
+        if r.get("owned"):
+            tag = "possédé"
+        else:
+            price = r.get("price_eur")
+            price_txt = f"{price} €" if price is not None else "prix indisponible"
+            tag = (f"à acquérir, {price_txt}, {r.get('link_count', 0)} cartes liées, "
+                   f"coût total ~{r.get('total_cost_eur', 0)} €")
         lines.append(
-            f"- {r['name']} ({_fmt_colors(r.get('color_identity'))}) : "
+            f"- {r['name']} ({_fmt_colors(r.get('color_identity'))}, {tag}) : "
             f"{r.get('pct')}% complété ({r.get('owned_count')}/{r.get('total_recommended')}), "
             f"{r.get('num_decks')} decks EDHREC, achat {buy.get('total_eur', 0)} €."
         )
