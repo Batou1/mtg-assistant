@@ -3,6 +3,18 @@
 {% block title %}Chat · MTG Assistant{% endblock %}
 {% block content %}
 
+{# Flatten artifacts across the thread: stable anchor ids + the latest id per
+   type (used to collapse superseded proposals). #}
+{% set ns = namespace(flat=[], last={}) %}
+{% for m in messages %}
+  {% set mi = loop.index0 %}
+  {% for art in m.artifacts or [] %}
+    {% set aid = 'art-' ~ mi ~ '-' ~ loop.index0 %}
+    {% set _ = ns.flat.append({'id': aid, 'art': art}) %}
+    {% set _ = ns.last.update({art.type: aid}) %}
+  {% endfor %}
+{% endfor %}
+
 <div class="chat-layout">
   <!-- Conversations sidebar -->
   <aside class="chat-sidebar">
@@ -21,6 +33,19 @@
       </li>
       {% endfor %}
     </ul>
+
+    {% if ns.flat %}
+    <nav class="deck-nav">
+      <h4>Propositions ({{ ns.flat|length }})</h4>
+      <ul>
+        {% for item in ns.flat %}
+        <li class="{{ 'current' if item.id == ns.last.get(item.art.type) else 'past' }}">
+          <a href="#{{ item.id }}">{{ artifacts.label(item.art) }}</a>
+        </li>
+        {% endfor %}
+      </ul>
+    </nav>
+    {% endif %}
   </aside>
 
   <!-- Conversation thread -->
@@ -48,13 +73,27 @@
       {% endif %}
 
       {% for m in messages %}
+      {% set mi = loop.index0 %}
       <div class="msg msg-{{ m.role }}">
         <div class="bubble">
           {% for para in m.content.split("\n") %}{% if para.strip() %}<p>{{ para }}</p>{% endif %}{% endfor %}
         </div>
         {% if m.artifacts %}
         <div class="msg-artifacts">
-          {% for art in m.artifacts %}{{ artifacts.render(art) }}{% endfor %}
+          {% for art in m.artifacts %}
+          {% set aid = 'art-' ~ mi ~ '-' ~ loop.index0 %}
+          {% set superseded = ns.last.get(art.type) != aid %}
+          <div class="art-wrap{{ ' superseded' if superseded }}" id="{{ aid }}">
+            {% if superseded %}
+            <details class="art-collapsed">
+              <summary>{{ artifacts.label(art) }}</summary>
+              {{ artifacts.render(art) }}
+            </details>
+            {% else %}
+            {{ artifacts.render(art) }}
+            {% endif %}
+          </div>
+          {% endfor %}
         </div>
         {% endif %}
       </div>

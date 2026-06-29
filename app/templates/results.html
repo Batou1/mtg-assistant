@@ -45,12 +45,13 @@
         <h3>{{ r.name }}
           {% if r.owned is defined and not r.owned %}<span class="tag buy-tag">proposé · non possédé</span>
           {% else %}<span class="tag owned-tag">possédé</span>{% endif %}
+          {% if r.below_threshold %}<span class="tag niche-tag">peu joué</span>{% endif %}
         </h3>
         <p class="pips">
           {% for c in r.color_identity %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}
           {% if not r.color_identity %}<span class="pip pip-C">incolore</span>{% endif %}
         </p>
-        <p class="muted small">{{ "{:,}".format(r.num_decks).replace(",", " ") }} decks sur EDHREC</p>
+        <p class="muted small">{{ "{:,}".format(r.num_decks).replace(",", " ") }} decks sur EDHREC{% if r.below_threshold %} · sous le seuil habituel{% endif %}</p>
 
         {% if r.owned is defined and not r.owned %}
         <p class="muted small">Commandant à acquérir :
