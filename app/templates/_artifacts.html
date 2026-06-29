@@ -8,12 +8,28 @@
     <div class="commander-head">
       {% if r.image %}<img class="card-img" src="{{ r.image }}" alt="{{ r.name }}" loading="lazy">{% endif %}
       <div class="commander-meta">
-        <h3>{{ r.name }}</h3>
+        <h3>{{ r.name }}
+          {% if r.owned is defined and not r.owned %}<span class="tag buy-tag">proposé · non possédé</span>
+          {% else %}<span class="tag owned-tag">possédé</span>{% endif %}
+        </h3>
         <p class="pips">
           {% for c in r.color_identity %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}
           {% if not r.color_identity %}<span class="pip pip-C">incolore</span>{% endif %}
         </p>
         <p class="muted small">{{ "{:,}".format(r.num_decks).replace(",", " ") }} decks sur EDHREC</p>
+        {% if r.owned is defined and not r.owned %}
+        <p class="muted small">Commandant à acquérir :
+          <strong>{% if r.price_eur is not none %}{{ "%.2f"|format(r.price_eur) }} €{% else %}prix indisponible{% endif %}</strong>
+          {% if r.total_cost_eur is not none %} · coût total ~{{ "%.2f"|format(r.total_cost_eur) }} €{% endif %}
+          {% if r.link_count %} · {{ r.link_count }} de tes cartes y mènent{% endif %}
+        </p>
+        {% if r.linked_owned_cards %}
+        <details class="owned-list">
+          <summary>Tes cartes qui pointent vers ce commandant</summary>
+          <ul class="namelist">{% for name in r.linked_owned_cards %}<li>{{ name }}</li>{% endfor %}</ul>
+        </details>
+        {% endif %}
+        {% endif %}
         <div class="completion">
           <div class="bar"><span style="width: {{ r.pct }}%"></span></div>
           <p><strong>{{ r.owned_count }}</strong> / {{ r.total_recommended }} cartes recommandées possédées

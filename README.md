@@ -26,7 +26,13 @@ and a budget-constrained buylist priced in EUR.
    heuristic parser takes over so the app keeps working.
 3. **Get suggestions** — for the legal commanders you own that match the
    requested colours, the app looks up [EDHREC](https://edhrec.com) and reports
-   how many of each commander's most-played cards you already have.
+   how many of each commander's most-played cards you already have. It **also
+   proposes commanders you don't own** but that your cards point to: for a
+   sample of your cards it asks EDHREC which commanders most play them, ranks the
+   candidates by how many of your cards link to each, then keeps the ones that
+   fit the requested colours, theme and budget (the commander's own EUR price is
+   counted against the budget). Proposed commanders are tagged *non possédé* with
+   their price, total acquisition cost, and the owned cards that led to them.
 4. **Buylist** — the missing cards are priced in EUR from
    [Scryfall](https://scryfall.com)'s Cardmarket data, and the most synergistic
    ones are picked greedily within your budget.
@@ -47,9 +53,16 @@ and a budget-constrained buylist priced in EUR.
    collection, suggests commanders, researches 60-card archetypes, generates full
    decklists and looks up cards — all on demand, replying in French and keeping
    context, so you can refine (*« plutôt en mono-noir »*, *« monte le budget à
-   80 € »*) without re-typing everything. Conversations are saved per profile.
-   The model never names a card outside a tool result, so suggestions stay
-   grounded. Without an API key the chat falls back to a one-shot analysis.
+   80 € »*) without re-typing everything. The chat is **interactive**: when your
+   request is vague it asks a clarifying question (format? couleurs? budget?)
+   before building anything. Once a deck or set of suggestions exists, the latest
+   one is **replayed into the model's context**, so follow-up questions (*«
+   pourquoi cette carte ? »*, *« quelle est la courbe de mana ? »*, *« quelles
+   cartes acheter en priorité ? »*) are answered from the deck already built —
+   **without regenerating it** (no repeated EDHREC/Scryfall calls). Conversations
+   are saved per profile. The model never names a card outside a tool result (or
+   the replayed context of a previous tool result), so suggestions stay grounded.
+   Without an API key the chat falls back to a one-shot analysis.
 
 Card data, prices and EDHREC pages are resolved **on demand and cached** in
 SQLite — no multi-gigabyte bulk download, minimal disk footprint.
@@ -96,6 +109,10 @@ proposes from its own knowledge only, still Scryfall-validated).
 | -------------------- | --------------------------- | ------------------------------------ |
 | `MTG_DB_PATH`        | `data/app.db`               | SQLite database location             |
 | `MTG_MIN_DECKS`      | `300`                       | Min EDHREC decks for a commander     |
+| `MTG_DISCOVERY`      | `1`                         | Propose commanders you don't own (`0` to disable) |
+| `MTG_DISCOVERY_CARD_LIMIT` | `40`                  | Owned cards probed for discovery     |
+| `MTG_DISCOVERY_POOL` | `20`                        | Candidate commanders resolved + filtered |
+| `MTG_DISCOVERY_LIMIT`| `4`                         | Proposed (unowned) commanders shown  |
 | `ANTHROPIC_API_KEY`  | *(empty)*                   | Anthropic API key (read by the SDK)  |
 | `MTG_ANTHROPIC_MODEL`| `claude-sonnet-4-6`         | Claude model used for all LLM tasks  |
 | `MTG_CHAT_MAX_TOOL_ITERS` | `6`                    | Max tool-call rounds per chat turn   |

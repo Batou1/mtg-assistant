@@ -55,6 +55,115 @@ def _theme_score(intent: dict, recommended: list[str], tags: list[str]) -> int:
     return score
 
 
+# Basic lands carry no commander signal, so they're never probed for discovery.
+_BASIC_LANDS = {"plains", "island", "swamp", "mountain", "forest", "wastes"}
+
+
+def _build_result(card: dict, data: dict, owned_keys: set, intent: dict,
+                  *, owned: bool) -> dict:
+    """Score a commander against the collection + intent (shared owned/unowned).
+
+    ``owned`` flags whether the commander is in the collection; for a proposed
+    (unowned) commander we also price it so its cost can count against the budget.
+    """
+    ordered = edhrec.extract_recommended_ordered(data)
+    ordered = [r for r in ordered if _norm(r) != _norm(card["name"])]
+    owned_cards_list = [r for r in ordered if _norm(r) in owned_keys]
+    missing_cards = [r for r in ordered if _norm(r) not in owned_keys]
+    total = len(ordered)
+    return {
+        "name": commanders.front_name(card),
+        "full_name": card["name"],
+        "image": scryfall.image(card),
+        "color_identity": scryfall.color_identity(card),
+        "num_decks": edhrec.extract_num_decks(data),
+        "owned_count": len(owned_cards_list),
+        "total_recommended": total,
+        "pct": round(100 * len(owned_cards_list) / total, 1) if total else 0.0,
+        "owned_cards": owned_cards_list,
+        "missing_cards": missing_cards,
+        "theme_score": _theme_score(intent, ordered, edhrec.extract_tags(data)),
+        "owned": owned,
+        "price_eur": None if owned else scryfall.price_eur(card),
+        "link_count": 0,            # owned cards pointing here (discovery only)
+        "linked_owned_cards": [],   # a sample of those cards (discovery only)
+        "buylist": None,            # filled in by analyze()
+    }
+
+
+def _discover_unowned(owned_cards: list, owned_keys: set, intent: dict,
+                      *, existing: set, client):
+    """Propose commanders you don't own but that your cards point to (EDHREC).
+
+    For a bounded sample of owned cards, look up the commanders that most play
+    them, rank candidates by how many of your cards point to each, then keep the
+    legal commanders that fit the requested colours and budget. Returns
+    (results, stats).
+    """
+    budget = intent.get("budget_eur")
+
+    # 1. Probe a bounded, deterministic sample of owned cards (skip basics).
+    probe = sorted({
+        c["name"] for c in owned_cards
+        if c.get("name") and _norm(c["name"]) not in _BASIC_LANDS
+    })[: settings.discovery_card_limit]
+
+    # 2. Aggregate the commanders those cards are most played in.
+    link_count: dict[str, int] = {}
+    linked_by: dict[str, list[str]] = {}
+    queried = 0
+    for name in probe:
+        data = edhrec.fetch_card(name, client=client)
+        if data.get("_error") or data.get("_not_found"):
+            continue
+        queried += 1
+        for cmd in edhrec.extract_top_commanders(data):
+            if _norm(cmd) in existing:  # you already own this commander
+                continue
+            link_count[cmd] = link_count.get(cmd, 0) + 1
+            linked_by.setdefault(cmd, [])
+            if name not in linked_by[cmd]:
+                linked_by[cmd].append(name)
+
+    stats = {"queried_cards": queried, "candidate_count": len(link_count)}
+    ranked = sorted(link_count, key=lambda n: link_count[n], reverse=True)
+    ranked = ranked[: settings.discovery_pool]
+    if not ranked:
+        return [], stats
+
+    # 3. Resolve candidates; keep legal commanders fitting colours + budget.
+    resolved, _nf = scryfall.resolve_cards(ranked, client=client)
+    discovered: list[dict] = []
+    for name in ranked:
+        if len(discovered) >= settings.discovery_limit:
+            break
+        card = resolved.get(_norm(name))
+        if not card or not commanders.is_commander(card):
+            continue
+        if not _color_ok(card, intent.get("colors") or [], intent.get("max_colors")):
+            continue
+        price = scryfall.price_eur(card)
+        # "Match the budget": a commander you must buy can't exceed it alone.
+        if budget is not None and price is not None and price > budget:
+            continue
+        data = edhrec.fetch_commander(commanders.front_name(card), client=client)
+        if data.get("_error") or data.get("_not_found"):
+            continue
+        if edhrec.extract_num_decks(data) < settings.min_decks:
+            continue
+        result = _build_result(card, data, owned_keys, intent, owned=False)
+        result["link_count"] = link_count[name]
+        result["linked_owned_cards"] = linked_by[name][:8]
+        discovered.append(result)
+
+    # Strongest collection link first, then theme fit and popularity.
+    discovered.sort(
+        key=lambda r: (r["link_count"], r["theme_score"], r["owned_count"], r["num_decks"]),
+        reverse=True,
+    )
+    return discovered, stats
+
+
 def analyze(intent: dict, profile_id: int, limit: int = 12):
     """Return ranked commander suggestions for a profile's collection + intent."""
     notices = []
@@ -113,29 +222,7 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
                 )
                 return True
 
-            ordered = edhrec.extract_recommended_ordered(data)
-            ordered = [r for r in ordered if _norm(r) != _norm(card["name"])]
-            owned_cards_list = [r for r in ordered if _norm(r) in owned_keys]
-            missing_cards = [r for r in ordered if _norm(r) not in owned_keys]
-            total = len(ordered)
-            tags = edhrec.extract_tags(data)
-
-            results.append(
-                {
-                    "name": commanders.front_name(card),
-                    "full_name": card["name"],
-                    "image": scryfall.image(card),
-                    "color_identity": scryfall.color_identity(card),
-                    "num_decks": num_decks,
-                    "owned_count": len(owned_cards_list),
-                    "total_recommended": total,
-                    "pct": round(100 * len(owned_cards_list) / total, 1) if total else 0.0,
-                    "owned_cards": owned_cards_list,
-                    "missing_cards": missing_cards,
-                    "theme_score": _theme_score(intent, ordered, tags),
-                    "buylist": None,  # filled in below for displayed commanders
-                }
-            )
+            results.append(_build_result(card, data, owned_keys, intent, owned=True))
             return True
 
         for card in candidates:
@@ -159,9 +246,26 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
         )
         results = results[:limit]
 
-        # Build a budget-constrained buylist for each displayed commander.
+        # Also propose commanders you don't own but that your cards point to.
+        discovery = {"queried_cards": 0, "candidate_count": 0}
+        if settings.discovery_enabled:
+            proposed, discovery = _discover_unowned(
+                owned_cards, owned_keys, intent,
+                existing=owned_keys, client=client,
+            )
+            # Owned suggestions first (free to build), proposed ones after.
+            results = results + proposed
+
+        # Build a budget-constrained buylist for each displayed commander. For a
+        # proposed commander, its own price is reserved from the budget first and
+        # folded into the deck's total acquisition cost.
         for r in results:
-            r["buylist"] = buylist.build(r["missing_cards"], budget, client=client)
+            sub_budget = budget
+            if not r["owned"] and budget is not None and r["price_eur"] is not None:
+                sub_budget = max(0.0, round(budget - r["price_eur"], 2))
+            r["buylist"] = buylist.build(r["missing_cards"], sub_budget, client=client)
+            commander_cost = 0.0 if r["owned"] or r["price_eur"] is None else r["price_eur"]
+            r["total_cost_eur"] = round(r["buylist"]["total_eur"] + commander_cost, 2)
 
     return {
         "results": results,
@@ -173,4 +277,6 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
         "skipped": sorted(commanders.front_name(c) for c in errored),
         "min_decks": settings.min_decks,
         "budget_eur": budget,
+        "discovery": discovery,
+        "proposed_count": sum(1 for r in results if not r["owned"]),
     }

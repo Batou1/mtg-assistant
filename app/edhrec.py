@@ -113,8 +113,64 @@ def fetch_commander(name: str, client: httpx.Client | None = None) -> dict:
     return result
 
 
+def fetch_card(name: str, client: httpx.Client | None = None) -> dict:
+    """Return EDHREC's per-card page JSON (lists commanders that play the card).
+
+    Same sentinels and caching as :func:`fetch_commander`, but cached under a
+    ``card:`` slug prefix so a card page never collides with the commander page
+    of a legendary creature sharing its slug.
+    """
+    slug = slugify(name)
+    cache_key = f"card:{slug}"
+    cached = db.get_edhrec(cache_key)
+    if cached is not None:
+        return cached
+
+    url = f"{settings.edhrec_cards_json}/{slug}.json"
+    owns_client = client is None
+    if owns_client:
+        client = httpx.Client(timeout=30)
+    try:
+        result = _get_with_retry(client, url)
+    finally:
+        if owns_client:
+            client.close()
+
+    if result is None:
+        return {"_error": True}
+    if result == "_not_found":
+        data = {"_not_found": True}
+        db.set_edhrec(cache_key, data)
+        return data
+
+    db.set_edhrec(cache_key, result)
+    return result
+
+
 def _json_dict(data: dict) -> dict:
     return (data.get("container", {}) or {}).get("json_dict", {}) or {}
+
+
+def extract_top_commanders(data: dict) -> list[str]:
+    """Commander names a card page lists as most playing this card (in order).
+
+    EDHREC card pages carry a "Top Commanders" card list; we match it by tag or
+    header so a payload-shape tweak (e.g. ``topcommanders`` vs ``commanders``)
+    keeps working. Returns names most-associated first.
+    """
+    names: list[str] = []
+    seen: set[str] = set()
+    for section in _json_dict(data).get("cardlists") or []:
+        tag = (section.get("tag") or "").lower()
+        header = (section.get("header") or "").lower()
+        if "commander" not in tag and "commander" not in header:
+            continue
+        for view in section.get("cardviews", []) or []:
+            name = view.get("name")
+            if name and name not in seen:
+                seen.add(name)
+                names.append(name)
+    return names
 
 
 def extract_num_decks(data: dict) -> int:

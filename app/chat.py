@@ -23,9 +23,21 @@ SYSTEM_PROMPT = (
     "dialogue de façon itérative avec un joueur pour l'aider à construire un deck "
     "à partir de SA collection.\n\n"
     "Règles :\n"
-    "- Utilise TOUJOURS les outils pour proposer des cartes ou des decks : ne "
-    "cite jamais une carte que tu n'as pas obtenue via un outil. N'invente "
-    "AUCUN nom de carte.\n"
+    "- DIALOGUE D'ABORD : si la demande est vague ou s'il manque une information "
+    "importante (format, couleurs, budget, thème), pose UNE ou DEUX questions "
+    "courtes pour préciser AVANT de lancer un outil de génération. Ne génère ni "
+    "suggestions ni decklist tant que l'essentiel n'est pas clair.\n"
+    "- NE RÉGÉNÈRE PAS inutilement : si un deck, des commandants ou un archétype "
+    "ont déjà été produits dans cette conversation (voir « CONTEXTE ACTUEL » "
+    "ci-dessous quand il est présent), réponds aux questions du joueur (courbe de "
+    "mana, rôle d'une carte, prix, remplacements, synergies…) À PARTIR DE CE "
+    "CONTEXTE, sans rappeler l'outil de génération. Ne régénère QUE si le joueur "
+    "change explicitement sa demande (autre commandant, autre budget, autres "
+    "couleurs, autre format).\n"
+    "- Utilise les outils pour OBTENIR des cartes ou des decks : ne cite jamais "
+    "une carte que tu n'as pas obtenue via un outil ou qui ne figure pas déjà "
+    "dans le CONTEXTE ACTUEL. N'invente AUCUN nom de carte. Pour vérifier le prix "
+    "ou la légalité d'une carte précise, utilise lookup_card.\n"
     "- Respecte STRICTEMENT le format, les couleurs et le nombre de couleurs "
     "demandés. « monocouleur » => max_colors=1.\n"
     "- Pour le Commander (EDH), appelle suggest_commanders. Pour Standard, "
@@ -73,7 +85,10 @@ TOOLS = [
         "description": (
             "Pour le format COMMANDER : à partir des cartes possédées, propose des "
             "commandants jouables qui collent aux couleurs/thème, avec le taux de "
-            "complétude EDHREC et une liste d'achat dans le budget."
+            "complétude EDHREC et une liste d'achat dans le budget. Inclut aussi "
+            "des commandants NON possédés mais liés à tes cartes (champ owned=false, "
+            "avec price_eur, link_count et total_cost_eur) qui respectent thème, "
+            "couleurs et budget."
         ),
         "input_schema": {"type": "object", "properties": dict(_INTENT_PROPS)},
     },
@@ -166,7 +181,10 @@ def _exec_suggest_commanders(args: dict, profile_id: int):
             None,
         )
 
-    top = results[:6]
+    # Keep both owned suggestions and proposed (unowned) commanders in the chat.
+    owned_res = [r for r in results if r.get("owned")]
+    proposed_res = [r for r in results if not r.get("owned")]
+    top = owned_res[:5] + proposed_res[:3]
     # Trim the heavy fields we don't render in the chat artifact.
     for r in top:
         r.pop("missing_cards", None)
@@ -176,11 +194,20 @@ def _exec_suggest_commanders(args: dict, profile_id: int):
     lines = []
     for r in top:
         buy = r.get("buylist") or {}
-        lines.append(
-            f"- {r['name']} : {r['pct']}% complété ({r['owned_count']}/"
-            f"{r['total_recommended']}), {r['num_decks']} decks EDHREC, "
-            f"achat {buy.get('total_eur', 0)} € ({buy.get('bought_count', 0)} cartes)"
-        )
+        if r.get("owned"):
+            lines.append(
+                f"- {r['name']} (possédé) : {r['pct']}% complété ({r['owned_count']}/"
+                f"{r['total_recommended']}), {r['num_decks']} decks EDHREC, "
+                f"achat {buy.get('total_eur', 0)} € ({buy.get('bought_count', 0)} cartes)"
+            )
+        else:
+            price = r.get("price_eur")
+            price_txt = f"{price} €" if price is not None else "prix indisponible"
+            lines.append(
+                f"- {r['name']} (à acquérir, {price_txt} ; {r.get('link_count', 0)} "
+                f"de tes cartes y mènent) : {r['pct']}% complété ({r['owned_count']}/"
+                f"{r['total_recommended']}), coût total ~{r.get('total_cost_eur', 0)} €"
+            )
     return "Commandants proposés :\n" + "\n".join(lines), artifact
 
 
@@ -282,13 +309,129 @@ def _history_messages(conversation_id: int) -> list[dict]:
     return api
 
 
-def _agent_loop(api_messages: list[dict], profile_id: int):
+# --- Conversation context snapshot --------------------------------------
+# To answer follow-up questions ("pourquoi cette carte ?", "quelle est la
+# courbe ?", "remplace X") WITHOUT re-running the expensive generation tools,
+# we replay the latest generated artifacts as a compact text block in the
+# system prompt. The model reuses this state instead of regenerating — and the
+# cards stay grounded because they originally came from a tool result.
+
+def _latest_artifacts(conversation_id: int) -> dict:
+    """Most recent artifact of each type across the stored conversation."""
+    latest: dict[str, dict] = {}
+    for m in db.get_messages(conversation_id):
+        for art in m.get("artifacts") or []:
+            t = art.get("type")
+            if t:
+                latest[t] = art
+    return latest
+
+
+def _fmt_colors(colors) -> str:
+    return "/".join(colors) if colors else "incolore"
+
+
+def _snapshot_decklist(art: dict) -> str:
+    deck = art.get("deck") or {}
+    counts = deck.get("counts") or {}
+    lines = [
+        f"DECK GÉNÉRÉ — commandant {art.get('commander')} "
+        f"({counts.get('total', 0)} cartes : {counts.get('owned', 0)} possédées, "
+        f"{counts.get('to_buy', 0)} à acheter pour {deck.get('buy_total_eur', 0)} €)."
+    ]
+    if deck.get("gameplan"):
+        lines.append(f"Plan de jeu : {deck['gameplan']}")
+    lines.append("Cartes du deck :")
+    for group in deck.get("groups") or []:
+        names = []
+        for c in group.get("cards") or []:
+            qty = c.get("qty") or 1
+            prefix = f"{qty}x " if qty > 1 else ""
+            if c.get("owned"):
+                names.append(f"{prefix}{c['name']} (possédée)")
+            else:
+                price = c.get("price_eur")
+                tag = f"à acheter, {price} €" if price is not None else "à acheter"
+                names.append(f"{prefix}{c['name']} ({tag})")
+        lines.append(f"  {group.get('label')} : " + ", ".join(names))
+    return "\n".join(lines)
+
+
+def _snapshot_commanders(art: dict) -> str:
+    lines = ["COMMANDANTS SUGGÉRÉS :"]
+    for r in art.get("results") or []:
+        buy = r.get("buylist") or {}
+        if r.get("owned"):
+            tag = "possédé"
+        else:
+            price = r.get("price_eur")
+            price_txt = f"{price} €" if price is not None else "prix indisponible"
+            tag = (f"à acquérir, {price_txt}, {r.get('link_count', 0)} cartes liées, "
+                   f"coût total ~{r.get('total_cost_eur', 0)} €")
+        lines.append(
+            f"- {r['name']} ({_fmt_colors(r.get('color_identity'))}, {tag}) : "
+            f"{r.get('pct')}% complété ({r.get('owned_count')}/{r.get('total_recommended')}), "
+            f"{r.get('num_decks')} decks EDHREC, achat {buy.get('total_eur', 0)} €."
+        )
+    return "\n".join(lines)
+
+
+def _snapshot_archetype(art: dict) -> str:
+    data = art.get("data") or {}
+    arch = data.get("archetype") or {}
+    buy = data.get("buylist") or {}
+    lines = [
+        f"ARCHÉTYPE {(data.get('format') or '').upper()} — {arch.get('name')} "
+        f"({_fmt_colors(arch.get('colors'))})."
+    ]
+    if arch.get("strategy"):
+        lines.append(f"Stratégie : {arch['strategy']}")
+    owned = [c["name"] for c in data.get("owned_cards") or []]
+    if owned:
+        lines.append("Cartes maîtresses possédées : " + ", ".join(owned))
+    to_buy = [f"{c['name']} ({c.get('price_eur')} €)" for c in buy.get("to_buy") or []]
+    if to_buy:
+        lines.append("À acheter : " + ", ".join(to_buy))
+    lines.append(
+        f"{data.get('owned_count', 0)}/{data.get('valid_count', 0)} cartes maîtresses "
+        f"possédées ; achat total {buy.get('total_eur', 0)} €."
+    )
+    return "\n".join(lines)
+
+
+_SNAPSHOT_BUILDERS = {
+    "decklist": _snapshot_decklist,
+    "commanders": _snapshot_commanders,
+    "archetype": _snapshot_archetype,
+}
+
+
+def _context_snapshot(conversation_id: int) -> str:
+    """Compact text of the latest generated artifacts, for the system prompt."""
+    latest = _latest_artifacts(conversation_id)
+    # Most actionable first: a generated deck, then commander/archetype research.
+    blocks = [
+        _SNAPSHOT_BUILDERS[t](latest[t])
+        for t in ("decklist", "commanders", "archetype")
+        if t in latest
+    ]
+    if not blocks:
+        return ""
+    return (
+        "CONTEXTE ACTUEL — éléments DÉJÀ générés dans cette conversation. "
+        "Réutilise-les pour répondre aux questions du joueur SANS relancer les "
+        "outils de génération ; ne régénère que si le joueur change explicitement "
+        "sa demande.\n\n" + "\n\n".join(blocks)
+    )
+
+
+def _agent_loop(api_messages: list[dict], profile_id: int, system: str):
     """Run the tool-use loop. Returns (final_text, artifacts)."""
     texts: list[str] = []
     artifacts: list[dict] = []
 
     for _ in range(settings.chat_max_tool_iterations):
-        resp = llm.create_message(SYSTEM_PROMPT, api_messages, tools=TOOLS)
+        resp = llm.create_message(system, api_messages, tools=TOOLS)
         if resp is None:
             texts.append(
                 "Désolé, le service Claude est momentanément indisponible. Réessaie."
@@ -362,7 +505,9 @@ def run_turn(conversation_id: int, profile_id: int, user_text: str) -> None:
         text, artifacts = _fallback_turn(profile_id, user_text)
     else:
         api_messages = _history_messages(conversation_id)
-        text, artifacts = _agent_loop(api_messages, profile_id)
+        snapshot = _context_snapshot(conversation_id)
+        system = f"{SYSTEM_PROMPT}\n\n{snapshot}" if snapshot else SYSTEM_PROMPT
+        text, artifacts = _agent_loop(api_messages, profile_id, system)
 
     db.add_message(conversation_id, "assistant", text, artifacts=artifacts or None)
     db.touch_conversation(conversation_id, title=user_text)
