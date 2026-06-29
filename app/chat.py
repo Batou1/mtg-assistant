@@ -401,6 +401,20 @@ def _snapshot_decklist(art: dict) -> str:
                 tag = f"à acheter, {price} €" if price is not None else "à acheter"
                 names.append(f"{prefix}{c['name']} ({tag})")
         lines.append(f"  {group.get('label')} : " + ", ".join(names))
+    sideboard = deck.get("sideboard") or []
+    if sideboard:
+        sb = []
+        for c in sideboard:
+            if c.get("owned"):
+                sb.append(f"{c['name']} (possédée)")
+            else:
+                price = c.get("price_eur")
+                sb.append(f"{c['name']} (à acheter{f', {price} €' if price is not None else ''})")
+        lines.append(
+            f"Sideboard ({len(sideboard)} cartes pertinentes, "
+            f"{counts.get('sideboard_to_buy', 0)} à acheter pour "
+            f"{deck.get('sideboard_buy_total_eur', 0)} €) : " + ", ".join(sb)
+        )
     return "\n".join(lines)
 
 

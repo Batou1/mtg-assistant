@@ -59,6 +59,9 @@ class Settings:
     # --- Deck generation ---------------------------------------------------
     deck_size: int = int(os.environ.get("MTG_DECK_SIZE", "100"))
     deck_lands: int = int(os.environ.get("MTG_DECK_LANDS", "36"))
+    # Relevant alternatives proposed alongside the deck (next-best EDHREC cards
+    # not in the main list). Target 15-20.
+    deck_sideboard: int = int(os.environ.get("MTG_DECK_SIDEBOARD", "18"))
 
     # --- Web research (Phase 2b; Brave Search complements curated sources) --
     brave_api_key: str = os.environ.get("MTG_BRAVE_API_KEY", "")
