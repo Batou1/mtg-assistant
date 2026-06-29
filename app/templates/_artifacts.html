@@ -1,6 +1,24 @@
 {# Reusable renderers for chat artifacts (Commander suggestions, 60-card
    archetype, full decklist). Each macro takes the artifact's data dict. #}
 
+{# Compact one-line summary of an artifact, reused by the sidebar deck index
+   and by the collapsed header of superseded artifacts. #}
+{% macro label(art) %}
+  {%- if art.type == "decklist" -%}
+    <span class="art-ico">⚔</span>
+    <span class="art-title">{{ art.deck.commander.name }}</span>
+    <span class="art-meta">{{ art.deck.counts.total }} cartes · {{ "%.0f"|format(art.deck.buy_total_eur) }} € · {{ art.deck.counts.owned }}/{{ art.deck.counts.total }} poss.</span>
+  {%- elif art.type == "archetype" -%}
+    <span class="art-ico">🃏</span>
+    <span class="art-title">{{ art.data.archetype.name }}</span>
+    <span class="art-meta">{% for c in art.data.archetype.colors %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %} · {{ art.data.owned_count }}/{{ art.data.valid_count }}</span>
+  {%- elif art.type == "commanders" -%}
+    <span class="art-ico">👑</span>
+    <span class="art-title">Commandants proposés</span>
+    <span class="art-meta">{{ art.results|length }} option(s)</span>
+  {%- endif -%}
+{% endmacro %}
+
 {% macro commanders(art) %}
   {% for n in art.notices %}<div class="notice info">{{ n }}</div>{% endfor %}
   {% for r in art.results %}
@@ -11,12 +29,13 @@
         <h3>{{ r.name }}
           {% if r.owned is defined and not r.owned %}<span class="tag buy-tag">proposé · non possédé</span>
           {% else %}<span class="tag owned-tag">possédé</span>{% endif %}
+          {% if r.below_threshold %}<span class="tag niche-tag">peu joué</span>{% endif %}
         </h3>
         <p class="pips">
           {% for c in r.color_identity %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}
           {% if not r.color_identity %}<span class="pip pip-C">incolore</span>{% endif %}
         </p>
-        <p class="muted small">{{ "{:,}".format(r.num_decks).replace(",", " ") }} decks sur EDHREC</p>
+        <p class="muted small">{{ "{:,}".format(r.num_decks).replace(",", " ") }} decks sur EDHREC{% if r.below_threshold %} · sous le seuil habituel{% endif %}</p>
         {% if r.owned is defined and not r.owned %}
         <p class="muted small">Commandant à acquérir :
           <strong>{% if r.price_eur is not none %}{{ "%.2f"|format(r.price_eur) }} €{% else %}prix indisponible{% endif %}</strong>
@@ -42,12 +61,14 @@
       </div>
     </div>
     {% if r.buylist and r.buylist.to_buy %}
-    <div class="buylist">
-      <h4>Liste d'achat
-        {% if r.buylist.budget_eur is not none %}<span class="muted small">(budget {{ "%.0f"|format(r.buylist.budget_eur) }} €)</span>{% endif %}
-      </h4>
-      <p class="muted small">{{ r.buylist.bought_count }} carte(s) · total
-        <strong>{{ "%.2f"|format(r.buylist.total_eur) }} €</strong></p>
+    <details class="buylist">
+      <summary>
+        <span class="buylist-title">Liste d'achat
+          {% if r.buylist.budget_eur is not none %}<span class="muted small">(budget {{ "%.0f"|format(r.buylist.budget_eur) }} €)</span>{% endif %}
+        </span>
+        <span class="muted small">{{ r.buylist.bought_count }} carte(s) · total
+          <strong>{{ "%.2f"|format(r.buylist.total_eur) }} €</strong></span>
+      </summary>
       <div class="buy-grid">
         {% for item in r.buylist.to_buy %}
         <div class="buy-item">
@@ -57,7 +78,7 @@
         </div>
         {% endfor %}
       </div>
-    </div>
+    </details>
     {% endif %}
     {% if r.owned_cards %}
     <details class="owned-list">
@@ -81,12 +102,14 @@
       <p><strong>{{ data.owned_count }}</strong> / {{ data.valid_count }} cartes maîtresses possédées</p>
     </div>
     {% if data.buylist and data.buylist.to_buy %}
-    <div class="buylist">
-      <h4>À acheter
-        {% if data.buylist.budget_eur is not none %}<span class="muted small">(budget {{ "%.0f"|format(data.buylist.budget_eur) }} €)</span>{% endif %}
-      </h4>
-      <p class="muted small">{{ data.buylist.bought_count }} carte(s) · total
-        <strong>{{ "%.2f"|format(data.buylist.total_eur) }} €</strong></p>
+    <details class="buylist">
+      <summary>
+        <span class="buylist-title">À acheter
+          {% if data.buylist.budget_eur is not none %}<span class="muted small">(budget {{ "%.0f"|format(data.buylist.budget_eur) }} €)</span>{% endif %}
+        </span>
+        <span class="muted small">{{ data.buylist.bought_count }} carte(s) · total
+          <strong>{{ "%.2f"|format(data.buylist.total_eur) }} €</strong></span>
+      </summary>
       <div class="buy-grid">
         {% for item in data.buylist.to_buy %}
         <div class="buy-item">
@@ -96,7 +119,7 @@
         </div>
         {% endfor %}
       </div>
-    </div>
+    </details>
     {% endif %}
     <p class="notice info small">Cartes validées via Scryfall (légalité {{ data.format }}).
       Base d'archétype à compléter, pas une liste de tournoi exacte.

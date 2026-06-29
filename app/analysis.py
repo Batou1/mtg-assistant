@@ -71,12 +71,14 @@ def _build_result(card: dict, data: dict, owned_keys: set, intent: dict,
     owned_cards_list = [r for r in ordered if _norm(r) in owned_keys]
     missing_cards = [r for r in ordered if _norm(r) not in owned_keys]
     total = len(ordered)
+    num_decks = edhrec.extract_num_decks(data)
     return {
         "name": commanders.front_name(card),
         "full_name": card["name"],
         "image": scryfall.image(card),
         "color_identity": scryfall.color_identity(card),
-        "num_decks": edhrec.extract_num_decks(data),
+        "num_decks": num_decks,
+        "below_threshold": num_decks < settings.min_decks,
         "owned_count": len(owned_cards_list),
         "total_recommended": total,
         "pct": round(100 * len(owned_cards_list) / total, 1) if total else 0.0,
@@ -149,7 +151,8 @@ def _discover_unowned(owned_cards: list, owned_keys: set, intent: dict,
         data = edhrec.fetch_commander(commanders.front_name(card), client=client)
         if data.get("_error") or data.get("_not_found"):
             continue
-        if edhrec.extract_num_decks(data) < settings.min_decks:
+        if (edhrec.extract_num_decks(data) < settings.min_decks
+                and not intent.get("include_low_decks")):
             continue
         result = _build_result(card, data, owned_keys, intent, owned=False)
         result["link_count"] = link_count[name]
@@ -177,6 +180,7 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
     owned_ids = db.collection_scryfall_ids(profile_id)
     owned_keys = db.owned_name_keys(profile_id)
     budget = intent.get("budget_eur")
+    include_low_decks = bool(intent.get("include_low_decks"))
 
     with httpx.Client(timeout=30, headers={"User-Agent": settings.user_agent}) as client:
         # Resolve owned cards precisely via their Scryfall ids (ManaBox provides
@@ -220,7 +224,10 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
                 below_threshold.append(
                     {"name": commanders.front_name(card), "num_decks": num_decks}
                 )
-                return True
+                # Only surface niche commanders (under the EDHREC popularity floor)
+                # when the player explicitly asked for them.
+                if not include_low_decks:
+                    return True
 
             results.append(_build_result(card, data, owned_keys, intent, owned=True))
             return True

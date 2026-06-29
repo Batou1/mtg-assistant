@@ -113,6 +113,7 @@ def _coerce(data: dict) -> dict:
         "theme": theme,
         "keywords": keywords,
         "budget_eur": budget,
+        "include_low_decks": bool(data.get("include_low_decks")),
         "source": data.get("source", "llm"),
     }
 
@@ -137,6 +138,12 @@ def _heuristic(text: str) -> dict:
     # "monocouleur", "mono noir", "monocolore" -> at most one colour.
     max_colors = 1 if re.search(r"\bmono", low) else None
 
+    # Opt-in to niche commanders under the EDHREC popularity floor.
+    include_low_decks = bool(
+        re.search(r"\b(peu jou|rares?|niche|confidentiel|méconnus?|meconnus?|"
+                  r"obscurs?|sous le seuil|sous le palier)", low)
+    )
+
     budget = None
     m = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:€|euros?|eur)\b", low)
     if not m:
@@ -152,6 +159,7 @@ def _heuristic(text: str) -> dict:
             "theme": text.strip()[:120],
             "keywords": keywords,
             "budget_eur": budget,
+            "include_low_decks": include_low_decks,
             "source": "heuristic",
         }
     )

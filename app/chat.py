@@ -72,6 +72,14 @@ _INTENT_PROPS = {
         "description": "Mots-clés de stratégie en anglais (aristocrats, tokens, reanimator…).",
     },
     "budget_eur": {"type": "number", "description": "Budget en euros, si mentionné."},
+    "include_low_decks": {
+        "type": "boolean",
+        "description": (
+            "true UNIQUEMENT si le joueur demande explicitement d'inclure les "
+            "commandants peu joués / rares / sous le seuil de popularité EDHREC. "
+            "Par défaut false (on masque les commandants trop confidentiels)."
+        ),
+    },
 }
 
 TOOLS = [
@@ -145,6 +153,15 @@ TOOLS = [
 # Each returns (text_for_llm, artifact|None). The text is compact (it goes back
 # to the model); the artifact carries the rich data the template renders.
 
+def _is_owned(r: dict) -> bool:
+    """A suggested commander is owned unless explicitly flagged ``owned=False``.
+
+    Mirrors the template (``r.owned is defined and not r.owned``) so the text we
+    feed the model can never contradict what the UI shows the player.
+    """
+    return r.get("owned", True)
+
+
 def _intent_from(args: dict, fmt: str | None) -> dict:
     return intent._coerce(
         {
@@ -154,6 +171,7 @@ def _intent_from(args: dict, fmt: str | None) -> dict:
             "theme": args.get("theme") or "",
             "keywords": args.get("keywords") or [],
             "budget_eur": args.get("budget_eur"),
+            "include_low_decks": args.get("include_low_decks"),
             "source": "llm",
         }
     )
@@ -182,8 +200,8 @@ def _exec_suggest_commanders(args: dict, profile_id: int):
         )
 
     # Keep both owned suggestions and proposed (unowned) commanders in the chat.
-    owned_res = [r for r in results if r.get("owned")]
-    proposed_res = [r for r in results if not r.get("owned")]
+    owned_res = [r for r in results if _is_owned(r)]
+    proposed_res = [r for r in results if not _is_owned(r)]
     top = owned_res[:5] + proposed_res[:3]
     # Trim the heavy fields we don't render in the chat artifact.
     for r in top:
@@ -194,7 +212,7 @@ def _exec_suggest_commanders(args: dict, profile_id: int):
     lines = []
     for r in top:
         buy = r.get("buylist") or {}
-        if r.get("owned"):
+        if _is_owned(r):
             lines.append(
                 f"- {r['name']} (possédé) : {r['pct']}% complété ({r['owned_count']}/"
                 f"{r['total_recommended']}), {r['num_decks']} decks EDHREC, "
@@ -361,15 +379,16 @@ def _snapshot_commanders(art: dict) -> str:
     lines = ["COMMANDANTS SUGGÉRÉS :"]
     for r in art.get("results") or []:
         buy = r.get("buylist") or {}
-        if r.get("owned"):
+        if _is_owned(r):
             tag = "possédé"
         else:
             price = r.get("price_eur")
             price_txt = f"{price} €" if price is not None else "prix indisponible"
             tag = (f"à acquérir, {price_txt}, {r.get('link_count', 0)} cartes liées, "
                    f"coût total ~{r.get('total_cost_eur', 0)} €")
+        niche = " ; peu joué, sous le seuil EDHREC" if r.get("below_threshold") else ""
         lines.append(
-            f"- {r['name']} ({_fmt_colors(r.get('color_identity'))}, {tag}) : "
+            f"- {r['name']} ({_fmt_colors(r.get('color_identity'))}, {tag}{niche}) : "
             f"{r.get('pct')}% complété ({r.get('owned_count')}/{r.get('total_recommended')}), "
             f"{r.get('num_decks')} decks EDHREC, achat {buy.get('total_eur', 0)} €."
         )

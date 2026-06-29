@@ -139,6 +139,13 @@ button:disabled { background: var(--border); color: var(--muted); cursor: not-al
 
 .buylist { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
 .buylist h4 { margin: 0 0 8px; }
+details.buylist > summary { display: flex; align-items: baseline; flex-wrap: wrap;
+  gap: 6px 10px; cursor: pointer; list-style: none; }
+details.buylist > summary::-webkit-details-marker { display: none; }
+details.buylist > summary::before { content: "▸"; color: var(--muted); align-self: center; }
+details.buylist[open] > summary::before { content: "▾"; }
+details.buylist > summary:hover .buylist-title { color: var(--accent-2); }
+.buylist-title { font-weight: 700; }
 .buy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; margin-top: 10px; }
 .buy-item { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; }
 .buy-item img { width: 100%; border-radius: 8px; }
@@ -171,6 +178,7 @@ button:disabled { background: var(--border); color: var(--muted); cursor: not-al
 .decklist .tag { font-size: .72rem; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
 .owned-tag { background: rgba(76,195,138,.16); color: var(--accent-2); }
 .buy-tag { background: rgba(224,164,74,.16); color: var(--warn); }
+.niche-tag { background: rgba(138,124,224,.18); color: var(--accent); }
 
 .export { margin-top: 16px; }
 .export summary { cursor: pointer; color: var(--muted); }
@@ -192,14 +200,48 @@ button:disabled { background: var(--border); color: var(--muted); cursor: not-al
 .chat-sidebar { position: sticky; top: 78px; }
 .new-chat { width: 100%; background: var(--accent); }
 .conv-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.conv-list li { display: flex; align-items: center; gap: 4px; border-radius: 8px; }
+.conv-list li { display: flex; align-items: center; gap: 4px; border-radius: 8px; min-width: 0; }
 .conv-list li.active { background: var(--panel-2); }
-.conv-open { flex: 1; margin: 0; }
+.conv-open { flex: 1; margin: 0; min-width: 0; }
 .conv-name { width: 100%; text-align: left; background: transparent; color: var(--text);
   border: none; padding: 8px 10px; font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conv-name:hover { background: var(--panel-2); }
 .conv-del { background: transparent; color: var(--muted); border: none; padding: 6px 8px; }
 .conv-del:hover { color: var(--danger); }
+
+/* Deck index: jump to any proposal generated in this conversation. */
+.deck-nav { margin-top: 18px; }
+.deck-nav h4 { margin: 0 0 8px; font-size: .72rem; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--muted); }
+.deck-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.deck-nav li { min-width: 0; border-radius: 8px; border-left: 2px solid transparent; }
+.deck-nav li.current { border-left-color: var(--accent); }
+.deck-nav a { display: flex; flex-direction: column; gap: 1px; min-width: 0;
+  padding: 6px 9px; border-radius: 8px; text-decoration: none; color: var(--text); }
+.deck-nav a:hover { background: var(--panel-2); }
+.deck-nav li.past a { color: var(--muted); }
+.deck-nav .art-ico { display: none; }
+.deck-nav .art-title { font-size: .82rem; font-weight: 600; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.deck-nav .art-meta { font-size: .72rem; color: var(--muted); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.deck-nav .pip { width: 12px; height: 12px; line-height: 12px; font-size: .6rem; }
+
+/* Artifact wrappers + collapsed (superseded) proposals. */
+.art-wrap { scroll-margin-top: 12px; }
+.art-collapsed { border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); }
+.art-collapsed > summary { display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; cursor: pointer; padding: 10px 12px; list-style: none; }
+.art-collapsed > summary::-webkit-details-marker { display: none; }
+.art-collapsed > summary::before { content: "▸"; color: var(--muted); }
+.art-collapsed[open] > summary::before { content: "▾"; }
+.art-collapsed > summary .art-ico { font-size: 1rem; }
+.art-collapsed > summary .art-title { font-weight: 600; }
+.art-collapsed > summary .art-meta { display: flex; align-items: center; gap: 4px;
+  color: var(--muted); font-size: .8rem; }
+.art-collapsed[open] > summary { border-bottom: 1px solid var(--border); }
+.art-collapsed > .art-card,
+.art-collapsed > .commander { margin: 0; border: none; border-radius: 0 0 10px 10px; }
 
 .chat-main { display: flex; flex-direction: column; min-height: 70vh; }
 .chat-thread { display: flex; flex-direction: column; gap: 16px; max-height: 68vh; overflow-y: auto; padding: 8px 4px; }
