@@ -47,9 +47,16 @@ and a budget-constrained buylist priced in EUR.
    collection, suggests commanders, researches 60-card archetypes, generates full
    decklists and looks up cards — all on demand, replying in French and keeping
    context, so you can refine (*« plutôt en mono-noir »*, *« monte le budget à
-   80 € »*) without re-typing everything. Conversations are saved per profile.
-   The model never names a card outside a tool result, so suggestions stay
-   grounded. Without an API key the chat falls back to a one-shot analysis.
+   80 € »*) without re-typing everything. The chat is **interactive**: when your
+   request is vague it asks a clarifying question (format? couleurs? budget?)
+   before building anything. Once a deck or set of suggestions exists, the latest
+   one is **replayed into the model's context**, so follow-up questions (*«
+   pourquoi cette carte ? »*, *« quelle est la courbe de mana ? »*, *« quelles
+   cartes acheter en priorité ? »*) are answered from the deck already built —
+   **without regenerating it** (no repeated EDHREC/Scryfall calls). Conversations
+   are saved per profile. The model never names a card outside a tool result (or
+   the replayed context of a previous tool result), so suggestions stay grounded.
+   Without an API key the chat falls back to a one-shot analysis.
 
 Card data, prices and EDHREC pages are resolved **on demand and cached** in
 SQLite — no multi-gigabyte bulk download, minimal disk footprint.

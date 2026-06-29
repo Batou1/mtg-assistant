@@ -131,6 +131,82 @@ def test_agent_loop_stops_when_llm_unavailable_midflight(env, monkeypatch):
     assert "indisponible" in assistant["content"].lower()
 
 
+# --- Context snapshot: answer follow-ups without regenerating -----------
+
+def test_context_snapshot_replays_deck_without_regenerating(env, monkeypatch):
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+    cid = db.create_conversation(pid)
+
+    # A deck was generated on an earlier turn (artifact persisted).
+    deck_artifact = {
+        "type": "decklist",
+        "commander": "Krenko, Mob Boss",
+        "deck": {
+            "counts": {"total": 100, "owned": 40, "to_buy": 60},
+            "buy_total_eur": 50.0,
+            "gameplan": "Spam des gobelins puis Krenko pour exploser le plateau.",
+            "groups": [
+                {"label": "Créatures", "cards": [
+                    {"name": "Goblin Chieftain", "owned": False, "price_eur": 3.0, "qty": 1},
+                    {"name": "Krenko's Command", "owned": True, "qty": 1},
+                ]},
+            ],
+        },
+    }
+    db.add_message(cid, "user", "génère le deck Krenko")
+    db.add_message(cid, "assistant", "Voici ton deck.", artifacts=[deck_artifact])
+
+    monkeypatch.setattr(chat.llm, "is_available", lambda: True)
+
+    # Regeneration must NOT happen for a follow-up question.
+    def boom(*a, **k):
+        raise AssertionError("generate_full_deck should not be called for a follow-up")
+    monkeypatch.setattr(chat.deckgen, "generate_full_deck", boom)
+
+    captured = {}
+
+    def fake_create(system, messages, tools=None, max_tokens=None):
+        captured["system"] = system
+        return _resp(
+            [_text_block("La courbe est basse : surtout des gobelins à 1-2 manas.")],
+            "end_turn",
+        )
+
+    monkeypatch.setattr(chat.llm, "create_message", fake_create)
+
+    chat.run_turn(cid, pid, "quelle est la courbe de mana de ce deck ?")
+
+    # The generated deck (cards included) is replayed in the system prompt.
+    assert "CONTEXTE ACTUEL" in captured["system"]
+    assert "Goblin Chieftain" in captured["system"]
+    assert "Krenko, Mob Boss" in captured["system"]
+    # The model answered from context; the reply is stored.
+    assert "courbe" in db.get_messages(cid)[-1]["content"].lower()
+
+
+def test_no_snapshot_when_nothing_generated_yet(env, monkeypatch):
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+    cid = db.create_conversation(pid)
+    monkeypatch.setattr(chat.llm, "is_available", lambda: True)
+
+    captured = {}
+
+    def fake_create(system, messages, tools=None, max_tokens=None):
+        captured["system"] = system
+        return _resp([_text_block("Quel format et quelles couleurs vises-tu ?")], "end_turn")
+
+    monkeypatch.setattr(chat.llm, "create_message", fake_create)
+
+    chat.run_turn(cid, pid, "je veux un deck")
+
+    # No prior artifacts: the system prompt is the plain base prompt (no
+    # appended snapshot), and the assistant can ask a clarifying question
+    # instead of generating.
+    assert captured["system"] == chat.SYSTEM_PROMPT
+
+
 # --- Key-free fallback --------------------------------------------------
 
 def test_fallback_without_key_uses_oneshot_pipeline(env, monkeypatch):
