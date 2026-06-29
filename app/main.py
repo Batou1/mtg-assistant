@@ -6,7 +6,7 @@ the active profile is remembered in a cookie.
 import os
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
@@ -225,6 +225,7 @@ def chat_page(request: Request):
         conversation=conv,
         conversations=db.list_conversations(profile["id"]),
         messages=db.get_messages(conv["id"]),
+        pending=chat.is_pending(conv["id"]),
         llm_ok=llm.is_available(),
         llm_model=settings.anthropic_model,
     )
@@ -243,11 +244,24 @@ async def chat_message(
         conv = _active_conversation(request, profile)
 
     if message.strip():
-        await run_in_threadpool(chat.run_turn, conv["id"], profile["id"], message)
+        # Kick the turn off in the background and answer right away — a single
+        # turn can outlast the Cloudflare edge timeout, so we never hold the
+        # request open. The page polls /chat/status and shows a spinner.
+        chat.start_turn(conv["id"], profile["id"], message)
 
     resp = RedirectResponse(url="/chat", status_code=303)
     resp.set_cookie(CONV_COOKIE, str(conv["id"]), max_age=60 * 60 * 24 * 365, samesite="lax")
     return resp
+
+
+@app.get("/chat/status")
+def chat_status(request: Request, conversation_id: str = ""):
+    """Lightweight poll target: is the conversation's background turn done?"""
+    profile = current_profile(request)
+    conv = db.get_conversation(conversation_id)
+    if conv is None or conv["profile_id"] != profile["id"]:
+        return JSONResponse({"pending": False})
+    return JSONResponse({"pending": chat.is_pending(conv["id"])})
 
 
 @app.post("/chat/new")

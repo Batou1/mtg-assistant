@@ -15,8 +15,13 @@ This keeps stored payloads (and resent tokens) small while preserving context.
 Without an API key the chat still answers: ``run_turn`` falls back to the
 one-shot intent → analyse pipeline and flags that the full chat needs a key.
 """
+import logging
+import threading
+
 from . import analysis, db, deckgen, formats60, intent, llm, scryfall
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
     "Tu es un assistant de deckbuilding Magic: the Gathering, en français, qui "
@@ -510,23 +515,85 @@ def _fallback_turn(profile_id: int, user_text: str):
     return f"{note}\n\n{text}", artifacts
 
 
+def _generate_reply(conversation_id: int, profile_id: int, user_text: str):
+    """Run the agent (or key-free fallback) for an already-stored user message."""
+    if not llm.is_available():
+        return _fallback_turn(profile_id, user_text)
+    api_messages = _history_messages(conversation_id)
+    snapshot = _context_snapshot(conversation_id)
+    system = f"{SYSTEM_PROMPT}\n\n{snapshot}" if snapshot else SYSTEM_PROMPT
+    return _agent_loop(api_messages, profile_id, system)
+
+
 def run_turn(conversation_id: int, profile_id: int, user_text: str) -> None:
     """Append the user message, run the agent, and store the assistant reply.
 
-    Blocking (network I/O in the tools); call it from a threadpool.
+    Blocking (network I/O in the tools). Kept synchronous for the key-free path
+    and the tests; the web app uses ``start_turn`` to run this off-request.
     """
     user_text = (user_text or "").strip()
     if not user_text:
         return
     db.add_message(conversation_id, "user", user_text)
-
-    if not llm.is_available():
-        text, artifacts = _fallback_turn(profile_id, user_text)
-    else:
-        api_messages = _history_messages(conversation_id)
-        snapshot = _context_snapshot(conversation_id)
-        system = f"{SYSTEM_PROMPT}\n\n{snapshot}" if snapshot else SYSTEM_PROMPT
-        text, artifacts = _agent_loop(api_messages, profile_id, system)
-
+    text, artifacts = _generate_reply(conversation_id, profile_id, user_text)
     db.add_message(conversation_id, "assistant", text, artifacts=artifacts or None)
     db.touch_conversation(conversation_id, title=user_text)
+
+
+# --- Asynchronous turns --------------------------------------------------
+# A chat turn can take far longer than Cloudflare's ~100s edge timeout (cold
+# EDHREC/Scryfall lookups, several LLM rounds). We therefore answer the POST
+# immediately and run the turn in a background thread; the page polls
+# ``is_pending`` and shows a spinner until the reply lands. The registry is
+# in-memory — fine for the single-worker personal deployment.
+_inflight: set[int] = set()
+_inflight_lock = threading.Lock()
+
+
+def is_pending(conversation_id) -> bool:
+    """True while a background turn for this conversation is still running."""
+    try:
+        cid = int(conversation_id)
+    except (TypeError, ValueError):
+        return False
+    with _inflight_lock:
+        return cid in _inflight
+
+
+def _worker(conversation_id: int, profile_id: int, user_text: str) -> None:
+    try:
+        text, artifacts = _generate_reply(conversation_id, profile_id, user_text)
+    except Exception:  # never leave the conversation hanging on a spinner
+        logger.exception("chat turn failed (conversation %s)", conversation_id)
+        text, artifacts = (
+            "Désolé, une erreur est survenue pendant le traitement. Réessaie.",
+            [],
+        )
+    try:
+        db.add_message(conversation_id, "assistant", text, artifacts=artifacts or None)
+    finally:
+        # Clear the flag only after the reply is persisted, so a non-pending
+        # poll always finds the new message.
+        with _inflight_lock:
+            _inflight.discard(conversation_id)
+
+
+def start_turn(conversation_id: int, profile_id: int, user_text: str) -> None:
+    """Store the user message and process the reply in a background thread.
+
+    Returns immediately so the HTTP request stays well under the proxy timeout.
+    """
+    user_text = (user_text or "").strip()
+    if not user_text:
+        return
+    cid = int(conversation_id)
+    with _inflight_lock:
+        if cid in _inflight:
+            return  # a turn is already running for this conversation
+        _inflight.add(cid)
+    # Persist the user message + title up front so the redirect shows it at once.
+    db.add_message(cid, "user", user_text)
+    db.touch_conversation(cid, title=user_text)
+    threading.Thread(
+        target=_worker, args=(cid, profile_id, user_text), daemon=True
+    ).start()
