@@ -45,6 +45,9 @@ SYSTEM_PROMPT = (
     "ou la légalité d'une carte précise, utilise lookup_card.\n"
     "- Respecte STRICTEMENT le format, les couleurs et le nombre de couleurs "
     "demandés. « monocouleur » => max_colors=1.\n"
+    "- Si le joueur veut un commandant qu'il NE possède PAS (« que je n'ai pas », "
+    "« à acquérir », « un nouveau commandant »), appelle suggest_commanders avec "
+    "unowned_only=true.\n"
     "- Pour le Commander (EDH), appelle suggest_commanders. Pour Standard, "
     "Modern, Pioneer, Pauper, Legacy, Vintage (60 cartes), appelle "
     "research_archetype.\n"
@@ -83,6 +86,15 @@ _INTENT_PROPS = {
             "true UNIQUEMENT si le joueur demande explicitement d'inclure les "
             "commandants peu joués / rares / sous le seuil de popularité EDHREC. "
             "Par défaut false (on masque les commandants trop confidentiels)."
+        ),
+    },
+    "unowned_only": {
+        "type": "boolean",
+        "description": (
+            "true si le joueur veut UNIQUEMENT des commandants qu'il ne possède "
+            "PAS (« un commandant que je n'ai pas », « à acquérir », « pas dans "
+            "ma collection », « propose-moi un nouveau commandant »). On ne "
+            "renvoie alors que des commandants à acquérir. Par défaut false."
         ),
     },
 }
@@ -177,6 +189,7 @@ def _intent_from(args: dict, fmt: str | None) -> dict:
             "keywords": args.get("keywords") or [],
             "budget_eur": args.get("budget_eur"),
             "include_low_decks": args.get("include_low_decks"),
+            "unowned_only": args.get("unowned_only"),
             "source": "llm",
         }
     )
@@ -207,7 +220,18 @@ def _exec_suggest_commanders(args: dict, profile_id: int):
     # Keep both owned suggestions and proposed (unowned) commanders in the chat.
     owned_res = [r for r in results if _is_owned(r)]
     proposed_res = [r for r in results if not _is_owned(r)]
-    top = owned_res[:5] + proposed_res[:3]
+    if parsed.get("unowned_only"):
+        # The player explicitly wants commanders they don't own yet.
+        if not proposed_res:
+            return (
+                "Aucun commandant à acquérir trouvé pour ces critères : tes cartes "
+                "ne pointent vers aucun nouveau commandant correspondant. Suggère "
+                "d'élargir les couleurs/le thème ou d'augmenter le budget.",
+                None,
+            )
+        top = proposed_res[:6]
+    else:
+        top = owned_res[:5] + proposed_res[:3]
     # Trim the heavy fields we don't render in the chat artifact.
     for r in top:
         r.pop("missing_cards", None)

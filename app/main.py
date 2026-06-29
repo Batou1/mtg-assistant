@@ -17,8 +17,27 @@ from .config import settings
 app = FastAPI(title="MTG Assistant")
 
 BASE_DIR = os.path.dirname(__file__)
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
-app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+def _static_version() -> str:
+    """Cache-busting token from the stylesheet's mtime.
+
+    Cloudflare caches ``.css`` at the edge by default, so a plain
+    ``/static/style.css`` URL keeps serving a stale file across deploys (even in
+    private browsing). Appending ``?v=<mtime>`` changes the URL whenever the file
+    changes, forcing the edge to fetch the fresh copy. Computed at startup — the
+    service is restarted on every deploy anyway.
+    """
+    try:
+        return str(int(os.path.getmtime(os.path.join(STATIC_DIR, "style.css"))))
+    except OSError:
+        return "0"
+
+
+templates.env.globals["static_v"] = _static_version()
 
 db.init_db()
 
