@@ -114,6 +114,7 @@ def _coerce(data: dict) -> dict:
         "keywords": keywords,
         "budget_eur": budget,
         "include_low_decks": bool(data.get("include_low_decks")),
+        "unowned_only": bool(data.get("unowned_only")),
         "source": data.get("source", "llm"),
     }
 
@@ -144,6 +145,13 @@ def _heuristic(text: str) -> dict:
                   r"obscurs?|sous le seuil|sous le palier)", low)
     )
 
+    # Restrict to commanders the player doesn't already own.
+    unowned_only = bool(
+        re.search(r"(que je n['e ]?ai pas|que je ne poss|pas dans ma collection|"
+                  r"je ne poss[èe]de pas|nouveau commandant|à acqu[ée]rir|"
+                  r"que je ne d[ée]tiens pas)", low)
+    )
+
     budget = None
     m = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:€|euros?|eur)\b", low)
     if not m:
@@ -160,6 +168,7 @@ def _heuristic(text: str) -> dict:
             "keywords": keywords,
             "budget_eur": budget,
             "include_low_decks": include_low_decks,
+            "unowned_only": unowned_only,
             "source": "heuristic",
         }
     )
