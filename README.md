@@ -49,7 +49,18 @@ and a budget-constrained buylist priced in EUR.
    gap analysis vs your collection + an EUR buylist. This is an archetype base —
    not an exact tournament list — because the popular decklist sites are
    Cloudflare-blocked.
-7. **Iterative chat** (`/chat`) — instead of one-shot forms, hold a conversation.
+7. **Limited (draft / sealed)** (`/limited`) — build the best deck from a
+   **card pool you provide**, independent of your collection. Paste a list (one
+   card per line) or upload a `.txt` / ManaBox-style `.csv`; every card is
+   resolved against Scryfall, then **Claude picks the strongest 40-card deck**
+   from that pool — auto-choosing the best colours (or honouring colours/theme
+   you specify), adding basic lands, and leaving the rest as a sideboard. The
+   result opens **in the chat**, so you can refine it in conversation (*« plutôt
+   en bleu »*, *« plus agressif »*, *« pourquoi cette carte ? »*). Without an API
+   key a heuristic builder takes over. The pool→deck engine is format-generic
+   (a `FormatSpec` registry), so the same logic can later build a Commander /
+   Modern / Pauper deck from a given list.
+8. **Iterative chat** (`/chat`) — instead of one-shot forms, hold a conversation.
    **Claude** drives the whole pipeline through **tool-calling**: it inspects your
    collection, suggests commanders, researches 60-card archetypes, generates full
    decklists and looks up cards — all on demand, replying in French and keeping
@@ -178,6 +189,7 @@ app/
   deckgen.py    full 100-card Commander decklist builder
   research.py   Brave Search client (web research)
   formats60.py  60-card archetype pipeline (research + Scryfall validation)
+  poolbuild.py  pool-constrained deckbuilding (Limited; format-generic engine)
   chat.py       iterative chat: agent loop + tools over the pipeline
   main.py       FastAPI routes + templates
 deploy/         launchd service + Cloudflare tunnel snippet

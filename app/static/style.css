@@ -278,3 +278,15 @@ details.buylist > summary:hover .buylist-title { color: var(--accent-2); }
 .chat-input textarea:disabled { opacity: .6; }
 .chat-input button { white-space: nowrap; }
 .chat-input button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* --- Limited (pool import) form --- */
+.limited-form { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
+.limited-form textarea { width: 100%; resize: vertical; font-family: inherit; }
+.limited-form .file-label { display: inline-flex; flex-direction: column; gap: 6px;
+  font-size: .9rem; color: var(--muted); }
+.limited-form fieldset.hints { border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.limited-form fieldset.hints legend { padding: 0 6px; font-weight: 600; }
+.color-choices { display: flex; flex-wrap: wrap; gap: 12px; }
+.color-choice { display: inline-flex; align-items: center; gap: 6px; font-size: .9rem; }
+.limited-form button[type="submit"] { align-self: flex-start; }

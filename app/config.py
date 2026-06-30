@@ -63,6 +63,12 @@ class Settings:
     # not in the main list). Target 15-20.
     deck_sideboard: int = int(os.environ.get("MTG_DECK_SIDEBOARD", "18"))
 
+    # --- Limited / pool deckbuilding (draft & sealed) ----------------------
+    # A Limited deck is 40 cards with ~17 lands; basic lands are added freely
+    # (they are not part of the opened pool).
+    limited_deck_size: int = int(os.environ.get("MTG_LIMITED_DECK_SIZE", "40"))
+    limited_lands: int = int(os.environ.get("MTG_LIMITED_LANDS", "17"))
+
     # --- Web research (Phase 2b; Brave Search complements curated sources) --
     brave_api_key: str = os.environ.get("MTG_BRAVE_API_KEY", "")
 

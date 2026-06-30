@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Limité · MTG Assistant{% endblock %}
+{% block content %}
+
+<section class="card">
+  <h1>🎴 Deck Limité (draft / sealed)</h1>
+  <p class="muted">
+    Colle ou importe le <strong>pool</strong> de cartes que tu as ouvert (draft
+    ou sealed). L'assistant choisit le meilleur deck de 40 cartes possible —
+    couleurs comprises — puis ouvre une discussion pour l'ajuster. Ce pool est
+    <strong>indépendant de ta collection</strong>.
+  </p>
+
+  <p class="status small">
+    LLM :
+    {% if llm_ok %}<span class="badge ok">connecté</span>
+      <span class="muted">(Claude · {{ llm_model }})</span>
+    {% else %}<span class="badge warn">non configuré</span>
+      <span class="muted">repli heuristique actif — ajoute ANTHROPIC_API_KEY pour un meilleur choix</span>{% endif %}
+  </p>
+
+  <form method="post" action="/limited" enctype="multipart/form-data" class="limited-form">
+    <label for="pool"><strong>Liste des cartes</strong> (une par ligne, ex. « 2 Lightning Bolt »)</label>
+    <textarea id="pool" name="pool" rows="12"
+      placeholder="1 Lightning Bolt&#10;1 Llanowar Elves&#10;2 Giant Growth&#10;..."></textarea>
+
+    <div class="row">
+      <label class="file-label">
+        … ou importe un fichier (.txt / .csv ManaBox)
+        <input type="file" name="file" accept=".txt,.csv,text/plain,text/csv">
+      </label>
+    </div>
+
+    <fieldset class="hints">
+      <legend>Orientation (optionnel)</legend>
+      <p class="muted small">Laisse vide pour laisser l'assistant choisir les meilleures couleurs.</p>
+      <div class="color-choices">
+        {% for sym, name in COLOR_NAMES.items() %}
+        <label class="color-choice">
+          <input type="checkbox" name="colors" value="{{ sym }}"> <span class="pip pip-{{ sym }}">{{ sym }}</span> {{ name }}
+        </label>
+        {% endfor %}
+      </div>
+      <input type="text" name="theme" maxlength="120"
+             placeholder="Thème / style (ex. agressif, tempo, contrôle)…">
+    </fieldset>
+
+    <button type="submit">⚙ Construire le deck</button>
+  </form>
+</section>
+
+{% endblock %}

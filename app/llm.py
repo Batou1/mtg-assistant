@@ -127,6 +127,56 @@ def archetype_research(fmt: str, intent: dict, context: str) -> dict | None:
     return chat_json(system, "\n".join(parts))
 
 
+def pool_deck(spec, intent: dict, pool_lines: list[str]) -> dict | None:
+    """Pick the best deck from a fixed card pool, per a format spec.
+
+    Generic over ``spec`` (deck size, land target, singleton, label) so the same
+    call serves Limited today and Commander/Modern/Pauper-from-pool later. The
+    model names cards but only ones from ``pool_lines``; the caller re-checks
+    every chosen name against the pool, so nothing outside it can slip through.
+    """
+    rules = [f"Construis le MEILLEUR deck de {spec.deck_size} cartes pour le format « {spec.label} »."]
+    if spec.add_basics:
+        rules.append(
+            f"Vise environ {spec.target_lands} terrains au total. Les terrains de "
+            "base (Plains/Island/Swamp/Mountain/Forest) ne font PAS partie du pool "
+            "et s'ajoutent librement."
+        )
+    if spec.singleton:
+        rules.append("Une seule copie maximum par carte (singleton).")
+    else:
+        rules.append("Plusieurs exemplaires d'une carte sont permis seulement si le pool en contient assez.")
+    if intent.get("colors"):
+        rules.append(f"Reste STRICTEMENT dans les couleurs imposées : {', '.join(intent['colors'])}.")
+    else:
+        rules.append("Choisis automatiquement la/les meilleure(s) couleur(s) à jouer d'après le pool.")
+    rules.append(
+        "N'utilise QUE des cartes présentes dans le POOL ci-dessous, avec leur "
+        "orthographe EXACTE. N'invente AUCUNE carte."
+    )
+    system = (
+        "Tu es un expert Magic: the Gathering, spécialiste du deckbuilding. "
+        + " ".join(rules)
+        + ' Réponds UNIQUEMENT en JSON avec ces clés :\n'
+        '- "archetype": nom court de l\'archétype/du deck.\n'
+        '- "colors": liste de symboles parmi "W","U","B","R","G".\n'
+        '- "strategy": 2-3 phrases en français (plan de jeu, comment gagner).\n'
+        '- "main_deck": liste d\'objets {"name","count"} des cartes NON terrain de '
+        "base à jouer (count = nombre de copies prises dans le pool).\n"
+        '- "basic_lands": objet {"Plains":n,"Island":n,...} de terrains de base '
+        "pour compléter le deck (vide si non pertinent)."
+    )
+    parts = [f"Format : {spec.label} ({spec.deck_size} cartes)."]
+    if intent.get("theme"):
+        parts.append(f"Souhait du joueur : {intent['theme']}")
+    if intent.get("keywords"):
+        parts.append(f"Mots-clés : {', '.join(intent['keywords'])}")
+    if intent.get("colors"):
+        parts.append(f"Couleurs imposées : {', '.join(intent['colors'])}")
+    parts.append("POOL DISPONIBLE :\n" + "\n".join(pool_lines))
+    return chat_json(system, "\n".join(parts))
+
+
 def deck_gameplan(commander_name: str, card_names: list[str], theme: str = "") -> str | None:
     """Write a short French game-plan summary from the chosen cards.
 

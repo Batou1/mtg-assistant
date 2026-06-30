@@ -207,6 +207,85 @@ def test_no_snapshot_when_nothing_generated_yet(env, monkeypatch):
     assert captured["system"] == chat.SYSTEM_PROMPT
 
 
+# --- Limited (pool-built deck) ------------------------------------------
+
+def _limited_card(name, type_line="Creature — Goblin", colors=("R",)):
+    return {
+        "name": name, "type_line": type_line, "color_identity": list(colors),
+        "colors": list(colors), "cmc": 1.0, "image_uris": {"normal": "x"},
+        "oracle_text": "t",
+    }
+
+
+_LIM_POOL = {
+    "goblin guide": _limited_card("Goblin Guide"),
+    "lightning bolt": _limited_card("Lightning Bolt", "Instant"),
+    "shock": _limited_card("Shock", "Instant"),
+}
+
+
+def _lim_resolve(names, client=None):
+    found = {n.lower(): _LIM_POOL[n.lower()] for n in names if n.lower() in _LIM_POOL}
+    return found, [n for n in names if n.lower() not in _LIM_POOL]
+
+
+def test_create_limited_conversation_seeds_deck(env, monkeypatch):
+    db, chat = env.db, env.chat
+    import app.scryfall as scryfall
+    monkeypatch.setattr(scryfall, "resolve_cards", _lim_resolve)
+    monkeypatch.setattr(chat.llm, "is_available", lambda: False)  # heuristic path
+
+    pid = db.ensure_default_profile()
+    pool_items = [("Goblin Guide", 1), ("Lightning Bolt", 2), ("Shock", 1)]
+    cid = chat.create_limited_conversation(pid, pool_items, {"colors": ["R"]})
+
+    msgs = db.get_messages(cid)
+    assert msgs[0]["role"] == "user"
+    art = msgs[-1]["artifacts"][0]
+    assert art["type"] == "limited_deck"
+    assert art["data"]["counts"]["total"] == 40
+    # The pool is carried in the artifact so chat can rebuild from it.
+    assert any(p["name"] == "Lightning Bolt" for p in art["data"]["pool"])
+
+
+def test_build_pool_deck_tool_rebuilds_from_stored_pool(env, monkeypatch):
+    db, chat = env.db, env.chat
+    import app.scryfall as scryfall
+    monkeypatch.setattr(scryfall, "resolve_cards", _lim_resolve)
+    monkeypatch.setattr(chat.llm, "is_available", lambda: True)
+
+    pid = db.ensure_default_profile()
+    # Seed a conversation that already has a Limited deck (heuristic-built).
+    monkeypatch.setattr(chat.llm, "is_available", lambda: False)
+    cid = chat.create_limited_conversation(
+        pid, [("Goblin Guide", 1), ("Lightning Bolt", 2), ("Shock", 1)], {"colors": ["R"]}
+    )
+    monkeypatch.setattr(chat.llm, "is_available", lambda: True)
+
+    # Now the player asks to rebuild; the model calls build_pool_deck (no pool arg —
+    # it must come from the stored artifact).
+    responses = [
+        _resp([_tool_block("t1", "build_pool_deck", {"colors": ["R"]})], "tool_use"),
+        _resp([_text_block("Voici un nouveau deck mono-rouge depuis ton pool.")], "end_turn"),
+    ]
+    calls = {"n": 0}
+
+    def fake_create(system, messages, tools=None, max_tokens=None):
+        r = responses[calls["n"]]
+        calls["n"] += 1
+        return r
+
+    monkeypatch.setattr(chat.llm, "create_message", fake_create)
+    # The rebuild itself uses the heuristic (pool_deck not mocked, key "available").
+    monkeypatch.setattr(chat.llm, "pool_deck", lambda spec, intent, lines: None)
+
+    chat.run_turn(cid, pid, "refais le deck en plus agressif")
+
+    assistant = db.get_messages(cid)[-1]
+    assert assistant["artifacts"][-1]["type"] == "limited_deck"
+    assert calls["n"] == 2
+
+
 # --- Key-free fallback --------------------------------------------------
 
 def test_fallback_without_key_uses_oneshot_pipeline(env, monkeypatch):

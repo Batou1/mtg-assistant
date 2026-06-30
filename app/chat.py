@@ -18,7 +18,7 @@ one-shot intent → analyse pipeline and flags that the full chat needs a key.
 import logging
 import threading
 
-from . import analysis, db, deckgen, formats60, intent, llm, scryfall
+from . import analysis, db, deckgen, formats60, intent, llm, poolbuild, scryfall
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -51,6 +51,12 @@ SYSTEM_PROMPT = (
     "- Pour le Commander (EDH), appelle suggest_commanders. Pour Standard, "
     "Modern, Pioneer, Pauper, Legacy, Vintage, Premodern (60 cartes), appelle "
     "research_archetype.\n"
+    "- Pour le format LIMITÉ (draft/sealed), le joueur importe un POOL de cartes "
+    "via la page « Limité ». Si un pool a déjà été importé (voir « DECK LIMITÉ » "
+    "dans le CONTEXTE ACTUEL), tu peux reconstruire ou ajuster le deck (changer "
+    "de couleurs, viser plus agressif, un autre thème) avec build_pool_deck ; "
+    "n'utilise QUE des cartes du pool. Si aucun pool n'a été importé, invite le "
+    "joueur à le faire sur la page « Limité ».\n"
     "- Quand le joueur choisit un commandant, propose-lui de générer la decklist "
     "complète (generate_decklist).\n"
     "- Garde le contexte de la conversation : si le joueur affine une demande "
@@ -155,6 +161,30 @@ TOOLS = [
         },
     },
     {
+        "name": "build_pool_deck",
+        "description": (
+            "Pour le format LIMITÉ : (re)construit le meilleur deck à partir du POOL "
+            "de cartes déjà importé dans cette conversation. Utilise-le pour ajuster "
+            "le deck — autres couleurs, plus agressif, autre thème. Ne fonctionne que "
+            "si un pool a été importé via la page « Limité ». Choisit automatiquement "
+            "les meilleures couleurs si elles ne sont pas imposées."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "enum": sorted(poolbuild.SPECS),
+                    "description": "Format visé pour le deck construit depuis le pool (par défaut limited).",
+                },
+                "colors": dict(_INTENT_PROPS["colors"]),
+                "max_colors": dict(_INTENT_PROPS["max_colors"]),
+                "theme": dict(_INTENT_PROPS["theme"]),
+                "keywords": dict(_INTENT_PROPS["keywords"]),
+            },
+        },
+    },
+    {
         "name": "lookup_card",
         "description": "Donne le prix EUR et la légalité d'une carte précise via Scryfall.",
         "input_schema": {
@@ -195,14 +225,14 @@ def _intent_from(args: dict, fmt: str | None) -> dict:
     )
 
 
-def _exec_collection_summary(args: dict, profile_id: int):
+def _exec_collection_summary(args: dict, profile_id: int, ctx: dict | None = None):
     distinct, total = db.collection_count(profile_id)
     if not total:
         return "La collection est vide : aucune carte importée.", None
     return f"Collection : {total} cartes ({distinct} cartes uniques).", None
 
 
-def _exec_suggest_commanders(args: dict, profile_id: int):
+def _exec_suggest_commanders(args: dict, profile_id: int, ctx: dict | None = None):
     distinct, _ = db.collection_count(profile_id)
     if not distinct:
         return "La collection est vide ; impossible de proposer des commandants.", None
@@ -258,7 +288,7 @@ def _exec_suggest_commanders(args: dict, profile_id: int):
     return "Commandants proposés :\n" + "\n".join(lines), artifact
 
 
-def _exec_research_archetype(args: dict, profile_id: int):
+def _exec_research_archetype(args: dict, profile_id: int, ctx: dict | None = None):
     fmt = (args.get("format") or "").lower()
     if fmt not in formats60.FORMATS:
         return f"Format « {fmt} » non géré par la recherche 60 cartes.", None
@@ -281,7 +311,7 @@ def _exec_research_archetype(args: dict, profile_id: int):
     return text, artifact
 
 
-def _exec_generate_decklist(args: dict, profile_id: int):
+def _exec_generate_decklist(args: dict, profile_id: int, ctx: dict | None = None):
     commander = (args.get("commander") or "").strip()
     if not commander:
         return "Aucun commandant fourni.", None
@@ -305,7 +335,7 @@ def _exec_generate_decklist(args: dict, profile_id: int):
     return text, artifact
 
 
-def _exec_lookup_card(args: dict, profile_id: int):
+def _exec_lookup_card(args: dict, profile_id: int, ctx: dict | None = None):
     name = (args.get("name") or "").strip()
     if not name:
         return "Aucun nom de carte fourni.", None
@@ -324,11 +354,64 @@ def _exec_lookup_card(args: dict, profile_id: int):
     )
 
 
+def _stored_pool(conversation_id) -> list | None:
+    """The card pool imported for this conversation (from the latest Limited deck)."""
+    if conversation_id is None:
+        return None
+    art = _latest_artifacts(conversation_id).get("limited_deck")
+    if not art:
+        return None
+    return (art.get("data") or {}).get("pool")
+
+
+def _limited_summary(deck: dict) -> str:
+    arch = deck.get("archetype") or {}
+    counts = deck.get("counts") or {}
+    return (
+        f"Deck Limité « {arch.get('name')} » "
+        f"({_fmt_colors(arch.get('colors'))}) : {counts.get('total', 0)} cartes "
+        f"({counts.get('creatures', 0)} créatures, {counts.get('lands', 0)} terrains) "
+        f"sur un pool de {counts.get('pool_size', 0)}."
+    )
+
+
+def build_limited_artifact(pool_items, intent: dict) -> tuple[dict, dict]:
+    """Build a Limited deck from a pool and wrap it as a chat artifact.
+
+    The pool is carried inside the artifact so later turns can rebuild from it
+    (different colours/theme) without the player re-importing.
+    """
+    deck = poolbuild.build(pool_items, "limited", intent)
+    deck["pool"] = [{"name": n, "qty": int(q)} for n, q in pool_items]
+    artifact = {"type": "limited_deck", "intent": intent, "data": deck}
+    return artifact, deck
+
+
+def _exec_build_pool_deck(args: dict, profile_id: int, ctx: dict | None = None):
+    pool = _stored_pool((ctx or {}).get("conversation_id"))
+    if not pool:
+        return (
+            "Aucun pool de cartes n'a été importé dans cette conversation. "
+            "Invite le joueur à importer son pool sur la page « Limité ».",
+            None,
+        )
+    fmt = (args.get("format") or poolbuild.DEFAULT_FORMAT).lower()
+    if fmt not in poolbuild.SPECS:
+        fmt = poolbuild.DEFAULT_FORMAT
+    parsed = _intent_from(args, None)
+    pool_items = [(p["name"], p.get("qty", 1)) for p in pool]
+    deck = poolbuild.build(pool_items, fmt, parsed)
+    deck["pool"] = pool
+    artifact = {"type": "limited_deck", "intent": parsed, "data": deck}
+    return _limited_summary(deck), artifact
+
+
 _EXECUTORS = {
     "get_collection_summary": _exec_collection_summary,
     "suggest_commanders": _exec_suggest_commanders,
     "research_archetype": _exec_research_archetype,
     "generate_decklist": _exec_generate_decklist,
+    "build_pool_deck": _exec_build_pool_deck,
     "lookup_card": _exec_lookup_card,
 }
 
@@ -462,10 +545,41 @@ def _snapshot_archetype(art: dict) -> str:
     return "\n".join(lines)
 
 
+def _snapshot_limited(art: dict) -> str:
+    data = art.get("data") or {}
+    arch = data.get("archetype") or {}
+    counts = data.get("counts") or {}
+    lines = [
+        f"DECK LIMITÉ — {arch.get('name')} ({_fmt_colors(arch.get('colors'))}) : "
+        f"{counts.get('total', 0)} cartes "
+        f"({counts.get('creatures', 0)} créatures, {counts.get('lands', 0)} terrains) "
+        f"sur un pool importé de {counts.get('pool_size', 0)} cartes."
+    ]
+    if arch.get("strategy"):
+        lines.append(f"Stratégie : {arch['strategy']}")
+    for group in data.get("groups") or []:
+        names = [f"{c['qty']}x {c['name']}" if c.get("qty", 1) > 1 else c["name"]
+                 for c in group.get("cards") or []]
+        if names:
+            lines.append(f"{group.get('label')} : " + ", ".join(names))
+    lands = data.get("lands") or {}
+    land_bits = [f"{c['qty']}x {c['name']}" for c in lands.get("nonbasic") or []]
+    land_bits += [f"{c['qty']}x {c['name']}" for c in lands.get("basics") or []]
+    if land_bits:
+        lines.append("Terrains : " + ", ".join(land_bits))
+    sideboard = data.get("sideboard") or []
+    if sideboard:
+        sb = [f"{c['qty']}x {c['name']}" if c.get("qty", 1) > 1 else c["name"]
+              for c in sideboard]
+        lines.append(f"Réserve (cartes du pool non jouées) : " + ", ".join(sb))
+    return "\n".join(lines)
+
+
 _SNAPSHOT_BUILDERS = {
     "decklist": _snapshot_decklist,
     "commanders": _snapshot_commanders,
     "archetype": _snapshot_archetype,
+    "limited_deck": _snapshot_limited,
 }
 
 
@@ -475,7 +589,7 @@ def _context_snapshot(conversation_id: int) -> str:
     # Most actionable first: a generated deck, then commander/archetype research.
     blocks = [
         _SNAPSHOT_BUILDERS[t](latest[t])
-        for t in ("decklist", "commanders", "archetype")
+        for t in ("decklist", "limited_deck", "commanders", "archetype")
         if t in latest
     ]
     if not blocks:
@@ -488,10 +602,12 @@ def _context_snapshot(conversation_id: int) -> str:
     )
 
 
-def _agent_loop(api_messages: list[dict], profile_id: int, system: str):
+def _agent_loop(api_messages: list[dict], profile_id: int, system: str,
+                conversation_id: int | None = None):
     """Run the tool-use loop. Returns (final_text, artifacts)."""
     texts: list[str] = []
     artifacts: list[dict] = []
+    ctx = {"conversation_id": conversation_id}
 
     for _ in range(settings.chat_max_tool_iterations):
         resp = llm.create_message(system, api_messages, tools=TOOLS)
@@ -521,7 +637,7 @@ def _agent_loop(api_messages: list[dict], profile_id: int, system: str):
                      "content": f"Outil inconnu : {b.name}"}
                 )
                 continue
-            text, artifact = executor(b.input or {}, profile_id)
+            text, artifact = executor(b.input or {}, profile_id, ctx)
             if artifact:
                 artifacts.append(artifact)
             tool_results.append(
@@ -561,7 +677,7 @@ def _generate_reply(conversation_id: int, profile_id: int, user_text: str):
     api_messages = _history_messages(conversation_id)
     snapshot = _context_snapshot(conversation_id)
     system = f"{SYSTEM_PROMPT}\n\n{snapshot}" if snapshot else SYSTEM_PROMPT
-    return _agent_loop(api_messages, profile_id, system)
+    return _agent_loop(api_messages, profile_id, system, conversation_id)
 
 
 def run_turn(conversation_id: int, profile_id: int, user_text: str) -> None:
@@ -577,6 +693,52 @@ def run_turn(conversation_id: int, profile_id: int, user_text: str) -> None:
     text, artifacts = _generate_reply(conversation_id, profile_id, user_text)
     db.add_message(conversation_id, "assistant", text, artifacts=artifacts or None)
     db.touch_conversation(conversation_id, title=user_text)
+
+
+def create_limited_conversation(profile_id: int, pool_items, intent: dict) -> int:
+    """Build a Limited deck from an imported pool and open a chat seeded with it.
+
+    Returns the new conversation id. Blocking (Scryfall + LLM); call it off the
+    request thread. The deck lands as the first assistant message so the player
+    can immediately discuss/refine it ("plutôt en bleu", "pourquoi cette carte").
+    """
+    title = "Deck Limité"
+    cid = db.create_conversation(profile_id, title=title)
+
+    pool_total = sum(int(q) for _, q in pool_items)
+    distinct = len(pool_items)
+    user_text = (
+        f"J'ai importé un pool de {pool_total} cartes ({distinct} cartes uniques) "
+        "pour construire un deck Limité (40 cartes). Propose-moi le meilleur deck."
+    )
+    db.add_message(cid, "user", user_text)
+
+    if not pool_items:
+        db.add_message(
+            cid, "assistant",
+            "Le pool importé est vide ou illisible. Colle une liste de cartes "
+            "(une par ligne, ex. « 2 Lightning Bolt ») ou un export CSV.",
+        )
+        db.touch_conversation(cid, title=title)
+        return cid
+
+    artifact, deck = build_limited_artifact(pool_items, intent)
+    invalid = deck.get("invalid") or []
+    intro = _limited_summary(deck)
+    if deck.get("archetype", {}).get("strategy"):
+        intro += "\n\n" + deck["archetype"]["strategy"]
+    if invalid:
+        intro += (
+            f"\n\n{len(invalid)} carte(s) du pool n'ont pas été reconnues sur "
+            "Scryfall et ont été ignorées."
+        )
+    intro += (
+        "\n\nDis-moi si tu veux ajuster (autres couleurs, plus agressif, un thème "
+        "précis) ou pose-moi des questions sur le deck."
+    )
+    db.add_message(cid, "assistant", intro, artifacts=[artifact])
+    db.touch_conversation(cid, title=title)
+    return cid
 
 
 # --- Asynchronous turns --------------------------------------------------
