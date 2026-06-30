@@ -49,7 +49,7 @@ SYSTEM_PROMPT = (
     "« à acquérir », « un nouveau commandant »), appelle suggest_commanders avec "
     "unowned_only=true.\n"
     "- Pour le Commander (EDH), appelle suggest_commanders. Pour Standard, "
-    "Modern, Pioneer, Pauper, Legacy, Vintage (60 cartes), appelle "
+    "Modern, Pioneer, Pauper, Legacy, Vintage, Premodern (60 cartes), appelle "
     "research_archetype.\n"
     "- Quand le joueur choisit un commandant, propose-lui de générer la decklist "
     "complète (generate_decklist).\n"
@@ -121,8 +121,8 @@ TOOLS = [
         "name": "research_archetype",
         "description": (
             "Pour un format 60 cartes (standard, modern, pioneer, pauper, legacy, "
-            "vintage) : recherche un archétype compétitif, valide chaque carte via "
-            "Scryfall, analyse l'écart avec la collection et chiffre l'achat."
+            "vintage, premodern) : recherche un archétype compétitif, valide chaque "
+            "carte via Scryfall, analyse l'écart avec la collection et chiffre l'achat."
         ),
         "input_schema": {
             "type": "object",
@@ -314,7 +314,8 @@ def _exec_lookup_card(args: dict, profile_id: int):
     if not card:
         return f"Carte « {name} » introuvable sur Scryfall.", None
     price = scryfall.price_eur(card)
-    legal = [f for f in ("commander", "standard", "modern", "pioneer", "pauper")
+    legal = [f for f in ("commander", "standard", "pioneer", "modern", "legacy",
+                         "vintage", "pauper", "premodern")
              if scryfall.legal_in(card, f)]
     return (
         f"{card['name']} — prix {price if price is not None else 'indisponible'} € ; "

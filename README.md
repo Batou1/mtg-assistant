@@ -8,7 +8,7 @@ and a budget-constrained buylist priced in EUR.
 > This release: ManaBox import, French natural-language intent via **Claude
 > (Anthropic API)**, Commander suggestions with gap analysis and an EUR buylist,
 > full Commander decklist generation, **60-card format archetype research**
-> (Standard, Pauper, Modern, Pioneer…) grounded by Brave Search + validated
+> (Standard, Pauper, Modern, Pioneer, Legacy, Vintage, Premodern) grounded by Brave Search + validated
 > against Scryfall, and an **iterative chat** that drives the whole pipeline by
 > conversation (tool-calling).
 
@@ -41,7 +41,8 @@ and a budget-constrained buylist priced in EUR.
    budget (ranked by popularity-per-euro so the deck stays complete), lands
    topped up with basics. Each card is tagged *owned* / *to buy*, with a
    copy-paste export and an optional LLM-written game-plan summary.
-6. **60-card formats** — describe a wish for Standard, Pauper, Modern… and the
+6. **60-card formats** — describe a wish for Standard, Pauper, Modern, Legacy,
+   Vintage, **Premodern**… and the
    app researches the **archetype**: Brave Search surfaces recent meta pages, the
    LLM proposes the archetype's key cards, **every card is validated against
    Scryfall** (it must exist and be legal in the format, else it's dropped), then
