@@ -60,6 +60,29 @@ def test_coerce_accepts_premodern():
     assert intent._coerce({"format": "premodern"})["format"] == "premodern"
 
 
+def test_heuristic_shard_name_expands_to_colors():
+    # "Grixis commanders" must constrain the colour filter to U/B/R, otherwise
+    # off-colour commanders surface and the requested ones get buried.
+    parsed = intent._heuristic("propose Grixis commanders with less than 300€")
+    assert set(parsed["colors"]) == {"U", "B", "R"}
+    assert parsed["budget_eur"] == 300.0
+
+
+def test_heuristic_guild_and_wedge_names():
+    assert set(intent._heuristic("deck rakdos aggro")["colors"]) == {"B", "R"}
+    assert set(intent._heuristic("deck jeskai control")["colors"]) == {"U", "R", "W"}
+    assert set(intent._heuristic("commandants esper")["colors"]) == {"W", "U", "B"}
+
+
+def test_heuristic_euro_symbol_budget_without_keyword():
+    # Regression: "<n>€" / "<n> €" must be detected even without the word "budget".
+    assert intent._heuristic("un deck mono noir, 50€")["budget_eur"] == 50.0
+    assert intent._heuristic("moins de 300 € en bleu")["budget_eur"] == 300.0
+    # "euros" word form still works and "europe" is not mistaken for a budget.
+    assert intent._heuristic("budget 40 euros")["budget_eur"] == 40.0
+    assert intent._heuristic("un deck europe")["budget_eur"] is None
+
+
 def test_coerce_max_colors():
     assert intent._coerce({"max_colors": 2})["max_colors"] == 2
     assert intent._coerce({"max_colors": 0})["max_colors"] is None  # < 1 -> none

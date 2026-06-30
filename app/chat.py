@@ -44,7 +44,9 @@ SYSTEM_PROMPT = (
     "dans le CONTEXTE ACTUEL. N'invente AUCUN nom de carte. Pour vérifier le prix "
     "ou la légalité d'une carte précise, utilise lookup_card.\n"
     "- Respecte STRICTEMENT le format, les couleurs et le nombre de couleurs "
-    "demandés. « monocouleur » => max_colors=1.\n"
+    "demandés. « monocouleur » => max_colors=1. Convertis les noms de "
+    "guildes/shards/wedges en couleurs WUBRG quand tu appelles un outil "
+    "(ex: Grixis=U,B,R ; Rakdos=B,R ; Jeskai=U,R,W ; Esper=W,U,B ; Bant=G,W,U).\n"
     "- Si le joueur veut un commandant qu'il NE possède PAS (« que je n'ai pas », "
     "« à acquérir », « un nouveau commandant »), appelle suggest_commanders avec "
     "unowned_only=true.\n"
@@ -268,7 +270,7 @@ def _exec_suggest_commanders(args: dict, profile_id: int, ctx: dict | None = Non
             )
         top = proposed_res[:6]
     else:
-        top = owned_res[:5] + proposed_res[:3]
+        top = owned_res[:8] + proposed_res[:3]
     # Trim the heavy fields we don't render in the chat artifact.
     for r in top:
         r.pop("missing_cards", None)

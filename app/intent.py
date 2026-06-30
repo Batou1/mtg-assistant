@@ -31,6 +31,25 @@ _COLOR_WORDS = {
     "green": "G", "vert": "G", "verte": "G",
 }
 
+# Guild / shard / wedge names -> the colours they stand for. Players routinely
+# describe a deck by these (e.g. "Grixis commanders") rather than by colour, so
+# without this the colour filter stays empty and off-colour commanders surface
+# while the requested ones get buried.
+_GUILD_SHARD_WORDS = {
+    # Two-colour guilds.
+    "azorius": ["W", "U"], "dimir": ["U", "B"], "rakdos": ["B", "R"],
+    "gruul": ["R", "G"], "selesnya": ["G", "W"], "orzhov": ["W", "B"],
+    "izzet": ["U", "R"], "golgari": ["B", "G"], "boros": ["R", "W"],
+    "simic": ["G", "U"],
+    # Three-colour shards (allied) and wedges (enemy).
+    "bant": ["G", "W", "U"], "esper": ["W", "U", "B"], "grixis": ["U", "B", "R"],
+    "jund": ["B", "R", "G"], "naya": ["R", "G", "W"],
+    "abzan": ["W", "B", "G"], "jeskai": ["U", "R", "W"], "sultai": ["B", "G", "U"],
+    "mardu": ["R", "W", "B"], "temur": ["G", "U", "R"],
+    # Four/five colour shorthands.
+    "wubrg": ["W", "U", "B", "R", "G"], "5c": ["W", "U", "B", "R", "G"],
+}
+
 _FORMAT_WORDS = {
     "commander": "commander", "edh": "commander", "duel commander": "commander",
     "standard": "standard",
@@ -65,7 +84,9 @@ _SYSTEM_PROMPT = (
     '"legacy","vintage","premodern", ou null si non precise. '
     '("premodern"/"pre-modern" = le format retro 4e edition a Scourge.)\n'
     '- "colors": liste de symboles parmi "W","U","B","R","G" (blanc, bleu, noir, '
-    "rouge, vert). Liste vide si non precise.\n"
+    "rouge, vert). Liste vide si non precise. Convertis les noms de "
+    "guildes/shards/wedges en couleurs (ex: Grixis=U,B,R ; Rakdos=B,R ; "
+    "Jeskai=U,R,W ; Esper=W,U,B ; Bant=G,W,U).\n"
     '- "theme": courte description du theme/archetype en quelques mots.\n'
     '- "keywords": liste de mots-cles en anglais decrivant la strategie '
     '(ex: "aristocrats","tokens","reanimator","ramp").\n'
@@ -140,6 +161,12 @@ def _heuristic(text: str) -> dict:
     for word, sym in _COLOR_WORDS.items():
         if re.search(rf"\b{re.escape(word)}\b", low) and sym not in colors:
             colors.append(sym)
+    # Guild/shard/wedge names expand to their colours (e.g. "grixis" -> U,B,R).
+    for word, syms in _GUILD_SHARD_WORDS.items():
+        if re.search(rf"\b{re.escape(word)}\b", low):
+            for sym in syms:
+                if sym not in colors:
+                    colors.append(sym)
 
     keywords = [w for w in _THEME_WORDS if w in low]
 
@@ -160,7 +187,10 @@ def _heuristic(text: str) -> dict:
     )
 
     budget = None
-    m = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:€|euros?|eur)\b", low)
+    # ``€`` is a symbol, so a trailing \b never matches after it ("300€"); guard
+    # the letter forms (euro/eur) against false hits like "europe" with a
+    # negative lookahead instead.
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:€|euros?|eur)(?![a-z])", low)
     if not m:
         m = re.search(r"budget[^\d]{0,12}(\d+(?:[.,]\d+)?)", low)
     if m:
