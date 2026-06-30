@@ -47,8 +47,10 @@ class Settings:
 
     # --- LLM (Anthropic / Claude) ------------------------------------------
     # The API key is read by the SDK from ANTHROPIC_API_KEY (kept in .env).
-    anthropic_model: str = os.environ.get("MTG_ANTHROPIC_MODEL", "claude-sonnet-4-6")
-    anthropic_max_tokens: int = int(os.environ.get("MTG_ANTHROPIC_MAX_TOKENS", "2048"))
+    anthropic_model: str = os.environ.get("MTG_ANTHROPIC_MODEL", "claude-sonnet-5")
+    # Sonnet 5's tokenizer emits ~30% more tokens per unit of text than 4.6, so
+    # the output budget is bumped ~30% to preserve the same text headroom.
+    anthropic_max_tokens: int = int(os.environ.get("MTG_ANTHROPIC_MAX_TOKENS", "2700"))
 
     # --- Iterative chat (Phase 3) ------------------------------------------
     # How many tool-call rounds a single chat turn may take before stopping.

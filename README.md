@@ -91,7 +91,7 @@ SQLite — no multi-gigabyte bulk download, minimal disk footprint.
 
 - Python 3.11+
 - An **Anthropic API key** for the LLM (intent parsing, 60-card archetypes, deck
-  game-plans). Uses **`claude-sonnet-4-6`** by default — strong card-pool
+  game-plans). Uses **`claude-sonnet-5`** by default — strong card-pool
   knowledge and French, a few cents/month for personal use. Put it in `.env`:
 
   ```bash
@@ -134,7 +134,7 @@ proposes from its own knowledge only, still Scryfall-validated).
 | `MTG_DISCOVERY_POOL` | `20`                        | Candidate commanders resolved + filtered |
 | `MTG_DISCOVERY_LIMIT`| `4`                         | Proposed (unowned) commanders shown  |
 | `ANTHROPIC_API_KEY`  | *(empty)*                   | Anthropic API key (read by the SDK)  |
-| `MTG_ANTHROPIC_MODEL`| `claude-sonnet-4-6`         | Claude model used for all LLM tasks  |
+| `MTG_ANTHROPIC_MODEL`| `claude-sonnet-5`           | Claude model used for all LLM tasks  |
 | `MTG_CHAT_MAX_TOOL_ITERS` | `6`                    | Max tool-call rounds per chat turn   |
 | `MTG_CHAT_HISTORY`   | `16`                        | Past messages replayed to the API    |
 | `MTG_LIMITED_DECK_SIZE` | `40`                     | Limited deck size (build-from-a-list) |

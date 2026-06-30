@@ -91,7 +91,7 @@ def chat_json(system: str, user: str) -> dict | None:
 
 def chat_text(system: str, user: str) -> str | None:
     """Ask for free-form text back, or None if unavailable."""
-    return _message(system, user, 600) or None
+    return _message(system, user, 800) or None
 
 
 def archetype_research(fmt: str, intent: dict, context: str) -> dict | None:
