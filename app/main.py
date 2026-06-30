@@ -218,23 +218,35 @@ async def generate(
     return _render(request, profile, "deck.html", ctx)
 
 
-# --- Limited (draft/sealed): build the best deck from an imported pool ----
+# --- Build a deck from an imported card list (Limited, Commander, 60-card) -
 
-@app.get("/limited", response_class=HTMLResponse)
-def limited_page(request: Request):
+def _format_choices() -> list[dict]:
+    return [
+        {"value": f, "label": poolbuild.SPECS[f].label}
+        for f in poolbuild.FORMAT_ORDER if f in poolbuild.SPECS
+    ]
+
+
+@app.get("/build", response_class=HTMLResponse)
+def build_page(request: Request):
     profile = current_profile(request)
+    distinct, _total = db.collection_count(profile["id"])
     ctx = _base_context(
-        request, profile, llm_ok=llm.is_available(), llm_model=settings.anthropic_model
+        request, profile, llm_ok=llm.is_available(), llm_model=settings.anthropic_model,
+        formats=_format_choices(), default_format=poolbuild.DEFAULT_FORMAT,
+        has_collection=bool(distinct),
     )
-    return _render(request, profile, "limited.html", ctx)
+    return _render(request, profile, "build.html", ctx)
 
 
-@app.post("/limited")
-async def limited_build(
+@app.post("/build")
+async def build_from_list(
     request: Request,
     pool: str = Form(""),
+    format: str = Form(poolbuild.DEFAULT_FORMAT),
     colors: list[str] = Form([]),
     theme: str = Form(""),
+    budget: str = Form(""),
     file: UploadFile | None = File(None),
 ):
     profile = current_profile(request)
@@ -245,14 +257,16 @@ async def limited_build(
         text = content.decode("utf-8-sig", errors="ignore")
         filename = file.filename
 
+    fmt = format if format in poolbuild.SPECS else poolbuild.DEFAULT_FORMAT
     pool_items = poolbuild.parse_pool(text, filename)
     parsed = intent._coerce({
         "colors": colors,
         "theme": theme,
-        "source": "limited-form",
+        "budget_eur": _parse_budget(budget),
+        "source": "build-form",
     })
     conv_id = await run_in_threadpool(
-        chat.create_limited_conversation, profile["id"], pool_items, parsed
+        chat.create_pool_conversation, profile["id"], pool_items, fmt, parsed
     )
 
     resp = RedirectResponse(url="/chat", status_code=303)
