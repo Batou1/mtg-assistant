@@ -146,6 +146,11 @@ def pool_deck(spec, intent: dict, pool_lines: list[str]) -> dict | None:
         rules.append("Une seule copie maximum par carte (singleton).")
     else:
         rules.append("Plusieurs exemplaires d'une carte sont permis seulement si le pool en contient assez.")
+    if spec.needs_commander:
+        rules.append(
+            "Choisis un COMMANDANT (créature légendaire) présent dans le pool ; le "
+            "deck (99 cartes + le commandant) respecte STRICTEMENT son identité de couleur."
+        )
     if intent.get("colors"):
         rules.append(f"Reste STRICTEMENT dans les couleurs imposées : {', '.join(intent['colors'])}.")
     else:
@@ -165,6 +170,8 @@ def pool_deck(spec, intent: dict, pool_lines: list[str]) -> dict | None:
         "base à jouer (count = nombre de copies prises dans le pool).\n"
         '- "basic_lands": objet {"Plains":n,"Island":n,...} de terrains de base '
         "pour compléter le deck (vide si non pertinent)."
+        + ('\n- "commander": nom EXACT du commandant choisi (du pool).'
+           if spec.needs_commander else "")
     )
     parts = [f"Format : {spec.label} ({spec.deck_size} cartes)."]
     if intent.get("theme"):
@@ -174,6 +181,38 @@ def pool_deck(spec, intent: dict, pool_lines: list[str]) -> dict | None:
     if intent.get("colors"):
         parts.append(f"Couleurs imposées : {', '.join(intent['colors'])}")
     parts.append("POOL DISPONIBLE :\n" + "\n".join(pool_lines))
+    return chat_json(system, "\n".join(parts))
+
+
+def pool_bonus(spec, archetype: dict, deck_cards: list[str], colors: list[str],
+               owned_eligible: list[str]) -> dict | None:
+    """Suggest synergy cards beyond the deck: owned ones + a few to buy.
+
+    ``owned_eligible`` is the pre-filtered list of cards the player owns that are
+    legal and on-colour. The model may only pick owned bonus cards FROM that
+    list (re-checked by the caller); buy suggestions are new cards, validated
+    against Scryfall downstream.
+    """
+    system = (
+        f"Tu es un expert Magic: the Gathering, format « {spec.label} ». On te "
+        "donne un deck déjà construit et la liste des cartes que le joueur POSSÈDE "
+        "et qui sont jouables dans ce deck. Recommande des cartes BONUS à ajouter "
+        "EN PLUS du deck (renforts/synergies), sans contrainte de taille de deck. "
+        "Réponds UNIQUEMENT en JSON avec :\n"
+        '- "owned_bonus": liste de noms choisis STRICTEMENT dans la liste "Cartes '
+        "possédées éligibles\" fournie (les plus synergiques avec le deck).\n"
+        '- "buy_bonus": liste de 5 à 10 noms de cartes RÉELLES (orthographe exacte, '
+        f"légales en {spec.label}) que le joueur ne possède pas mais qui "
+        "amélioreraient le deck. N'invente aucune carte."
+    )
+    parts = [f"Deck : {archetype.get('name')} ({'/'.join(colors) or 'incolore'})."]
+    if archetype.get("strategy"):
+        parts.append(f"Stratégie : {archetype['strategy']}")
+    parts.append("Cartes clés du deck : " + ", ".join(deck_cards[:40]))
+    if owned_eligible:
+        parts.append("Cartes possédées éligibles :\n" + "\n".join(f"- {n}" for n in owned_eligible))
+    else:
+        parts.append("Cartes possédées éligibles : (aucune)")
     return chat_json(system, "\n".join(parts))
 
 

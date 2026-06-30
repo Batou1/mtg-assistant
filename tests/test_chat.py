@@ -229,7 +229,7 @@ def _lim_resolve(names, client=None):
     return found, [n for n in names if n.lower() not in _LIM_POOL]
 
 
-def test_create_limited_conversation_seeds_deck(env, monkeypatch):
+def test_create_pool_conversation_seeds_deck(env, monkeypatch):
     db, chat = env.db, env.chat
     import app.scryfall as scryfall
     monkeypatch.setattr(scryfall, "resolve_cards", _lim_resolve)
@@ -237,12 +237,12 @@ def test_create_limited_conversation_seeds_deck(env, monkeypatch):
 
     pid = db.ensure_default_profile()
     pool_items = [("Goblin Guide", 1), ("Lightning Bolt", 2), ("Shock", 1)]
-    cid = chat.create_limited_conversation(pid, pool_items, {"colors": ["R"]})
+    cid = chat.create_pool_conversation(pid, pool_items, "limited", {"colors": ["R"]})
 
     msgs = db.get_messages(cid)
     assert msgs[0]["role"] == "user"
     art = msgs[-1]["artifacts"][0]
-    assert art["type"] == "limited_deck"
+    assert art["type"] == "pool_deck"
     assert art["data"]["counts"]["total"] == 40
     # The pool is carried in the artifact so chat can rebuild from it.
     assert any(p["name"] == "Lightning Bolt" for p in art["data"]["pool"])
@@ -255,10 +255,11 @@ def test_build_pool_deck_tool_rebuilds_from_stored_pool(env, monkeypatch):
     monkeypatch.setattr(chat.llm, "is_available", lambda: True)
 
     pid = db.ensure_default_profile()
-    # Seed a conversation that already has a Limited deck (heuristic-built).
+    # Seed a conversation that already has a pool deck (heuristic-built).
     monkeypatch.setattr(chat.llm, "is_available", lambda: False)
-    cid = chat.create_limited_conversation(
-        pid, [("Goblin Guide", 1), ("Lightning Bolt", 2), ("Shock", 1)], {"colors": ["R"]}
+    cid = chat.create_pool_conversation(
+        pid, [("Goblin Guide", 1), ("Lightning Bolt", 2), ("Shock", 1)], "limited",
+        {"colors": ["R"]}
     )
     monkeypatch.setattr(chat.llm, "is_available", lambda: True)
 
@@ -282,7 +283,7 @@ def test_build_pool_deck_tool_rebuilds_from_stored_pool(env, monkeypatch):
     chat.run_turn(cid, pid, "refais le deck en plus agressif")
 
     assistant = db.get_messages(cid)[-1]
-    assert assistant["artifacts"][-1]["type"] == "limited_deck"
+    assert assistant["artifacts"][-1]["type"] == "pool_deck"
     assert calls["n"] == 2
 
 

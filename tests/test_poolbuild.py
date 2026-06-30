@@ -1,8 +1,8 @@
-from app import poolbuild, llm, scryfall
+from app import buylist, db, poolbuild, llm, scryfall
 
 
-def _card(name, type_line="Creature — Test", colors=None, cmc=1.0):
-    return {
+def _card(name, type_line="Creature — Test", colors=None, cmc=1.0, legal=None, eur=None):
+    card = {
         "name": name,
         "type_line": type_line,
         "color_identity": colors if colors is not None else ["R"],
@@ -11,6 +11,11 @@ def _card(name, type_line="Creature — Test", colors=None, cmc=1.0):
         "image_uris": {"normal": f"http://img/{name}"},
         "oracle_text": "Test text.",
     }
+    if legal is not None:
+        card["legalities"] = legal
+    if eur is not None:
+        card["prices"] = {"eur": str(eur)}
+    return card
 
 
 POOL = {
@@ -140,3 +145,111 @@ def test_build_drops_unresolved_cards(monkeypatch):
         [("Lightning Bolt", 1), ("Not A Real Card", 1)], "limited", {"colors": ["R"]}
     )
     assert "Not A Real Card" in deck["invalid"]
+
+
+# --- Constructed formats: legality + commander grounding ----------------
+
+def test_constructed_drops_format_illegal_cards(monkeypatch):
+    pool = {
+        "lightning bolt": _card("Lightning Bolt", "Instant", ["R"], 1.0,
+                                 legal={"modern": "legal"}),
+        "black lotus": _card("Black Lotus", "Artifact", [], 0.0,
+                              legal={"modern": "not_legal"}),
+    }
+
+    def resolve(names, client=None):
+        return ({n.lower(): pool[n.lower()] for n in names if n.lower() in pool},
+                [n for n in names if n.lower() not in pool])
+
+    monkeypatch.setattr(scryfall, "resolve_cards", resolve)
+    monkeypatch.setattr(llm, "is_available", lambda: False)
+
+    deck = poolbuild.build_from_pool(
+        [("Lightning Bolt", 4), ("Black Lotus", 1)], "modern", {"colors": ["R"]},
+        with_bonus=False,
+    )
+    assert "Black Lotus" in deck["invalid"]  # not modern-legal
+    played = {c["name"] for g in deck["groups"] for c in g["cards"]}
+    assert "Black Lotus" not in played
+
+
+def test_commander_enforces_colour_identity(monkeypatch):
+    pool = {
+        "krenko, mob boss": _card("Krenko, Mob Boss", "Legendary Creature — Goblin",
+                                   ["R"], 4.0, legal={"commander": "legal"}),
+        "lightning bolt": _card("Lightning Bolt", "Instant", ["R"], 1.0,
+                                 legal={"commander": "legal"}),
+        "llanowar elves": _card("Llanowar Elves", "Creature — Elf", ["G"], 1.0,
+                                 legal={"commander": "legal"}),
+    }
+
+    def resolve(names, client=None):
+        return ({n.lower(): pool[n.lower()] for n in names if n.lower() in pool},
+                [n for n in names if n.lower() not in pool])
+
+    monkeypatch.setattr(scryfall, "resolve_cards", resolve)
+    monkeypatch.setattr(llm, "is_available", lambda: True)
+    monkeypatch.setattr(llm, "pool_deck", lambda spec, intent, lines: {
+        "archetype": "Krenko Goblins", "colors": ["R"], "strategy": "Go wide.",
+        "commander": "Krenko, Mob Boss",
+        "main_deck": [{"name": "Lightning Bolt", "count": 1},
+                      {"name": "Llanowar Elves", "count": 1}],  # off-identity -> dropped
+        "basic_lands": {"Mountain": 98},
+    })
+
+    deck = poolbuild.build_from_pool(
+        [("Krenko, Mob Boss", 1), ("Lightning Bolt", 1), ("Llanowar Elves", 1)],
+        "commander", {}, with_bonus=False,
+    )
+    assert deck["commander"]["name"] == "Krenko, Mob Boss"
+    played = {c["name"] for g in deck["groups"] for c in g["cards"]}
+    assert "Lightning Bolt" in played
+    assert "Llanowar Elves" not in played   # green, outside Krenko's red identity
+    assert deck["counts"]["total"] == 100    # commander + 99
+    # The commander must not also appear in the leftover sideboard.
+    assert "Krenko, Mob Boss" not in {c["name"] for c in deck["sideboard"]}
+
+
+# --- Collection bonus: owned synergy + cards to buy ---------------------
+
+def test_bonus_recommends_owned_and_buy(monkeypatch):
+    catalog = {
+        "lightning bolt": _card("Lightning Bolt", "Instant", ["R"], 1.0,
+                                 legal={"modern": "legal"}),
+        "goblin guide": _card("Goblin Guide", "Creature — Goblin", ["R"], 1.0,
+                               legal={"modern": "legal"}),       # owned, eligible
+        "llanowar elves": _card("Llanowar Elves", "Creature — Elf", ["G"], 1.0,
+                                 legal={"modern": "legal"}),     # owned, off-colour
+        "fireblast": _card("Fireblast", "Instant", ["R"], 4.0,
+                            legal={"modern": "legal"}, eur=2.5),  # buy suggestion
+    }
+
+    def resolve(names, client=None):
+        return ({n.lower(): catalog[n.lower()] for n in names if n.lower() in catalog},
+                [n for n in names if n.lower() not in catalog])
+
+    monkeypatch.setattr(scryfall, "resolve_cards", resolve)
+    monkeypatch.setattr(llm, "is_available", lambda: True)
+    monkeypatch.setattr(llm, "pool_deck", lambda spec, intent, lines: {
+        "archetype": "Mono Red", "colors": ["R"], "strategy": "Burn.",
+        "main_deck": [{"name": "Lightning Bolt", "count": 4}], "basic_lands": {"Mountain": 17},
+    })
+    monkeypatch.setattr(db, "collection_names", lambda pid: [
+        ("Goblin Guide", "goblin guide", 1),
+        ("Llanowar Elves", "llanowar elves", 1),
+    ])
+    monkeypatch.setattr(llm, "pool_bonus", lambda spec, arch, cards, colors, owned: {
+        "owned_bonus": ["Goblin Guide", "Llanowar Elves"],  # Elves filtered (off-colour)
+        "buy_bonus": ["Fireblast"],
+    })
+
+    deck = poolbuild.build_from_pool(
+        [("Lightning Bolt", 4)], "modern", {}, profile_id=1, with_bonus=True
+    )
+    bonus = deck["bonus"]
+    assert bonus is not None
+    owned_names = {c["name"] for c in bonus["owned"]}
+    assert owned_names == {"Goblin Guide"}              # green Elves excluded as off-colour
+    buy_names = {c["name"] for c in bonus["buy"]}
+    assert "Fireblast" in buy_names
+    assert bonus["buy_total_eur"] == 2.5

@@ -25,7 +25,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from . import llm, manabox, parsing, scryfall
+from . import buylist, db, llm, manabox, parsing, scryfall
 from .config import settings
 
 _BASICS = {"W": "Plains", "U": "Island", "B": "Swamp", "R": "Mountain", "G": "Forest"}
@@ -59,21 +59,45 @@ class FormatSpec:
     add_basics: bool         # top up with basic lands to reach deck_size
     singleton: bool          # at most one copy of each card
     legality_format: str | None  # Scryfall legality to enforce, or None (Limited)
+    needs_commander: bool = False   # pick a legendary commander from the pool
+    # Recommend extra owned/buy synergy cards beyond the deck (off for Limited,
+    # where the deck must come solely from the sealed/draft pool).
+    allow_collection_bonus: bool = True
 
 
-# Only Limited is exposed for now. The commented specs show how the SAME engine
-# extends to pool-constrained constructed/Commander decks later — add the spec
-# here and surface it in the UI/chat; no pipeline changes needed.
+def _constructed(name: str, label: str) -> FormatSpec:
+    """A standard 60-card constructed format (legality enforced, basics free)."""
+    return FormatSpec(name=name, label=label, deck_size=60, target_lands=17,
+                      add_basics=True, singleton=False, legality_format=name)
+
+
+# All pool-buildable formats share the one engine below; the spec is the only
+# thing that differs. Limited stays pool-only (no collection bonus); the rest
+# enforce Scryfall legality and can suggest synergy cards from your collection.
 SPECS: dict[str, FormatSpec] = {
     "limited": FormatSpec(
         name="limited", label="Limité (draft/sealed)",
         deck_size=settings.limited_deck_size, target_lands=settings.limited_lands,
         add_basics=True, singleton=False, legality_format=None,
+        allow_collection_bonus=False,
     ),
-    # "commander": FormatSpec("commander", "Commander", 100, 37, True, True, "commander"),
-    # "modern":    FormatSpec("modern", "Modern", 60, 17, True, False, "modern"),
-    # "pauper":    FormatSpec("pauper", "Pauper", 60, 17, True, False, "pauper"),
+    "commander": FormatSpec(
+        name="commander", label="Commander", deck_size=100, target_lands=37,
+        add_basics=True, singleton=True, legality_format="commander",
+        needs_commander=True,
+    ),
+    "standard": _constructed("standard", "Standard"),
+    "pioneer": _constructed("pioneer", "Pioneer"),
+    "modern": _constructed("modern", "Modern"),
+    "pauper": _constructed("pauper", "Pauper"),
+    "legacy": _constructed("legacy", "Legacy"),
+    "vintage": _constructed("vintage", "Vintage"),
+    "premodern": _constructed("premodern", "Premodern"),
 }
+
+# Stable display order for the format selector (engine ignores order).
+FORMAT_ORDER = ["limited", "commander", "standard", "pioneer", "modern",
+                "pauper", "legacy", "vintage", "premodern"]
 
 DEFAULT_FORMAT = "limited"
 
@@ -92,6 +116,12 @@ def _is_land(card: dict) -> bool:
 
 def _is_creature(card: dict) -> bool:
     return "Creature" in _first_face_type(card)
+
+
+def _is_commander_candidate(card: dict) -> bool:
+    """A card that can be a Commander: a legendary creature (good enough here)."""
+    t = _first_face_type(card)
+    return "Legendary" in t and "Creature" in t
 
 
 def _category(card: dict) -> str:
@@ -262,8 +292,13 @@ def _item(entry: dict, count: int) -> dict:
     }
 
 
-def build_from_pool(pool_items, fmt: str, intent: dict, client: httpx.Client | None = None) -> dict:
-    """Build the best deck for ``fmt`` from ``pool_items`` (list of (name, qty))."""
+def build_from_pool(pool_items, fmt: str, intent: dict, client: httpx.Client | None = None,
+                    profile_id: int | None = None, with_bonus: bool = True) -> dict:
+    """Build the best deck for ``fmt`` from ``pool_items`` (list of (name, qty)).
+
+    For non-Limited formats, also recommends synergy cards beyond the deck count
+    (owned ones from ``profile_id``'s collection + a few to buy) when ``with_bonus``.
+    """
     spec = SPECS.get(fmt) or SPECS[DEFAULT_FORMAT]
     pool_items = [(n, int(q)) for n, q in pool_items if n]
 
@@ -314,22 +349,50 @@ def build_from_pool(pool_items, fmt: str, intent: dict, client: httpx.Client | N
         chosen.append({"entry": entry, "count": count})
         seen.add(entry["key"])
 
+    # Commander: pick a legendary commander from the pool and enforce its colour
+    # identity on the rest of the deck (a real EDH rule + keeps the deck legal).
+    commander_item = None
+    commander_identity: set[str] | None = None
+    commander_key: str | None = None
+    if spec.needs_commander and pool:
+        cmd = index.get(_norm(selection.get("commander") or ""))
+        if cmd is None:
+            cmd = next((e for e in pool if _is_commander_candidate(e["card"])), None)
+        if cmd is not None:
+            commander_key = cmd["key"]
+            commander_identity = {c for c in scryfall.color_identity(cmd["card"]) if c in _BASICS}
+            chosen = [
+                c for c in chosen
+                if c["entry"]["key"] != cmd["key"]
+                and set(scryfall.color_identity(c["entry"]["card"])) <= commander_identity
+            ]
+            commander_item = {
+                "name": cmd["name"], "image": scryfall.image(cmd["card"]),
+                "colors": sorted(commander_identity),
+            }
+
     spells = [c for c in chosen if not _is_land(c["entry"]["card"])]
     nonbasic_lands = [c for c in chosen if _is_land(c["entry"]["card"])]
     nonbasic_total = sum(c["count"] for c in spells) + sum(c["count"] for c in nonbasic_lands)
 
+    # The commander occupies one of the deck's slots.
+    fill_size = spec.deck_size - (1 if commander_item else 0)
+
     basics: list[tuple[str, int]] = []
     if spec.add_basics:
-        need = spec.deck_size - nonbasic_total
+        need = fill_size - nonbasic_total
         if need < 0:
             spells = _trim(spells, -need)
             need = 0
-        colors = [c for c in (selection.get("colors") or intent.get("colors")
-                              or _derive_colors([s["entry"]["card"] for s in spells]))
-                  if c in _BASICS]
+        if commander_identity is not None:
+            colors = sorted(commander_identity)
+        else:
+            colors = [c for c in (selection.get("colors") or intent.get("colors")
+                                  or _derive_colors([s["entry"]["card"] for s in spells]))
+                      if c in _BASICS]
         basics = _distribute_basics(colors, need, selection.get("basic_lands"))
-    elif nonbasic_total > spec.deck_size:
-        spells = _trim(spells, nonbasic_total - spec.deck_size)
+    elif nonbasic_total > fill_size:
+        spells = _trim(spells, nonbasic_total - fill_size)
 
     basics_total = sum(q for _, q in basics)
 
@@ -351,6 +414,8 @@ def build_from_pool(pool_items, fmt: str, intent: dict, client: httpx.Client | N
     chosen_counts = {c["entry"]["key"]: c["count"] for c in chosen}
     sideboard = []
     for e in pool:
+        if e["key"] == commander_key:
+            continue  # the commander is shown on its own, not as a leftover
         leftover = e["qty"] - chosen_counts.get(e["key"], 0)
         if leftover > 0:
             sideboard.append({"name": e["name"], "image": scryfall.image(e["card"]),
@@ -361,17 +426,21 @@ def build_from_pool(pool_items, fmt: str, intent: dict, client: httpx.Client | N
     creature_count = sum(c["count"] for c in spells if _is_creature(c["entry"]["card"]))
     lands_total = nonbasic_land_count + basics_total
 
-    colors_out = [
-        c for c in (selection.get("colors")
-                    or _derive_colors([s["entry"]["card"] for s in spells]))
-        if c in _BASICS
-    ]
+    if commander_identity is not None:
+        colors_out = sorted(commander_identity)
+    else:
+        colors_out = [
+            c for c in (selection.get("colors")
+                        or _derive_colors([s["entry"]["card"] for s in spells]))
+            if c in _BASICS
+        ]
 
     deck = {
         "format": spec.name,
         "format_label": spec.label,
+        "commander": commander_item,
         "archetype": {
-            "name": (selection.get("archetype") or "Deck Limité").strip(),
+            "name": (selection.get("archetype") or f"Deck {spec.label}").strip(),
             "colors": colors_out,
             "strategy": (selection.get("strategy") or "").strip(),
         },
@@ -383,7 +452,7 @@ def build_from_pool(pool_items, fmt: str, intent: dict, client: httpx.Client | N
         },
         "sideboard": sideboard,
         "counts": {
-            "total": spell_count + lands_total,
+            "total": (1 if commander_item else 0) + spell_count + lands_total,
             "spells": spell_count,
             "creatures": creature_count,
             "lands": lands_total,
@@ -393,13 +462,22 @@ def build_from_pool(pool_items, fmt: str, intent: dict, client: httpx.Client | N
         "invalid": invalid,
         "source": source,
         "deck_size": spec.deck_size,
+        "bonus": None,
     }
     deck["decklist_text"] = _decklist_text(deck)
+
+    if with_bonus and spec.allow_collection_bonus and profile_id is not None and llm.is_available():
+        deck["bonus"] = _compute_bonus(
+            deck, spec, intent, profile_id,
+            pool_keys={e["key"] for e in pool}, client=client,
+        )
     return deck
 
 
 def _decklist_text(deck: dict) -> str:
     lines: list[str] = []
+    if deck.get("commander"):
+        lines.append(f"Commander\n1 {deck['commander']['name']}\n")
     for group in deck["groups"]:
         for c in group["cards"]:
             lines.append(f"{c['qty']} {c['name']}")
@@ -415,7 +493,84 @@ def _decklist_text(deck: dict) -> str:
     return "\n".join(lines)
 
 
-def build(pool_items, fmt: str, intent: dict) -> dict:
+# --- Collection bonus: synergy cards beyond the deck ---------------------
+
+def _compute_bonus(deck: dict, spec: FormatSpec, intent: dict, profile_id: int,
+                   pool_keys: set[str], client: httpx.Client | None) -> dict | None:
+    """Recommend extra cards beyond the deck: owned synergy + a few to buy.
+
+    Owned candidates come from the player's collection (legal + colour/identity
+    fit, not already in the submitted pool); the LLM ranks them and proposes a
+    few new cards to buy. Buy suggestions are Scryfall-validated and priced.
+    """
+    identity = set(deck["archetype"]["colors"])  # commander identity or deck colours
+    legal_fmt = spec.legality_format
+
+    def fits(card: dict) -> bool:
+        if legal_fmt and not scryfall.legal_in(card, legal_fmt):
+            return False
+        return set(scryfall.color_identity(card)) <= identity if identity else \
+            not scryfall.color_identity(card)
+
+    # Owned cards not already in the submitted pool.
+    owned = [(raw, key) for raw, key, _qty in db.collection_names(profile_id)
+             if key not in pool_keys]
+    cand_names = [raw for raw, _key in owned][:settings.bonus_owned_scan]
+    resolved, _nf = scryfall.resolve_cards(cand_names, client=client) if cand_names else ({}, [])
+    eligible = [resolved[_norm(n)]["name"] for n in cand_names
+                if _norm(n) in resolved and fits(resolved[_norm(n)])]
+    eligible_set = {n.lower() for n in eligible}
+
+    key_cards = [deck["commander"]["name"]] if deck.get("commander") else []
+    key_cards += [c["name"] for g in deck["groups"] for c in g["cards"]][:40]
+
+    sel = llm.pool_bonus(spec, deck["archetype"], key_cards,
+                         deck["archetype"]["colors"], eligible[:80]) or {}
+
+    # Owned bonus: grounded to the eligible owned list.
+    owned_bonus, seen = [], set()
+    for name in sel.get("owned_bonus") or []:
+        if isinstance(name, str) and name.lower() in eligible_set and name.lower() not in seen:
+            card = resolved.get(_norm(name))
+            owned_bonus.append({"name": card["name"] if card else name,
+                                "image": scryfall.image(card) if card else None})
+            seen.add(name.lower())
+        if len(owned_bonus) >= settings.bonus_owned_max:
+            break
+
+    # Buy bonus: new cards the model proposes — must exist, be legal, fit, and
+    # not already be owned / in the pool / in the deck.
+    known = pool_keys | eligible_set | {n.lower() for n in seen}
+    if deck.get("commander"):
+        known.add(deck["commander"]["name"].lower())
+    buy_names = [n for n in (sel.get("buy_bonus") or []) if isinstance(n, str)]
+    buy_resolved, _bnf = scryfall.resolve_cards(buy_names, client=client) if buy_names else ({}, [])
+    buy_candidates, seen_buy = [], set()
+    for name in buy_names:
+        card = buy_resolved.get(_norm(name))
+        key = _norm(name)
+        if card is None or key in known or key in seen_buy:
+            continue
+        if not fits(card):
+            continue
+        seen_buy.add(key)
+        buy_candidates.append(card["name"])
+    buy = buylist.build(buy_candidates[:settings.bonus_buy_max],
+                        intent.get("budget_eur"), client=client)
+
+    if not owned_bonus and not buy.get("to_buy"):
+        return None
+    return {
+        "owned": owned_bonus,
+        "owned_count": len(owned_bonus),
+        "buy": buy.get("to_buy") or [],
+        "buy_count": buy.get("bought_count", 0),
+        "buy_total_eur": buy.get("total_eur", 0),
+        "budget_eur": intent.get("budget_eur"),
+    }
+
+
+def build(pool_items, fmt: str, intent: dict, profile_id: int | None = None) -> dict:
     """Resolve + build with a managed HTTP client. Blocking (network I/O)."""
     with httpx.Client(timeout=30, headers={"User-Agent": settings.user_agent}) as client:
-        return build_from_pool(pool_items, fmt, intent, client=client)
+        return build_from_pool(pool_items, fmt, intent, client=client, profile_id=profile_id)

@@ -51,12 +51,15 @@ SYSTEM_PROMPT = (
     "- Pour le Commander (EDH), appelle suggest_commanders. Pour Standard, "
     "Modern, Pioneer, Pauper, Legacy, Vintage, Premodern (60 cartes), appelle "
     "research_archetype.\n"
-    "- Pour le format LIMITÉ (draft/sealed), le joueur importe un POOL de cartes "
-    "via la page « Limité ». Si un pool a déjà été importé (voir « DECK LIMITÉ » "
-    "dans le CONTEXTE ACTUEL), tu peux reconstruire ou ajuster le deck (changer "
-    "de couleurs, viser plus agressif, un autre thème) avec build_pool_deck ; "
-    "n'utilise QUE des cartes du pool. Si aucun pool n'a été importé, invite le "
-    "joueur à le faire sur la page « Limité ».\n"
+    "- DEPUIS UNE LISTE : le joueur peut importer une LISTE de cartes (page "
+    "« Depuis une liste ») et demander le meilleur deck d'un format donné "
+    "(Limité, Commander, Modern, Pauper…). Si une liste a déjà été importée (voir "
+    "« DECK … » dans le CONTEXTE ACTUEL), tu peux reconstruire ou ajuster le deck "
+    "(autres couleurs, plus agressif, autre thème, autre format) avec "
+    "build_pool_deck ; n'utilise QUE des cartes de la liste. Pour les formats "
+    "construits/Commander, l'outil propose AUSSI des cartes bonus (possédées + à "
+    "acheter) à ajouter EN PLUS du deck. Si aucune liste n'a été importée, invite "
+    "le joueur à le faire sur la page « Depuis une liste ».\n"
     "- Quand le joueur choisit un commandant, propose-lui de générer la decklist "
     "complète (generate_decklist).\n"
     "- Garde le contexte de la conversation : si le joueur affine une demande "
@@ -163,11 +166,15 @@ TOOLS = [
     {
         "name": "build_pool_deck",
         "description": (
-            "Pour le format LIMITÉ : (re)construit le meilleur deck à partir du POOL "
-            "de cartes déjà importé dans cette conversation. Utilise-le pour ajuster "
-            "le deck — autres couleurs, plus agressif, autre thème. Ne fonctionne que "
-            "si un pool a été importé via la page « Limité ». Choisit automatiquement "
-            "les meilleures couleurs si elles ne sont pas imposées."
+            "(Re)construit le meilleur deck à partir de la LISTE de cartes déjà "
+            "importée dans cette conversation, pour le format demandé (limited, "
+            "commander, modern, pauper, standard, pioneer, legacy, vintage, "
+            "premodern). Utilise-le pour ajuster le deck — autres couleurs, plus "
+            "agressif, autre thème, autre format. Ne fonctionne que si une liste a "
+            "été importée via la page « Depuis une liste ». Choisit automatiquement "
+            "les meilleures couleurs si elles ne sont pas imposées ; pour les formats "
+            "construits/Commander, propose aussi des cartes bonus (possédées + à "
+            "acheter) en plus du deck."
         ),
         "input_schema": {
             "type": "object",
@@ -175,7 +182,7 @@ TOOLS = [
                 "format": {
                     "type": "string",
                     "enum": sorted(poolbuild.SPECS),
-                    "description": "Format visé pour le deck construit depuis le pool (par défaut limited).",
+                    "description": "Format visé pour le deck construit depuis la liste (par défaut, celui déjà utilisé).",
                 },
                 "colors": dict(_INTENT_PROPS["colors"]),
                 "max_colors": dict(_INTENT_PROPS["max_colors"]),
@@ -354,56 +361,76 @@ def _exec_lookup_card(args: dict, profile_id: int, ctx: dict | None = None):
     )
 
 
-def _stored_pool(conversation_id) -> list | None:
-    """The card pool imported for this conversation (from the latest Limited deck)."""
+# The pool-deck artifact type. "limited_deck" is kept as a read alias so decks
+# built before the multi-format generalisation still render and replay.
+POOL_ARTIFACT_TYPES = ("pool_deck", "limited_deck")
+
+
+def _stored_pool_deck(conversation_id) -> dict | None:
+    """Latest pool-built deck artifact for this conversation (any format)."""
     if conversation_id is None:
         return None
-    art = _latest_artifacts(conversation_id).get("limited_deck")
-    if not art:
-        return None
-    return (art.get("data") or {}).get("pool")
+    latest = _latest_artifacts(conversation_id)
+    for t in POOL_ARTIFACT_TYPES:
+        if t in latest:
+            return latest[t]
+    return None
 
 
-def _limited_summary(deck: dict) -> str:
+def _pool_summary(deck: dict) -> str:
     arch = deck.get("archetype") or {}
     counts = deck.get("counts") or {}
-    return (
-        f"Deck Limité « {arch.get('name')} » "
-        f"({_fmt_colors(arch.get('colors'))}) : {counts.get('total', 0)} cartes "
+    head = f"Deck {deck.get('format_label') or 'Limité'} « {arch.get('name')} »"
+    if deck.get("commander"):
+        head += f", commandant {deck['commander']['name']}"
+    text = (
+        f"{head} ({_fmt_colors(arch.get('colors'))}) : {counts.get('total', 0)} cartes "
         f"({counts.get('creatures', 0)} créatures, {counts.get('lands', 0)} terrains) "
-        f"sur un pool de {counts.get('pool_size', 0)}."
+        f"depuis une liste de {counts.get('pool_size', 0)} cartes."
     )
+    bonus = deck.get("bonus")
+    if bonus and (bonus.get("owned_count") or bonus.get("buy_count")):
+        text += (
+            f" Bonus (en plus du deck) : {bonus.get('owned_count', 0)} carte(s) "
+            f"possédée(s) + {bonus.get('buy_count', 0)} à acheter "
+            f"({bonus.get('buy_total_eur', 0)} €)."
+        )
+    return text
 
 
-def build_limited_artifact(pool_items, intent: dict) -> tuple[dict, dict]:
-    """Build a Limited deck from a pool and wrap it as a chat artifact.
+def build_pool_artifact(pool_items, fmt: str, intent: dict,
+                        profile_id: int | None = None) -> tuple[dict, dict]:
+    """Build a deck from a card list and wrap it as a chat artifact.
 
-    The pool is carried inside the artifact so later turns can rebuild from it
-    (different colours/theme) without the player re-importing.
+    The pool + format are carried inside the artifact so later turns can rebuild
+    from them (different colours/theme/format) without the player re-importing.
     """
-    deck = poolbuild.build(pool_items, "limited", intent)
+    deck = poolbuild.build(pool_items, fmt, intent, profile_id=profile_id)
     deck["pool"] = [{"name": n, "qty": int(q)} for n, q in pool_items]
-    artifact = {"type": "limited_deck", "intent": intent, "data": deck}
+    artifact = {"type": "pool_deck", "intent": intent, "data": deck}
     return artifact, deck
 
 
 def _exec_build_pool_deck(args: dict, profile_id: int, ctx: dict | None = None):
-    pool = _stored_pool((ctx or {}).get("conversation_id"))
+    prev = _stored_pool_deck((ctx or {}).get("conversation_id"))
+    pool = (prev.get("data") or {}).get("pool") if prev else None
     if not pool:
         return (
-            "Aucun pool de cartes n'a été importé dans cette conversation. "
-            "Invite le joueur à importer son pool sur la page « Limité ».",
+            "Aucune liste de cartes n'a été importée dans cette conversation. "
+            "Invite le joueur à l'importer sur la page « Depuis une liste ».",
             None,
         )
-    fmt = (args.get("format") or poolbuild.DEFAULT_FORMAT).lower()
+    # Default to the format the list was imported for; allow the model to switch.
+    prev_fmt = (prev.get("data") or {}).get("format") or poolbuild.DEFAULT_FORMAT
+    fmt = (args.get("format") or prev_fmt).lower()
     if fmt not in poolbuild.SPECS:
         fmt = poolbuild.DEFAULT_FORMAT
     parsed = _intent_from(args, None)
     pool_items = [(p["name"], p.get("qty", 1)) for p in pool]
-    deck = poolbuild.build(pool_items, fmt, parsed)
+    deck = poolbuild.build(pool_items, fmt, parsed, profile_id=profile_id)
     deck["pool"] = pool
-    artifact = {"type": "limited_deck", "intent": parsed, "data": deck}
-    return _limited_summary(deck), artifact
+    artifact = {"type": "pool_deck", "intent": parsed, "data": deck}
+    return _pool_summary(deck), artifact
 
 
 _EXECUTORS = {
@@ -545,15 +572,18 @@ def _snapshot_archetype(art: dict) -> str:
     return "\n".join(lines)
 
 
-def _snapshot_limited(art: dict) -> str:
+def _snapshot_pool(art: dict) -> str:
     data = art.get("data") or {}
     arch = data.get("archetype") or {}
     counts = data.get("counts") or {}
+    head = f"DECK {(data.get('format_label') or 'Limité').upper()} — {arch.get('name')}"
+    if data.get("commander"):
+        head += f" (commandant {data['commander']['name']})"
     lines = [
-        f"DECK LIMITÉ — {arch.get('name')} ({_fmt_colors(arch.get('colors'))}) : "
+        f"{head} ({_fmt_colors(arch.get('colors'))}) : "
         f"{counts.get('total', 0)} cartes "
         f"({counts.get('creatures', 0)} créatures, {counts.get('lands', 0)} terrains) "
-        f"sur un pool importé de {counts.get('pool_size', 0)} cartes."
+        f"depuis une liste de {counts.get('pool_size', 0)} cartes."
     ]
     if arch.get("strategy"):
         lines.append(f"Stratégie : {arch['strategy']}")
@@ -567,11 +597,20 @@ def _snapshot_limited(art: dict) -> str:
     land_bits += [f"{c['qty']}x {c['name']}" for c in lands.get("basics") or []]
     if land_bits:
         lines.append("Terrains : " + ", ".join(land_bits))
+    bonus = data.get("bonus") or {}
+    if bonus.get("owned"):
+        lines.append("Bonus possédés (en plus du deck) : "
+                     + ", ".join(c["name"] for c in bonus["owned"]))
+    if bonus.get("buy"):
+        lines.append(
+            f"Bonus à acheter ({bonus.get('buy_total_eur', 0)} €) : "
+            + ", ".join(f"{c['name']} ({c.get('price_eur')} €)" for c in bonus["buy"])
+        )
     sideboard = data.get("sideboard") or []
     if sideboard:
         sb = [f"{c['qty']}x {c['name']}" if c.get("qty", 1) > 1 else c["name"]
               for c in sideboard]
-        lines.append(f"Réserve (cartes du pool non jouées) : " + ", ".join(sb))
+        lines.append("Réserve (cartes de la liste non jouées) : " + ", ".join(sb))
     return "\n".join(lines)
 
 
@@ -579,7 +618,8 @@ _SNAPSHOT_BUILDERS = {
     "decklist": _snapshot_decklist,
     "commanders": _snapshot_commanders,
     "archetype": _snapshot_archetype,
-    "limited_deck": _snapshot_limited,
+    "pool_deck": _snapshot_pool,
+    "limited_deck": _snapshot_pool,
 }
 
 
@@ -589,7 +629,7 @@ def _context_snapshot(conversation_id: int) -> str:
     # Most actionable first: a generated deck, then commander/archetype research.
     blocks = [
         _SNAPSHOT_BUILDERS[t](latest[t])
-        for t in ("decklist", "limited_deck", "commanders", "archetype")
+        for t in ("decklist", "pool_deck", "limited_deck", "commanders", "archetype")
         if t in latest
     ]
     if not blocks:
@@ -695,46 +735,47 @@ def run_turn(conversation_id: int, profile_id: int, user_text: str) -> None:
     db.touch_conversation(conversation_id, title=user_text)
 
 
-def create_limited_conversation(profile_id: int, pool_items, intent: dict) -> int:
-    """Build a Limited deck from an imported pool and open a chat seeded with it.
+def create_pool_conversation(profile_id: int, pool_items, fmt: str, intent: dict) -> int:
+    """Build a deck from an imported card list and open a chat seeded with it.
 
     Returns the new conversation id. Blocking (Scryfall + LLM); call it off the
     request thread. The deck lands as the first assistant message so the player
     can immediately discuss/refine it ("plutôt en bleu", "pourquoi cette carte").
     """
-    title = "Deck Limité"
+    spec = poolbuild.SPECS.get(fmt) or poolbuild.SPECS[poolbuild.DEFAULT_FORMAT]
+    title = f"Deck {spec.label}"
     cid = db.create_conversation(profile_id, title=title)
 
     pool_total = sum(int(q) for _, q in pool_items)
     distinct = len(pool_items)
     user_text = (
-        f"J'ai importé un pool de {pool_total} cartes ({distinct} cartes uniques) "
-        "pour construire un deck Limité (40 cartes). Propose-moi le meilleur deck."
+        f"J'ai importé une liste de {pool_total} cartes ({distinct} cartes uniques) "
+        f"pour construire un deck {spec.label}. Propose-moi le meilleur deck."
     )
     db.add_message(cid, "user", user_text)
 
     if not pool_items:
         db.add_message(
             cid, "assistant",
-            "Le pool importé est vide ou illisible. Colle une liste de cartes "
+            "La liste importée est vide ou illisible. Colle une liste de cartes "
             "(une par ligne, ex. « 2 Lightning Bolt ») ou un export CSV.",
         )
         db.touch_conversation(cid, title=title)
         return cid
 
-    artifact, deck = build_limited_artifact(pool_items, intent)
+    artifact, deck = build_pool_artifact(pool_items, fmt, intent, profile_id=profile_id)
     invalid = deck.get("invalid") or []
-    intro = _limited_summary(deck)
+    intro = _pool_summary(deck)
     if deck.get("archetype", {}).get("strategy"):
         intro += "\n\n" + deck["archetype"]["strategy"]
     if invalid:
         intro += (
-            f"\n\n{len(invalid)} carte(s) du pool n'ont pas été reconnues sur "
-            "Scryfall et ont été ignorées."
+            f"\n\n{len(invalid)} carte(s) de la liste n'ont pas été reconnues sur "
+            "Scryfall (ou illégales dans ce format) et ont été ignorées."
         )
     intro += (
         "\n\nDis-moi si tu veux ajuster (autres couleurs, plus agressif, un thème "
-        "précis) ou pose-moi des questions sur le deck."
+        "précis, un autre format) ou pose-moi des questions sur le deck."
     )
     db.add_message(cid, "assistant", intro, artifacts=[artifact])
     db.touch_conversation(cid, title=title)

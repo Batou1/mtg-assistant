@@ -49,17 +49,25 @@ and a budget-constrained buylist priced in EUR.
    gap analysis vs your collection + an EUR buylist. This is an archetype base —
    not an exact tournament list — because the popular decklist sites are
    Cloudflare-blocked.
-7. **Limited (draft / sealed)** (`/limited`) — build the best deck from a
-   **card pool you provide**, independent of your collection. Paste a list (one
-   card per line) or upload a `.txt` / ManaBox-style `.csv`; every card is
-   resolved against Scryfall, then **Claude picks the strongest 40-card deck**
-   from that pool — auto-choosing the best colours (or honouring colours/theme
-   you specify), adding basic lands, and leaving the rest as a sideboard. The
-   result opens **in the chat**, so you can refine it in conversation (*« plutôt
-   en bleu »*, *« plus agressif »*, *« pourquoi cette carte ? »*). Without an API
-   key a heuristic builder takes over. The pool→deck engine is format-generic
-   (a `FormatSpec` registry), so the same logic can later build a Commander /
-   Modern / Pauper deck from a given list.
+7. **Build from a list** (`/build`) — give the app a **card list you provide**
+   (paste, `.txt`, or ManaBox-style `.csv`), independent of your collection, pick
+   a **format**, and it tells you which cards to keep for a legal deck:
+   - **Limited** (draft/sealed): the strongest 40-card deck, basics added.
+   - **Commander**: a 100-card singleton deck with a commander chosen from the
+     list, the other 99 kept within its colour identity.
+   - **Modern / Pauper / Standard / Pioneer / Legacy / Vintage / Premodern**:
+     a 60-card deck with **format legality enforced** (illegal cards dropped).
+
+   Every card is resolved against Scryfall; **Claude picks the deck**
+   (auto-choosing the best colours, or honouring colours/theme you specify),
+   grounded so the deck is always a subset of your list. For the
+   constructed/Commander formats it **also recommends bonus cards beyond the
+   deck count** — synergistic cards **you already own** (from your imported
+   collection) plus a few **to buy** (priced in EUR within an optional budget).
+   The result opens **in the chat**, so you can refine it in conversation
+   (*« plutôt en bleu »*, *« plus agressif »*, *« passe-le en Pauper »*). Without
+   an API key a heuristic builder takes over. The engine is format-generic
+   (a `FormatSpec` registry in `poolbuild.py`): adding a format is a spec entry.
 8. **Iterative chat** (`/chat`) — instead of one-shot forms, hold a conversation.
    **Claude** drives the whole pipeline through **tool-calling**: it inspects your
    collection, suggests commanders, researches 60-card archetypes, generates full
@@ -129,6 +137,11 @@ proposes from its own knowledge only, still Scryfall-validated).
 | `MTG_ANTHROPIC_MODEL`| `claude-sonnet-4-6`         | Claude model used for all LLM tasks  |
 | `MTG_CHAT_MAX_TOOL_ITERS` | `6`                    | Max tool-call rounds per chat turn   |
 | `MTG_CHAT_HISTORY`   | `16`                        | Past messages replayed to the API    |
+| `MTG_LIMITED_DECK_SIZE` | `40`                     | Limited deck size (build-from-a-list) |
+| `MTG_LIMITED_LANDS`  | `17`                        | Limited land target (basics added)   |
+| `MTG_BONUS_OWNED_SCAN` | `200`                     | Owned cards scanned for bonus synergy |
+| `MTG_BONUS_OWNED_MAX` | `12`                       | Owned bonus cards shown              |
+| `MTG_BONUS_BUY_MAX`  | `10`                        | To-buy bonus cards suggested         |
 | `MTG_CACHE_TTL_DAYS` | `7`                         | Card / EDHREC cache freshness        |
 | `MTG_PRICE_TTL_DAYS` | `1`                         | Price cache freshness                |
 | `MTG_CURRENCY`       | `EUR`                       | Budget currency (Cardmarket)         |
@@ -189,7 +202,7 @@ app/
   deckgen.py    full 100-card Commander decklist builder
   research.py   Brave Search client (web research)
   formats60.py  60-card archetype pipeline (research + Scryfall validation)
-  poolbuild.py  pool-constrained deckbuilding (Limited; format-generic engine)
+  poolbuild.py  build-from-a-list engine (Limited/Commander/60-card) + bonus
   chat.py       iterative chat: agent loop + tools over the pipeline
   main.py       FastAPI routes + templates
 deploy/         launchd service + Cloudflare tunnel snippet

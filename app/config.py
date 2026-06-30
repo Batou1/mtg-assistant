@@ -69,6 +69,13 @@ class Settings:
     limited_deck_size: int = int(os.environ.get("MTG_LIMITED_DECK_SIZE", "40"))
     limited_lands: int = int(os.environ.get("MTG_LIMITED_LANDS", "17"))
 
+    # --- Pool-deck collection bonus (synergy add-ons beyond the deck) -------
+    # When building a constructed/Commander deck from a provided list, also
+    # recommend extra cards: synergistic cards you already own + a few to buy.
+    bonus_owned_scan: int = int(os.environ.get("MTG_BONUS_OWNED_SCAN", "200"))
+    bonus_owned_max: int = int(os.environ.get("MTG_BONUS_OWNED_MAX", "12"))
+    bonus_buy_max: int = int(os.environ.get("MTG_BONUS_BUY_MAX", "10"))
+
     # --- Web research (Phase 2b; Brave Search complements curated sources) --
     brave_api_key: str = os.environ.get("MTG_BRAVE_API_KEY", "")
 

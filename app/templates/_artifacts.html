@@ -16,10 +16,10 @@
     <span class="art-ico">👑</span>
     <span class="art-title">Commandants proposés</span>
     <span class="art-meta">{{ art.results|length }} option(s)</span>
-  {%- elif art.type == "limited_deck" -%}
+  {%- elif art.type == "pool_deck" or art.type == "limited_deck" -%}
     <span class="art-ico">🎴</span>
     <span class="art-title">{{ art.data.archetype.name }}</span>
-    <span class="art-meta">{% for c in art.data.archetype.colors %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %} · {{ art.data.counts.total }} cartes</span>
+    <span class="art-meta">{% for c in art.data.archetype.colors %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %} · {{ art.data.counts.total }} cartes{% if art.data.format_label %} · {{ art.data.format_label }}{% endif %}</span>
   {%- endif -%}
 {% endmacro %}
 
@@ -194,20 +194,59 @@
 {% endmacro %}
 
 
-{% macro limited(data) %}
+{% macro pool_deck(data) %}
   <section class="card art-card">
     <h3>{{ data.archetype.name }}
+      {% if data.format_label %}<span class="tag owned-tag">{{ data.format_label }}</span>{% endif %}
       <span class="pips">{% for c in data.archetype.colors %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}</span>
     </h3>
+    {% if data.commander %}
+    <div class="commander-head">
+      {% if data.commander.image %}<img class="card-img" src="{{ data.commander.image }}" alt="{{ data.commander.name }}" loading="lazy">{% endif %}
+      <div class="commander-meta"><h4>Commandant : {{ data.commander.name }}</h4></div>
+    </div>
+    {% endif %}
     <ul class="chips">
       <li class="chip">{{ data.counts.total }} cartes</li>
       <li class="chip">{{ data.counts.creatures }} créatures</li>
       <li class="chip">{{ data.counts.lands }} terrains</li>
-      <li class="chip">Pool : {{ data.counts.pool_size }} cartes</li>
+      <li class="chip">Liste : {{ data.counts.pool_size }} cartes</li>
     </ul>
     {% if data.archetype.strategy %}<div class="gameplan"><h4>Plan de jeu</h4><p>{{ data.archetype.strategy }}</p></div>{% endif %}
     {% if data.counts.total < data.deck_size %}
-    <p class="notice warn small">Seulement {{ data.counts.total }} cartes : le pool est trop petit ou trop peu en couleur pour atteindre {{ data.deck_size }}.</p>
+    <p class="notice warn small">Seulement {{ data.counts.total }} cartes : la liste est trop petite ou trop peu en couleur pour atteindre {{ data.deck_size }}.</p>
+    {% endif %}
+    {% if data.bonus and (data.bonus.owned or data.bonus.buy) %}
+    <details class="buylist" open>
+      <summary>
+        <span class="buylist-title">✨ Bonus — cartes en plus du deck</span>
+        <span class="muted small">{{ data.bonus.owned_count }} possédée(s){% if data.bonus.buy_count %} · {{ data.bonus.buy_count }} à acheter ({{ "%.2f"|format(data.bonus.buy_total_eur) }} €){% endif %}</span>
+      </summary>
+      {% if data.bonus.owned %}
+      <p class="muted small">De ta collection (synergiques, à ajouter en option) :</p>
+      <div class="buy-grid">
+        {% for item in data.bonus.owned %}
+        <div class="buy-item">
+          {% if item.image %}<img src="{{ item.image }}" alt="{{ item.name }}" loading="lazy">{% endif %}
+          <span class="buy-name">{{ item.name }}</span>
+          <span class="tag owned-tag">possédée</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if data.bonus.buy %}
+      <p class="muted small">À acheter (renforts suggérés) :</p>
+      <div class="buy-grid">
+        {% for item in data.bonus.buy %}
+        <div class="buy-item">
+          {% if item.image %}<img src="{{ item.image }}" alt="{{ item.name }}" loading="lazy">{% endif %}
+          <span class="buy-name">{{ item.name }}</span>
+          <span class="buy-price">{{ "%.2f"|format(item.price_eur) }} €</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </details>
     {% endif %}
     <details class="owned-list" open>
       <summary>Voir le deck ({{ data.counts.total }} cartes)</summary>
@@ -258,6 +297,6 @@
   {% if art.type == "commanders" %}{{ commanders(art) }}
   {% elif art.type == "archetype" %}{{ archetype(art.data) }}
   {% elif art.type == "decklist" %}{{ decklist(art) }}
-  {% elif art.type == "limited_deck" %}{{ limited(art.data) }}
+  {% elif art.type == "pool_deck" or art.type == "limited_deck" %}{{ pool_deck(art.data) }}
   {% endif %}
 {% endmacro %}

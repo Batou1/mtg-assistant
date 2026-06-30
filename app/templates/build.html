@@ -1,15 +1,20 @@
 {% extends "base.html" %}
-{% block title %}Limité · MTG Assistant{% endblock %}
+{% block title %}Depuis une liste · MTG Assistant{% endblock %}
 {% block content %}
 
 <section class="card">
-  <h1>🎴 Deck Limité (draft / sealed)</h1>
+  <h1>🎴 Construire un deck depuis une liste</h1>
   <p class="muted">
-    Colle ou importe le <strong>pool</strong> de cartes que tu as ouvert (draft
-    ou sealed). L'assistant choisit le meilleur deck de 40 cartes possible —
-    couleurs comprises — puis ouvre une discussion pour l'ajuster. Ce pool est
-    <strong>indépendant de ta collection</strong>.
+    Colle ou importe une <strong>liste de cartes</strong> et choisis un format :
+    l'assistant te dit lesquelles garder pour un deck légal, puis ouvre une
+    discussion pour l'ajuster. La liste est <strong>indépendante de ta
+    collection</strong>.
   </p>
+  <ul class="muted small">
+    <li><strong>Limité</strong> (draft/sealed) : 40 cartes, terrains de base ajoutés.</li>
+    <li><strong>Commander</strong> : 100 cartes singleton, un commandant choisi dans la liste.</li>
+    <li><strong>Modern / Pauper / Standard…</strong> : 60 cartes, légalité vérifiée.</li>
+  </ul>
 
   <p class="status small">
     LLM :
@@ -18,8 +23,20 @@
     {% else %}<span class="badge warn">non configuré</span>
       <span class="muted">repli heuristique actif — ajoute ANTHROPIC_API_KEY pour un meilleur choix</span>{% endif %}
   </p>
+  {% if not has_collection %}
+  <p class="notice info small">Ta collection est vide : importe-la depuis l'accueil
+    pour activer les recommandations bonus (cartes possédées synergiques).
+    Le deck depuis la liste fonctionne sans collection.</p>
+  {% endif %}
 
-  <form method="post" action="/limited" enctype="multipart/form-data" class="limited-form">
+  <form method="post" action="/build" enctype="multipart/form-data" class="limited-form">
+    <label for="format"><strong>Format</strong></label>
+    <select id="format" name="format">
+      {% for f in formats %}
+      <option value="{{ f.value }}" {% if f.value == default_format %}selected{% endif %}>{{ f.label }}</option>
+      {% endfor %}
+    </select>
+
     <label for="pool"><strong>Liste des cartes</strong> (une par ligne, ex. « 2 Lightning Bolt »)</label>
     <textarea id="pool" name="pool" rows="12"
       placeholder="1 Lightning Bolt&#10;1 Llanowar Elves&#10;2 Giant Growth&#10;..."></textarea>
@@ -43,6 +60,8 @@
       </div>
       <input type="text" name="theme" maxlength="120"
              placeholder="Thème / style (ex. agressif, tempo, contrôle)…">
+      <input type="text" name="budget" inputmode="decimal"
+             placeholder="Budget € pour les cartes bonus à acheter (optionnel)">
     </fieldset>
 
     <button type="submit">⚙ Construire le deck</button>
