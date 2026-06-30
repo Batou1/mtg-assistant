@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
-from . import analysis, chat, db, deckgen, formats60, intent, llm, manabox
+from . import analysis, chat, db, deckgen, formats60, intent, llm, manabox, poolbuild
 from .config import settings
 
 app = FastAPI(title="MTG Assistant")
@@ -216,6 +216,49 @@ async def generate(
         request, profile, commander=commander, budget=_parse_budget(budget), deck=deck
     )
     return _render(request, profile, "deck.html", ctx)
+
+
+# --- Limited (draft/sealed): build the best deck from an imported pool ----
+
+@app.get("/limited", response_class=HTMLResponse)
+def limited_page(request: Request):
+    profile = current_profile(request)
+    ctx = _base_context(
+        request, profile, llm_ok=llm.is_available(), llm_model=settings.anthropic_model
+    )
+    return _render(request, profile, "limited.html", ctx)
+
+
+@app.post("/limited")
+async def limited_build(
+    request: Request,
+    pool: str = Form(""),
+    colors: list[str] = Form([]),
+    theme: str = Form(""),
+    file: UploadFile | None = File(None),
+):
+    profile = current_profile(request)
+
+    text, filename = pool, ""
+    if file is not None and file.filename:
+        content = await file.read()
+        text = content.decode("utf-8-sig", errors="ignore")
+        filename = file.filename
+
+    pool_items = poolbuild.parse_pool(text, filename)
+    parsed = intent._coerce({
+        "colors": colors,
+        "theme": theme,
+        "source": "limited-form",
+    })
+    conv_id = await run_in_threadpool(
+        chat.create_limited_conversation, profile["id"], pool_items, parsed
+    )
+
+    resp = RedirectResponse(url="/chat", status_code=303)
+    resp.set_cookie(COOKIE, str(profile["id"]), max_age=60 * 60 * 24 * 365, samesite="lax")
+    resp.set_cookie(CONV_COOKIE, str(conv_id), max_age=60 * 60 * 24 * 365, samesite="lax")
+    return resp
 
 
 # --- Iterative chat (Phase 3) --------------------------------------------

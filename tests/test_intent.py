@@ -42,6 +42,24 @@ def test_heuristic_mono_lifegain_black_or_white():
     assert parsed["budget_eur"] == 50.0
 
 
+def test_heuristic_premodern_format():
+    parsed = intent._heuristic("un deck Premodern agressif en rouge")
+    assert parsed["format"] == "premodern"
+    assert parsed["colors"] == ["R"]
+
+
+def test_heuristic_premodern_hyphen_not_confused_with_modern():
+    # "pre-modern" must resolve to premodern, never to modern.
+    assert intent._heuristic("un deck pre-modern blanc")["format"] == "premodern"
+    assert intent._heuristic("un deck prémoderne")["format"] == "premodern"
+    # plain "modern" still works.
+    assert intent._heuristic("un deck modern burn")["format"] == "modern"
+
+
+def test_coerce_accepts_premodern():
+    assert intent._coerce({"format": "premodern"})["format"] == "premodern"
+
+
 def test_coerce_max_colors():
     assert intent._coerce({"max_colors": 2})["max_colors"] == 2
     assert intent._coerce({"max_colors": 0})["max_colors"] is None  # < 1 -> none

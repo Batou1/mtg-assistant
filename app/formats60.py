@@ -17,7 +17,10 @@ from . import buylist, db, llm, research, scryfall
 from .config import settings
 
 # Formats handled here (everything that isn't Commander).
-FORMATS = {"standard", "modern", "pioneer", "pauper", "legacy", "vintage"}
+# Premodern (4th Edition → Scourge, no reprints from later sets) is a 60-card
+# eternal format like the others; Scryfall tracks its legality under the
+# ``premodern`` key, so it needs no extra data source.
+FORMATS = {"standard", "modern", "pioneer", "pauper", "legacy", "vintage", "premodern"}
 
 _COLOR_WORDS = {"W": "white", "U": "blue", "B": "black", "R": "red", "G": "green"}
 

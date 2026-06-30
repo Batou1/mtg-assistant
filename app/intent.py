@@ -5,7 +5,8 @@ heuristic parser so the app stays useful when no API key is set. Both produce
 the same shape:
 
     {
-      "format": "commander" | "standard" | "modern" | "pioneer" | "pauper" | None,
+      "format": "commander" | "standard" | "modern" | "pioneer" | "pauper" |
+                "legacy" | "vintage" | "premodern" | None,
       "colors": ["W","U","B","R","G"]  (subset, may be empty),
       "theme": "<short free text>",
       "keywords": ["aristocrats", "sacrifice", ...],
@@ -18,7 +19,8 @@ import re
 from . import llm
 
 VALID_COLORS = {"W", "U", "B", "R", "G"}
-VALID_FORMATS = {"commander", "standard", "modern", "pioneer", "pauper", "legacy", "vintage"}
+VALID_FORMATS = {"commander", "standard", "modern", "pioneer", "pauper", "legacy",
+                 "vintage", "premodern"}
 
 # French + English color words -> WUBRG symbol.
 _COLOR_WORDS = {
@@ -32,6 +34,10 @@ _COLOR_WORDS = {
 _FORMAT_WORDS = {
     "commander": "commander", "edh": "commander", "duel commander": "commander",
     "standard": "standard",
+    # Premodern must be tried before "modern": "pre-modern" / "premoderne"
+    # otherwise the \bmodern\b probe could match the hyphenated spelling.
+    "premodern": "premodern", "pre-modern": "premodern", "pre modern": "premodern",
+    "premoderne": "premodern", "prémoderne": "premodern",
     "modern": "modern", "moderne": "modern",
     "pioneer": "pioneer",
     "pauper": "pauper",
@@ -56,7 +62,8 @@ _SYSTEM_PROMPT = (
     "L'utilisateur decrit en francais le deck qu'il veut construire. "
     "Reponds UNIQUEMENT avec un objet JSON valide, sans texte autour, avec ces cles:\n"
     '- "format": un parmi "commander","standard","modern","pioneer","pauper",'
-    '"legacy","vintage", ou null si non precise.\n'
+    '"legacy","vintage","premodern", ou null si non precise. '
+    '("premodern"/"pre-modern" = le format retro 4e edition a Scourge.)\n'
     '- "colors": liste de symboles parmi "W","U","B","R","G" (blanc, bleu, noir, '
     "rouge, vert). Liste vide si non precise.\n"
     '- "theme": courte description du theme/archetype en quelques mots.\n'

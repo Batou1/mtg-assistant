@@ -16,6 +16,10 @@
     <span class="art-ico">👑</span>
     <span class="art-title">Commandants proposés</span>
     <span class="art-meta">{{ art.results|length }} option(s)</span>
+  {%- elif art.type == "limited_deck" -%}
+    <span class="art-ico">🎴</span>
+    <span class="art-title">{{ art.data.archetype.name }}</span>
+    <span class="art-meta">{% for c in art.data.archetype.colors %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %} · {{ art.data.counts.total }} cartes</span>
   {%- endif -%}
 {% endmacro %}
 
@@ -190,9 +194,70 @@
 {% endmacro %}
 
 
+{% macro limited(data) %}
+  <section class="card art-card">
+    <h3>{{ data.archetype.name }}
+      <span class="pips">{% for c in data.archetype.colors %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}</span>
+    </h3>
+    <ul class="chips">
+      <li class="chip">{{ data.counts.total }} cartes</li>
+      <li class="chip">{{ data.counts.creatures }} créatures</li>
+      <li class="chip">{{ data.counts.lands }} terrains</li>
+      <li class="chip">Pool : {{ data.counts.pool_size }} cartes</li>
+    </ul>
+    {% if data.archetype.strategy %}<div class="gameplan"><h4>Plan de jeu</h4><p>{{ data.archetype.strategy }}</p></div>{% endif %}
+    {% if data.counts.total < data.deck_size %}
+    <p class="notice warn small">Seulement {{ data.counts.total }} cartes : le pool est trop petit ou trop peu en couleur pour atteindre {{ data.deck_size }}.</p>
+    {% endif %}
+    <details class="owned-list" open>
+      <summary>Voir le deck ({{ data.counts.total }} cartes)</summary>
+      {% for group in data.groups %}
+      <div class="deck-group">
+        <h4>{{ group.label }} <span class="muted small">({{ group.cards|sum(attribute='qty') }})</span></h4>
+        <ul class="decklist">
+          {% for c in group.cards %}
+          <li class="owned"><span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+      <div class="deck-group">
+        <h4>Terrains <span class="muted small">({{ data.lands.total }})</span></h4>
+        <ul class="decklist">
+          {% for c in data.lands.nonbasic %}
+          <li class="owned"><span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span></li>
+          {% endfor %}
+          {% for c in data.lands.basics %}
+          <li class="owned"><span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span><span class="tag owned-tag">terrain</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </details>
+    {% if data.sideboard %}
+    <details class="owned-list">
+      <summary>Réserve — {{ data.counts.sideboard }} carte(s) du pool non jouées</summary>
+      <ul class="decklist">
+        {% for c in data.sideboard %}
+        <li class="owned"><span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span></li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+    <details class="export">
+      <summary>Exporter le deck (texte)</summary>
+      <textarea readonly rows="12" onclick="this.select()">{{ data.decklist_text }}</textarea>
+    </details>
+    {% if data.invalid %}
+    <p class="notice info small">{{ data.invalid|length }} carte(s) du pool non reconnues sur Scryfall, ignorées.</p>
+    {% endif %}
+  </section>
+{% endmacro %}
+
+
 {% macro render(art) %}
   {% if art.type == "commanders" %}{{ commanders(art) }}
   {% elif art.type == "archetype" %}{{ archetype(art.data) }}
   {% elif art.type == "decklist" %}{{ decklist(art) }}
+  {% elif art.type == "limited_deck" %}{{ limited(art.data) }}
   {% endif %}
 {% endmacro %}
