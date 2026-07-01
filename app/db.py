@@ -448,6 +448,24 @@ def add_message(conversation_id: int, role: str, content: str, artifacts=None) -
         return cur.lastrowid
 
 
+def _backfill_artifact(obj):
+    """Old persisted artifacts (from before a field existed) can be missing
+    keys the current templates expect. `budget_eur` and `max_card_price_eur`
+    are always set together by intent/buylist/deck builders, so any dict
+    that has one but not the other predates the cap feature; fill it with
+    None so templates' `is not none` guards work as intended.
+    """
+    if isinstance(obj, dict):
+        if "budget_eur" in obj and "max_card_price_eur" not in obj:
+            obj["max_card_price_eur"] = None
+        for v in obj.values():
+            _backfill_artifact(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            _backfill_artifact(v)
+    return obj
+
+
 def get_messages(conversation_id: int) -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
@@ -457,11 +475,14 @@ def get_messages(conversation_id: int) -> list[dict]:
         ).fetchall()
     out = []
     for r in rows:
+        artifacts = json.loads(r["artifacts_json"]) if r["artifacts_json"] else []
+        for art in artifacts:
+            _backfill_artifact(art)
         out.append(
             {
                 "role": r["role"],
                 "content": r["content"],
-                "artifacts": json.loads(r["artifacts_json"]) if r["artifacts_json"] else [],
+                "artifacts": artifacts,
                 "created_at": r["created_at"],
             }
         )
