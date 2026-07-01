@@ -57,5 +57,32 @@
     &amp; <a href="https://edhrec.com" target="_blank" rel="noopener">EDHREC</a> ·
     LLM : Claude (Anthropic) · Prix Cardmarket (EUR)
   </footer>
+
+  <script>
+    // Copies the textarea inside the same .export block as `btn`, with
+    // feedback on the button itself. Works over http (dev) via the
+    // execCommand fallback since navigator.clipboard needs a secure context.
+    function mtgCopyDecklist(btn) {
+      const ta = btn.closest(".export").querySelector("textarea");
+      const flash = (label) => {
+        const original = btn.textContent;
+        btn.textContent = label;
+        btn.disabled = true;
+        setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1500);
+      };
+      const fallback = () => {
+        ta.removeAttribute("readonly");
+        ta.select();
+        document.execCommand("copy");
+        ta.setAttribute("readonly", "readonly");
+        flash("✅ Copié !");
+      };
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(ta.value).then(() => flash("✅ Copié !")).catch(fallback);
+      } else {
+        fallback();
+      }
+    }
+  </script>
 </body>
 </html>

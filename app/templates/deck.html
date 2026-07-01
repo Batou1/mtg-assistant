@@ -106,8 +106,9 @@
     {% endif %}
 
     <details class="export">
-      <summary>Exporter la decklist (texte)</summary>
+      <summary>Exporter la decklist (texte — Moxfield, Archidekt, ManaBox…)</summary>
       <textarea readonly rows="12" onclick="this.select()">{{ deck.decklist_text }}</textarea>
+      <button type="button" class="copy-btn" onclick="mtgCopyDecklist(this)">📋 Copier dans le presse-papier</button>
     </details>
   </section>
 </div>

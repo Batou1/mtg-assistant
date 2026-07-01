@@ -183,6 +183,7 @@ details.buylist > summary:hover .buylist-title { color: var(--accent-2); }
 .export { margin-top: 16px; }
 .export summary { cursor: pointer; color: var(--muted); }
 .export textarea { margin-top: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+.export .copy-btn { margin-top: 8px; padding: 6px 12px; font-size: .85rem; font-weight: 600; }
 
 /* Sources list (60-card research) */
 .sources { margin: 8px 0 0; padding-left: 18px; font-size: .9rem; }

@@ -105,6 +105,20 @@
       <div class="bar"><span style="width: {{ (100 * data.owned_count / data.valid_count) if data.valid_count else 0 }}%"></span></div>
       <p><strong>{{ data.owned_count }}</strong> / {{ data.valid_count }} cartes maîtresses possédées</p>
     </div>
+    {% if data.owned_cards %}
+    <details class="owned-list" open>
+      <summary>Tu possèdes déjà <span class="muted small">({{ data.owned_count }})</span></summary>
+      <div class="buy-grid">
+        {% for c in data.owned_cards %}
+        <div class="buy-item">
+          {% if c.image %}<img src="{{ c.image }}" alt="{{ c.name }}" loading="lazy">{% endif %}
+          <span class="buy-name">{{ c.name }}</span>
+          <span class="tag owned-tag">possédée</span>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
     {% if data.buylist and data.buylist.to_buy %}
     <details class="buylist">
       <summary>
@@ -187,8 +201,9 @@
     </details>
     {% endif %}
     <details class="export">
-      <summary>Exporter la decklist (texte)</summary>
+      <summary>Exporter la decklist (texte — Moxfield, Archidekt, ManaBox…)</summary>
       <textarea readonly rows="12" onclick="this.select()">{{ deck.decklist_text }}</textarea>
+      <button type="button" class="copy-btn" onclick="mtgCopyDecklist(this)">📋 Copier dans le presse-papier</button>
     </details>
   </section>
 {% endmacro %}
@@ -283,8 +298,9 @@
     </details>
     {% endif %}
     <details class="export">
-      <summary>Exporter le deck (texte)</summary>
+      <summary>Exporter le deck (texte — Moxfield, Archidekt, ManaBox…)</summary>
       <textarea readonly rows="12" onclick="this.select()">{{ data.decklist_text }}</textarea>
+      <button type="button" class="copy-btn" onclick="mtgCopyDecklist(this)">📋 Copier dans le presse-papier</button>
     </details>
     {% if data.invalid %}
     <p class="notice info small">{{ data.invalid|length }} carte(s) du pool non reconnues sur Scryfall, ignorées.</p>

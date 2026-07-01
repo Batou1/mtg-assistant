@@ -252,7 +252,9 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
 
 
 def _decklist_text(commander_item: dict, groups: list, sideboard: list | None = None) -> str:
-    lines = [f"1 {commander_item['name']}"]
+    # "Commander" section header so Moxfield/Archidekt import the card as the
+    # commander rather than counting it as a 100th maindeck card.
+    lines = [f"Commander\n1 {commander_item['name']}\n"]
     for group in groups:
         for c in group["cards"]:
             lines.append(f"{c['qty']} {c['name']}")

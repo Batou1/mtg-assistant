@@ -75,7 +75,7 @@ def test_no_budget_includes_expensive_cards():
 def test_decklist_text_has_commander_and_basics():
     deck = _build(budget=5.0)
     text = deck["decklist_text"]
-    assert text.startswith("1 Krenko, Mob Boss")
+    assert text.startswith("Commander\n1 Krenko, Mob Boss")
     assert "3 Mountain" in text
 
 
