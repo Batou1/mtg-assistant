@@ -15,6 +15,7 @@
       </li>
     {% endif %}
     {% if intent.budget_eur is not none %}<li class="chip">Budget : {{ "%.0f"|format(intent.budget_eur) }} €</li>{% endif %}
+    {% if intent.max_card_price_eur is not none %}<li class="chip">Max/carte : {{ "%.0f"|format(intent.max_card_price_eur) }} €</li>{% endif %}
     {% if intent.keywords %}<li class="chip">Thèmes : {{ intent.keywords|join(", ") }}</li>{% endif %}
     <li class="chip muted">Analyse : {{ "LLM" if intent.source == "llm" else "heuristique" }}</li>
   </ul>
@@ -77,6 +78,7 @@
           <input type="hidden" name="commander" value="{{ r.name }}">
           <input type="hidden" name="theme" value="{{ intent.theme }}">
           {% if intent.budget_eur is not none %}<input type="hidden" name="budget" value="{{ intent.budget_eur }}">{% endif %}
+          {% if intent.max_card_price_eur is not none %}<input type="hidden" name="max_card_price" value="{{ intent.max_card_price_eur }}">{% endif %}
           <button type="submit">⚙ Générer la decklist complète</button>
         </form>
       </div>
@@ -87,6 +89,7 @@
       <h4>
         Liste d'achat
         {% if r.buylist.budget_eur is not none %}<span class="muted small">(budget {{ "%.0f"|format(r.buylist.budget_eur) }} €)</span>{% endif %}
+        {% if r.buylist.max_card_price_eur is not none %}<span class="muted small">(max {{ "%.0f"|format(r.buylist.max_card_price_eur) }} €/carte)</span>{% endif %}
       </h4>
       {% if r.buylist.to_buy %}
         <p class="muted small">

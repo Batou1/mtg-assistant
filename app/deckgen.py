@@ -108,8 +108,13 @@ def _basics_for(colors: list[str], count: int) -> list[tuple[str, int]]:
 def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
                budget: float | None, cards_by_name: dict,
                target_lands: int = 36, deck_size: int = 100,
-               sideboard_size: int = 18) -> dict:
-    """Assemble a decklist. See module docstring for the selection strategy."""
+               sideboard_size: int = 18, max_card_price: float | None = None) -> dict:
+    """Assemble a decklist. See module docstring for the selection strategy.
+
+    ``max_card_price`` additionally caps the price of any single bought card —
+    e.g. a 30€ total budget with a 5€ per-card cap never adds a 10€ card even
+    though it would otherwise fit the remaining total.
+    """
     pool = _pool(data, commander_card["name"])
 
     def owned(name: str) -> bool:
@@ -143,6 +148,8 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
         nonlocal buy_total
         price = price_of(entry["name"])
         if price is None:
+            return False
+        if max_card_price is not None and price > max_card_price:
             return False
         if budget is not None and buy_total + price > budget:
             return False
@@ -234,6 +241,7 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
         "buy_list": sorted(to_buy, key=lambda c: c["price_eur"] or 0, reverse=True),
         "buy_total_eur": round(buy_total, 2),
         "budget_eur": budget,
+        "max_card_price_eur": max_card_price,
         "counts": {
             "total": total,
             "owned": 1 * commander_item["owned"]
@@ -266,7 +274,8 @@ def _decklist_text(commander_item: dict, groups: list, sideboard: list | None = 
     return "\n".join(lines)
 
 
-def generate_full_deck(commander_name: str, budget, theme: str, profile_id: int):
+def generate_full_deck(commander_name: str, budget, theme: str, profile_id: int,
+                       max_card_price=None):
     """Resolve cards, build the decklist and write an LLM game plan.
 
     Blocking (network I/O via Scryfall/EDHREC); run it in a threadpool. Shared by
@@ -295,7 +304,7 @@ def generate_full_deck(commander_name: str, budget, theme: str, profile_id: int)
     deck = build_deck(
         commander_card, data, owned, budget, resolved,
         target_lands=settings.deck_lands, deck_size=settings.deck_size,
-        sideboard_size=settings.deck_sideboard,
+        sideboard_size=settings.deck_sideboard, max_card_price=max_card_price,
     )
 
     key_cards = [c["name"] for g in deck["groups"] for c in g["cards"] if not c["is_basic"]]

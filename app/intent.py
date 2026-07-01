@@ -11,6 +11,7 @@ the same shape:
       "theme": "<short free text>",
       "keywords": ["aristocrats", "sacrifice", ...],
       "budget_eur": float | None,
+      "max_card_price_eur": float | None,
       "source": "llm" | "heuristic",
     }
 """
@@ -93,7 +94,11 @@ _SYSTEM_PROMPT = (
     '- "max_colors": entier = nombre MAXIMUM de couleurs autorisees si '
     'l\'utilisateur le precise ("monocouleur"/"mono"/"monocolore" => 1, '
     '"bicolore"/"deux couleurs" => 2), sinon null.\n'
-    '- "budget_eur": nombre (euros) si un budget est mentionne, sinon null.\n'
+    '- "budget_eur": nombre (euros) = budget TOTAL si mentionne, sinon null.\n'
+    '- "max_card_price_eur": nombre (euros) = prix MAXIMUM par carte, '
+    "UNIQUEMENT si l'utilisateur precise un plafond individuel distinct du "
+    'budget total (ex: "budget 30 euros mais pas plus de 5 euros par carte" '
+    "=> budget_eur=30, max_card_price_eur=5), sinon null.\n"
     "RESPECTE STRICTEMENT les couleurs, le nombre de couleurs et le theme "
     'demandes. Pour "noir OU blanc monocouleur", colors=["B","W"] et '
     "max_colors=1 (chaque deck propose sera mono-noir OU mono-blanc). "
@@ -126,6 +131,14 @@ def _coerce(data: dict) -> dict:
     except (TypeError, ValueError):
         budget = None
 
+    max_card_price = data.get("max_card_price_eur")
+    try:
+        max_card_price = float(max_card_price) if max_card_price is not None else None
+    except (TypeError, ValueError):
+        max_card_price = None
+    if max_card_price is not None and max_card_price <= 0:
+        max_card_price = None
+
     max_colors = data.get("max_colors")
     try:
         max_colors = int(max_colors) if max_colors is not None else None
@@ -141,6 +154,7 @@ def _coerce(data: dict) -> dict:
         "theme": theme,
         "keywords": keywords,
         "budget_eur": budget,
+        "max_card_price_eur": max_card_price,
         "include_low_decks": bool(data.get("include_low_decks")),
         "unowned_only": bool(data.get("unowned_only")),
         "source": data.get("source", "llm"),
@@ -186,6 +200,24 @@ def _heuristic(text: str) -> dict:
                   r"que je ne d[ée]tiens pas)", low)
     )
 
+    # A per-card price cap ("max 5€ par carte", "chaque carte à 5€ max", "pas
+    # plus de 5 euros par carte") is looked for FIRST and removed from the text
+    # before the general budget regex runs below — otherwise "budget 30€ max
+    # 5€ par carte" would let the generic budget probe swallow the "5€" as the
+    # (wrong) total budget on some phrasings.
+    max_card_price = None
+    for pattern in (
+        r"(\d+(?:[.,]\d+)?)\s*(?:€|euros?|eur)\s*(?:maximum|max)?\s*(?:par|/|la)\s*carte",
+        r"chaque\s+carte[^\d]{0,40}(\d+(?:[.,]\d+)?)\s*(?:€|euros?|eur)",
+        r"cartes?[^\d]{0,15}(?:à|a)\s*(\d+(?:[.,]\d+)?)\s*(?:€|euros?|eur)\s*max",
+        r"(?:plafond|max(?:imum)?)[^\d]{0,20}par\s+carte[^\d]{0,10}(\d+(?:[.,]\d+)?)",
+    ):
+        m = re.search(pattern, low)
+        if m:
+            max_card_price = float(m.group(1).replace(",", "."))
+            low = low[: m.start()] + low[m.end() :]
+            break
+
     budget = None
     # ``€`` is a symbol, so a trailing \b never matches after it ("300€"); guard
     # the letter forms (euro/eur) against false hits like "europe" with a
@@ -204,6 +236,7 @@ def _heuristic(text: str) -> dict:
             "theme": text.strip()[:120],
             "keywords": keywords,
             "budget_eur": budget,
+            "max_card_price_eur": max_card_price,
             "include_low_decks": include_low_decks,
             "unowned_only": unowned_only,
             "source": "heuristic",
@@ -233,6 +266,8 @@ def parse_intent(text: str) -> dict:
             intent["colors"] = heur["colors"]
         if intent["max_colors"] is None:
             intent["max_colors"] = heur["max_colors"]
+        if intent["max_card_price_eur"] is None:
+            intent["max_card_price_eur"] = heur["max_card_price_eur"]
         return intent
 
     return _heuristic(text)

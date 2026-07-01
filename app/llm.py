@@ -108,7 +108,7 @@ def archetype_research(fmt: str, intent: dict, context: str) -> dict | None:
         "Réponds UNIQUEMENT en JSON avec ces clés :\n"
         '- "archetype": nom court de l\'archétype.\n'
         '- "colors": liste de symboles parmi "W","U","B","R","G".\n'
-        '- "strategy": 2-3 phrases en français décrivant le plan de jeu.\n'
+        '- "strategy": 2-3 phrases en français décrivant le plan de jeu, en texte brut (pas de Markdown).\n'
         '- "key_cards": liste de 30 à 40 noms de cartes RÉELLES, en anglais, avec '
         f"l'orthographe EXACTE (telle que sur la carte), toutes légales en {fmt} : "
         "les cartes les plus jouées de cet archétype (sorts ET terrains non-basiques). "
@@ -165,7 +165,7 @@ def pool_deck(spec, intent: dict, pool_lines: list[str]) -> dict | None:
         + ' Réponds UNIQUEMENT en JSON avec ces clés :\n'
         '- "archetype": nom court de l\'archétype/du deck.\n'
         '- "colors": liste de symboles parmi "W","U","B","R","G".\n'
-        '- "strategy": 2-3 phrases en français (plan de jeu, comment gagner).\n'
+        '- "strategy": 2-3 phrases en français (plan de jeu, comment gagner), en texte brut (pas de Markdown).\n'
         '- "main_deck": liste d\'objets {"name","count"} des cartes NON terrain de '
         "base à jouer (count = nombre de copies prises dans le pool).\n"
         '- "basic_lands": objet {"Plains":n,"Island":n,...} de terrains de base '
@@ -225,9 +225,13 @@ def deck_gameplan(commander_name: str, card_names: list[str], theme: str = "") -
     system = (
         "Tu es un expert Magic: the Gathering (format Commander). On te donne un "
         "commandant et une sélection de cartes RÉELLES du deck. Rédige en français "
-        "un résumé concis (3 à 5 phrases) du plan de jeu : stratégie générale, "
-        "comment le deck gagne, et 1-2 conseils de pilotage. Ne mentionne que des "
-        "cartes de la liste fournie. N'invente aucune carte."
+        "le plan de jeu en TEXTE BRUT UNIQUEMENT (aucun Markdown : pas de #, pas de "
+        "**, pas de listes à puces), organisé en EXACTEMENT 3 paragraphes séparés "
+        "chacun par UNE LIGNE VIDE :\n"
+        "1. La stratégie générale du deck (1-2 phrases).\n"
+        "2. Comment le deck gagne concrètement (1-2 phrases).\n"
+        "3. Un ou deux conseils de pilotage (1-2 phrases).\n"
+        "Ne mentionne que des cartes de la liste fournie. N'invente aucune carte."
     )
     sample = ", ".join(card_names[:18])
     user = f"Commandant : {commander_name}\n"

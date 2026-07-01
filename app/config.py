@@ -30,6 +30,12 @@ class Settings:
 
     # --- External services -------------------------------------------------
     scryfall_api: str = os.environ.get("MTG_SCRYFALL_API", "https://api.scryfall.com")
+    # Card data comes from Scryfall's bulk-data exports (see app/bulk_data.py),
+    # refreshed automatically; the live API is only used for cache misses.
+    bulk_auto_refresh: bool = os.environ.get("MTG_BULK_AUTO_REFRESH", "1").lower() not in (
+        "0", "false", "no", "off", ""
+    )
+    bulk_refresh_hours: float = float(os.environ.get("MTG_BULK_REFRESH_HOURS", "24"))
     edhrec_json: str = os.environ.get(
         "MTG_EDHREC_JSON", "https://json.edhrec.com/pages/commanders"
     )

@@ -166,8 +166,9 @@ details.buylist > summary:hover .buylist-title { color: var(--accent-2); }
 /* Deck page */
 .deck-header .commander-head { margin-bottom: 8px; }
 .gameplan { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
-.gameplan h3 { margin: 0 0 6px; }
-.gameplan p { color: var(--text); }
+.gameplan h3, .gameplan h4 { margin: 0 0 8px; }
+.gameplan p { color: var(--text); line-height: 1.6; margin: 0 0 10px; }
+.gameplan p:last-child { margin-bottom: 0; }
 
 .deck-group { margin-bottom: 16px; }
 .deck-group h4 { margin: 0 0 6px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }

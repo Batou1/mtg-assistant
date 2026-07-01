@@ -66,7 +66,10 @@ def analyze(intent: dict, profile_id: int) -> dict:
 
         owned = [c for c in valid if _norm(c["name"]) in owned_keys]
         missing = [c for c in valid if _norm(c["name"]) not in owned_keys]
-        buy = buylist.build([c["name"] for c in missing], budget, client=client)
+        buy = buylist.build(
+            [c["name"] for c in missing], budget,
+            max_card_price=intent.get("max_card_price_eur"), client=client,
+        )
 
     return {
         "format": fmt,

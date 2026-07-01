@@ -10,6 +10,9 @@ data/*.db
 data/*.sqlite
 data/*.log
 
+# Scryfall bulk-data exports (multi-GB, fetched by app/bulk_data.py or by hand)
+*.jsonl
+
 # Cloudflare credentials (never commit)
 *.cloudflared.json
 cloudflared/config.yml

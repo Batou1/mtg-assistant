@@ -159,6 +159,37 @@ def set_card(name_key: str, data: dict) -> None:
         )
 
 
+def bulk_set_cards(items) -> int:
+    """Upsert many (name_key, card_dict) pairs in one transaction.
+
+    Used by the Scryfall bulk-data import, which writes hundreds of thousands
+    of rows — one connection/commit per row (like ``set_card``) would take far
+    too long.
+    """
+    now = time.time()
+    rows = [(name_key, json.dumps(data), now) for name_key, data in items]
+    if not rows:
+        return 0
+    with get_conn() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO cards (name_key, data, fetched_at) VALUES (?, ?, ?)",
+            rows,
+        )
+    return len(rows)
+
+
+def all_oracle_cards() -> list[dict]:
+    """Every by-name cached card (the oracle_cards bulk import) — excludes the
+    by-id printing entries (``id:<uuid>``). Used by ``app.cardsearch`` to scan
+    the whole card pool for type/keyword/oracle-text criteria.
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT data FROM cards WHERE name_key NOT LIKE 'id:%'"
+        ).fetchall()
+    return [json.loads(r["data"]) for r in rows]
+
+
 # --- EDHREC cache --------------------------------------------------------
 
 def get_edhrec(slug: str):
@@ -350,6 +381,11 @@ def get_meta(key: str):
     with get_conn() as conn:
         row = conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
     return row["value"] if row else None
+
+
+def set_meta(key: str, value: str) -> None:
+    with get_conn() as conn:
+        conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))
 
 
 # --- Chat: conversations + messages (per profile) ------------------------

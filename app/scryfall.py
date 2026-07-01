@@ -13,6 +13,16 @@ import httpx
 from . import db
 from .config import settings
 
+# Layouts that aren't real spells/permanents — Art Series cards, tokens,
+# emblems, etc. They routinely reuse a real card's display name (e.g. an Art
+# Series "Sol Ring // Sol Ring") without being that card, so both the bulk
+# import (app/bulk_data.py) and the local card search (app/cardsearch.py)
+# exclude them.
+NON_GAME_LAYOUTS = {
+    "art_series", "token", "double_faced_token", "emblem",
+    "scheme", "vanguard", "planar", "augment", "host",
+}
+
 
 def _key(name: str) -> str:
     return name.strip().lower()

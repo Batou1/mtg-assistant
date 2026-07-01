@@ -77,10 +77,10 @@ def _wire(analysis, monkeypatch, *, commander_page=_COMMANDER_PAGE):
     )
     monkeypatch.setattr(
         analysis.buylist, "build",
-        lambda missing, budget, client=None: {
-            "budget_eur": budget, "to_buy": [], "total_eur": 2.0,
-            "bought_count": 1, "considered": len(missing),
-            "missing_total": len(missing), "unpriced": 0,
+        lambda missing, budget, max_card_price=None, client=None: {
+            "budget_eur": budget, "max_card_price_eur": max_card_price, "to_buy": [],
+            "total_eur": 2.0, "bought_count": 1, "considered": len(missing),
+            "missing_total": len(missing), "unpriced": 0, "over_cap": 0,
         },
     )
 

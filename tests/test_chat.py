@@ -312,3 +312,40 @@ def test_fallback_without_key_uses_oneshot_pipeline(env, monkeypatch):
     assistant = db.get_messages(cid)[-1]
     assert "ANTHROPIC_API_KEY" in assistant["content"]
     assert assistant["artifacts"][0]["type"] == "commanders"
+
+
+# --- Per-card price cap (max_card_price_eur) -----------------------------
+
+def test_intent_from_carries_max_card_price(env):
+    chat = env.chat
+    parsed = chat._intent_from(
+        {"budget_eur": 30, "max_card_price_eur": 5}, "commander"
+    )
+    assert parsed["budget_eur"] == 30.0
+    assert parsed["max_card_price_eur"] == 5.0
+
+
+def test_generate_decklist_tool_passes_max_card_price(env, monkeypatch):
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+
+    captured = {}
+
+    def fake_generate(commander, budget, theme, profile_id, max_card_price=None):
+        captured["budget"] = budget
+        captured["max_card_price"] = max_card_price
+        return {
+            "counts": {"total": 100, "owned": 0, "to_buy": 99},
+            "buy_total_eur": 25.0, "max_card_price_eur": max_card_price,
+        }, {}
+
+    monkeypatch.setattr(chat.deckgen, "generate_full_deck", fake_generate)
+
+    text, artifact = chat._exec_generate_decklist(
+        {"commander": "Krenko, Mob Boss", "budget_eur": 30, "max_card_price_eur": 5},
+        pid,
+    )
+    assert captured["budget"] == 30
+    assert captured["max_card_price"] == 5
+    assert "max 5€/carte" in text
+    assert artifact["type"] == "decklist"
