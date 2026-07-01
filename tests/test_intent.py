@@ -87,4 +87,36 @@ def test_coerce_max_colors():
     assert intent._coerce({"max_colors": 2})["max_colors"] == 2
     assert intent._coerce({"max_colors": 0})["max_colors"] is None  # < 1 -> none
     assert intent._coerce({"max_colors": "x"})["max_colors"] is None
+
+
+def test_heuristic_per_card_price_cap_with_total_budget():
+    parsed = intent._heuristic(
+        "un deck Commander budget max de 30€ mais chaque carte ne doit pas "
+        "coûter plus de 5€"
+    )
+    assert parsed["budget_eur"] == 30.0
+    assert parsed["max_card_price_eur"] == 5.0
+
+
+def test_heuristic_per_card_price_cap_phrasings():
+    assert intent._heuristic(
+        "deck aristocrats noir, budget 30 euros, max 5€ par carte"
+    )["max_card_price_eur"] == 5.0
+    assert intent._heuristic(
+        "deck rouge budget 30€, 5€ max par carte"
+    )["max_card_price_eur"] == 5.0
+    assert intent._heuristic(
+        "deck rouge budget 30€, chaque carte à 5€ max"
+    )["max_card_price_eur"] == 5.0
+
+
+def test_heuristic_no_per_card_cap_when_not_mentioned():
+    assert intent._heuristic("deck bleu control, budget 50 euros")["max_card_price_eur"] is None
+
+
+def test_coerce_max_card_price_eur():
+    assert intent._coerce({"max_card_price_eur": "5"})["max_card_price_eur"] == 5.0
+    assert intent._coerce({"max_card_price_eur": 0})["max_card_price_eur"] is None
+    assert intent._coerce({"max_card_price_eur": "x"})["max_card_price_eur"] is None
+    assert intent._coerce({})["max_card_price_eur"] is None
     assert intent._coerce({})["max_colors"] is None

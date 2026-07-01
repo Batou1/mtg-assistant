@@ -18,10 +18,14 @@ one-shot intent → analyse pipeline and flags that the full chat needs a key.
 import logging
 import threading
 
-from . import analysis, db, deckgen, formats60, intent, llm, poolbuild, scryfall
+from . import analysis, cardsearch, db, deckgen, formats60, intent, llm, poolbuild, scryfall
 from .config import settings
 
 logger = logging.getLogger(__name__)
+
+_LEGALITY_FORMATS = (
+    "commander", "standard", "pioneer", "modern", "legacy", "vintage", "pauper", "premodern",
+)
 
 SYSTEM_PROMPT = (
     "Tu es un assistant de deckbuilding Magic: the Gathering, en français, qui "
@@ -47,6 +51,13 @@ SYSTEM_PROMPT = (
     "demandés. « monocouleur » => max_colors=1. Convertis les noms de "
     "guildes/shards/wedges en couleurs WUBRG quand tu appelles un outil "
     "(ex: Grixis=U,B,R ; Rakdos=B,R ; Jeskai=U,R,W ; Esper=W,U,B ; Bant=G,W,U).\n"
+    "- BUDGET TOTAL vs PLAFOND PAR CARTE : ce sont deux contraintes "
+    "différentes et indépendantes. budget_eur est le total à ne pas dépasser ; "
+    "max_card_price_eur est un plafond individuel (« pas plus de 5€ la carte », "
+    "« chaque carte à 5€ max »). Si le joueur donne les deux (« budget 30€ mais "
+    "pas plus de 5€ par carte »), passe TOUJOURS les deux paramètres — aucune "
+    "carte individuelle ne doit dépasser max_card_price_eur même s'il reste du "
+    "budget total.\n"
     "- Si le joueur veut un commandant qu'il NE possède PAS (« que je n'ai pas », "
     "« à acquérir », « un nouveau commandant »), appelle suggest_commanders avec "
     "unowned_only=true.\n"
@@ -64,6 +75,13 @@ SYSTEM_PROMPT = (
     "le joueur à le faire sur la page « Depuis une liste ».\n"
     "- Quand le joueur choisit un commandant, propose-lui de générer la decklist "
     "complète (generate_decklist).\n"
+    "- Pour des cartes de SYNERGIE précises (aristocrates, affinité artefacts, "
+    "contrôle de cimetière, tribal zombie, etc.) au-delà de ce que propose "
+    "EDHREC ou de ta seule connaissance, appelle search_cards : il interroge "
+    "toute la base Scryfall locale par type, mots-clés d'capacité et texte "
+    "d'oracle, et ne renvoie que des cartes réelles. Utilise-le quand le "
+    "joueur décrit une stratégie/un thème plutôt qu'un simple commandant, ou "
+    "pour suggérer des ajouts/remplacements à un deck déjà généré.\n"
     "- Garde le contexte de la conversation : si le joueur affine une demande "
     "(« plutôt en bleu », « monte le budget à 80 € »), réutilise ce qui a déjà "
     "été dit.\n"
@@ -90,7 +108,16 @@ _INTENT_PROPS = {
         "items": {"type": "string"},
         "description": "Mots-clés de stratégie en anglais (aristocrats, tokens, reanimator…).",
     },
-    "budget_eur": {"type": "number", "description": "Budget en euros, si mentionné."},
+    "budget_eur": {"type": "number", "description": "Budget TOTAL en euros, si mentionné."},
+    "max_card_price_eur": {
+        "type": "number",
+        "description": (
+            "Prix MAXIMUM par carte en euros, UNIQUEMENT si le joueur précise "
+            "un plafond individuel distinct du budget total (ex: « budget 30€ "
+            "mais pas plus de 5€ par carte » => budget_eur=30, "
+            "max_card_price_eur=5). Omettre si non précisé."
+        ),
+    },
     "include_low_decks": {
         "type": "boolean",
         "description": (
@@ -159,7 +186,8 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "commander": {"type": "string", "description": "Nom exact du commandant."},
-                "budget_eur": {"type": "number", "description": "Budget d'achat en euros."},
+                "budget_eur": {"type": "number", "description": "Budget TOTAL d'achat en euros."},
+                "max_card_price_eur": dict(_INTENT_PROPS["max_card_price_eur"]),
                 "theme": {"type": "string", "description": "Thème pour le plan de jeu."},
             },
             "required": ["commander"],
@@ -190,6 +218,8 @@ TOOLS = [
                 "max_colors": dict(_INTENT_PROPS["max_colors"]),
                 "theme": dict(_INTENT_PROPS["theme"]),
                 "keywords": dict(_INTENT_PROPS["keywords"]),
+                "budget_eur": dict(_INTENT_PROPS["budget_eur"]),
+                "max_card_price_eur": dict(_INTENT_PROPS["max_card_price_eur"]),
             },
         },
     },
@@ -200,6 +230,65 @@ TOOLS = [
             "type": "object",
             "properties": {"name": {"type": "string", "description": "Nom de la carte."}},
             "required": ["name"],
+        },
+    },
+    {
+        "name": "search_cards",
+        "description": (
+            "Cherche dans TOUTE la base Scryfall locale (~35 000 cartes — pas "
+            "seulement ce que propose EDHREC ou ta connaissance) des cartes "
+            "réelles correspondant à des critères de gameplay : couleurs, type "
+            "de carte, mots-clés d'capacité officiels, texte d'oracle, coût de "
+            "mana, légalité. Chaque résultat est une vraie carte : tu peux la "
+            "citer directement. Utilise-le pour trouver des cartes de synergie "
+            "précises (ex: 'sacrifice de créatures en mono-noir', 'affinité "
+            "artefacts', 'tribal zombie') au-delà de la popularité EDHREC."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "colors": dict(_INTENT_PROPS["colors"]),
+                "type_contains": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Termes de type de carte, en anglais (ex: 'Creature', "
+                        "'Artifact', 'Zombie'). Une carte matchant AU MOINS un "
+                        "terme est incluse."
+                    ),
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Mots-clés d'capacité OFFICIELS Scryfall, en anglais "
+                        "(flying, trample, deathtouch, proliferate, convoke…). "
+                        "Pour un thème qui n'est pas un mot-clé officiel "
+                        "(sacrifice, cimetière, pioche…), utilise text_contains."
+                    ),
+                },
+                "text_contains": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Extraits de texte d'oracle à chercher, en anglais (ex: "
+                        "'sacrifice a creature', 'return...from your "
+                        "graveyard'). Une carte matchant AU MOINS un extrait "
+                        "est incluse."
+                    ),
+                },
+                "legal_in": {
+                    "type": "string",
+                    "enum": list(_LEGALITY_FORMATS),
+                    "description": "Format de légalité à respecter.",
+                },
+                "min_cmc": {"type": "number", "description": "Coût de mana minimum."},
+                "max_cmc": {"type": "number", "description": "Coût de mana maximum."},
+                "limit": {
+                    "type": "integer",
+                    "description": "Nombre maximum de résultats (défaut 25, max 60).",
+                },
+            },
         },
     },
 ]
@@ -218,6 +307,10 @@ def _is_owned(r: dict) -> bool:
     return r.get("owned", True)
 
 
+def _cap_suffix(max_card_price) -> str:
+    return f" (max {max_card_price}€/carte)" if max_card_price is not None else ""
+
+
 def _intent_from(args: dict, fmt: str | None) -> dict:
     return intent._coerce(
         {
@@ -227,6 +320,7 @@ def _intent_from(args: dict, fmt: str | None) -> dict:
             "theme": args.get("theme") or "",
             "keywords": args.get("keywords") or [],
             "budget_eur": args.get("budget_eur"),
+            "max_card_price_eur": args.get("max_card_price_eur"),
             "include_low_decks": args.get("include_low_decks"),
             "unowned_only": args.get("unowned_only"),
             "source": "llm",
@@ -285,6 +379,7 @@ def _exec_suggest_commanders(args: dict, profile_id: int, ctx: dict | None = Non
                 f"- {r['name']} (possédé) : {r['pct']}% complété ({r['owned_count']}/"
                 f"{r['total_recommended']}), {r['num_decks']} decks EDHREC, "
                 f"achat {buy.get('total_eur', 0)} € ({buy.get('bought_count', 0)} cartes)"
+                f"{_cap_suffix(buy.get('max_card_price_eur'))}"
             )
         else:
             price = r.get("price_eur")
@@ -315,7 +410,8 @@ def _exec_research_archetype(args: dict, profile_id: int, ctx: dict | None = Non
         f"({'/'.join(arch.get('colors') or []) or 'incolore'}). "
         f"{data.get('owned_count', 0)}/{data.get('valid_count', 0)} cartes maîtresses "
         f"possédées ; achat {buy.get('total_eur', 0)} € "
-        f"({buy.get('bought_count', 0)} cartes)."
+        f"({buy.get('bought_count', 0)} cartes)"
+        f"{_cap_suffix(buy.get('max_card_price_eur'))}."
     )
     return text, artifact
 
@@ -326,7 +422,8 @@ def _exec_generate_decklist(args: dict, profile_id: int, ctx: dict | None = None
         return "Aucun commandant fourni.", None
 
     deck, _data = deckgen.generate_full_deck(
-        commander, args.get("budget_eur"), args.get("theme") or "", profile_id
+        commander, args.get("budget_eur"), args.get("theme") or "", profile_id,
+        max_card_price=args.get("max_card_price_eur"),
     )
     if not deck:
         return (
@@ -339,7 +436,8 @@ def _exec_generate_decklist(args: dict, profile_id: int, ctx: dict | None = None
     artifact = {"type": "decklist", "commander": commander, "deck": deck}
     text = (
         f"Decklist {commander} générée : {c['total']} cartes, {c['owned']} possédées, "
-        f"{c['to_buy']} à acheter pour {deck['buy_total_eur']} €."
+        f"{c['to_buy']} à acheter pour {deck['buy_total_eur']} €"
+        f"{_cap_suffix(deck.get('max_card_price_eur'))}."
     )
     return text, artifact
 
@@ -353,14 +451,45 @@ def _exec_lookup_card(args: dict, profile_id: int, ctx: dict | None = None):
     if not card:
         return f"Carte « {name} » introuvable sur Scryfall.", None
     price = scryfall.price_eur(card)
-    legal = [f for f in ("commander", "standard", "pioneer", "modern", "legacy",
-                         "vintage", "pauper", "premodern")
-             if scryfall.legal_in(card, f)]
+    legal = [f for f in _LEGALITY_FORMATS if scryfall.legal_in(card, f)]
     return (
         f"{card['name']} — prix {price if price is not None else 'indisponible'} € ; "
         f"légale en : {', '.join(legal) or 'aucun format listé'}.",
         None,
     )
+
+
+def _search_result_line(card: dict) -> str:
+    cost = card.get("mana_cost") or ""
+    type_line = card.get("type_line") or ""
+    oracle = card.get("oracle_text") or ""
+    if not oracle:
+        faces = card.get("card_faces") or []
+        oracle = " // ".join(f.get("oracle_text", "") for f in faces if f.get("oracle_text"))
+    oracle = oracle.replace("\n", " ").strip()
+    if len(oracle) > 140:
+        oracle = oracle[:140] + "…"
+    price = scryfall.price_eur(card)
+    price_txt = f"{price}€" if price is not None else "prix indisponible"
+    return f"- {card['name']} | {cost} | {type_line} | {price_txt} | {oracle}"
+
+
+def _exec_search_cards(args: dict, profile_id: int, ctx: dict | None = None):
+    limit = min(int(args.get("limit") or 25), 60)
+    results = cardsearch.search(
+        colors=args.get("colors") or None,
+        type_contains=args.get("type_contains"),
+        keywords=args.get("keywords"),
+        text_contains=args.get("text_contains"),
+        legal_in=args.get("legal_in"),
+        min_cmc=args.get("min_cmc"),
+        max_cmc=args.get("max_cmc"),
+        limit=limit,
+    )
+    if not results:
+        return "Aucune carte trouvée pour ces critères.", None
+    lines = [_search_result_line(c) for c in results]
+    return f"{len(results)} carte(s) trouvée(s) :\n" + "\n".join(lines), None
 
 
 # The pool-deck artifact type. "limited_deck" is kept as a read alias so decks
@@ -395,7 +524,8 @@ def _pool_summary(deck: dict) -> str:
         text += (
             f" Bonus (en plus du deck) : {bonus.get('owned_count', 0)} carte(s) "
             f"possédée(s) + {bonus.get('buy_count', 0)} à acheter "
-            f"({bonus.get('buy_total_eur', 0)} €)."
+            f"({bonus.get('buy_total_eur', 0)} €"
+            f"{_cap_suffix(bonus.get('max_card_price_eur'))})."
         )
     return text
 
@@ -442,6 +572,7 @@ _EXECUTORS = {
     "generate_decklist": _exec_generate_decklist,
     "build_pool_deck": _exec_build_pool_deck,
     "lookup_card": _exec_lookup_card,
+    "search_cards": _exec_search_cards,
 }
 
 

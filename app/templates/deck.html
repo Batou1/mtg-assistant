@@ -29,12 +29,16 @@
         <li class="chip">Achat : <strong>{{ "%.2f"|format(deck.buy_total_eur) }} €</strong>
           {% if deck.budget_eur is not none %} / {{ "%.0f"|format(deck.budget_eur) }} € budget{% endif %}
         </li>
+        {% if deck.max_card_price_eur is not none %}
+        <li class="chip">Max/carte : {{ "%.0f"|format(deck.max_card_price_eur) }} €</li>
+        {% endif %}
       </ul>
 
       {% if deck.unfilled_spells %}
       <p class="notice warn small">
-        {{ deck.unfilled_spells }} emplacement(s) de sort non rempli(s) dans le budget —
-        augmente le budget pour compléter le deck.
+        {{ deck.unfilled_spells }} emplacement(s) de sort non rempli(s) dans le budget
+        {% if deck.max_card_price_eur is not none %} ou au-dessus du plafond par carte{% endif %} —
+        augmente le budget{% if deck.max_card_price_eur is not none %} ou le plafond par carte{% endif %} pour compléter le deck.
       </p>
       {% endif %}
     </div>
@@ -43,7 +47,7 @@
   {% if deck.gameplan %}
   <div class="gameplan">
     <h3>Plan de jeu</h3>
-    <p>{{ deck.gameplan }}</p>
+    {% for p in deck.gameplan|paragraphs %}<p>{{ p }}</p>{% endfor %}
   </div>
   {% endif %}
 </section>

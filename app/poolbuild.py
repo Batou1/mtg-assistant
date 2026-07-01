@@ -556,7 +556,8 @@ def _compute_bonus(deck: dict, spec: FormatSpec, intent: dict, profile_id: int,
         seen_buy.add(key)
         buy_candidates.append(card["name"])
     buy = buylist.build(buy_candidates[:settings.bonus_buy_max],
-                        intent.get("budget_eur"), client=client)
+                        intent.get("budget_eur"),
+                        max_card_price=intent.get("max_card_price_eur"), client=client)
 
     if not owned_bonus and not buy.get("to_buy"):
         return None
@@ -567,6 +568,7 @@ def _compute_bonus(deck: dict, spec: FormatSpec, intent: dict, profile_id: int,
         "buy_count": buy.get("bought_count", 0),
         "buy_total_eur": buy.get("total_eur", 0),
         "budget_eur": intent.get("budget_eur"),
+        "max_card_price_eur": intent.get("max_card_price_eur"),
     }
 
 

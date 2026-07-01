@@ -10,6 +10,7 @@
   <ul class="chips">
     <li class="chip">Format : {{ data.format }}</li>
     {% if intent.budget_eur is not none %}<li class="chip">Budget : {{ "%.0f"|format(intent.budget_eur) }} €</li>{% endif %}
+    {% if intent.max_card_price_eur is not none %}<li class="chip">Max/carte : {{ "%.0f"|format(intent.max_card_price_eur) }} €</li>{% endif %}
     {% if intent.keywords %}<li class="chip">Thèmes : {{ intent.keywords|join(", ") }}</li>{% endif %}
     <li class="chip muted">Analyse : {{ "LLM" if intent.source == "llm" else "heuristique" }}</li>
   </ul>
@@ -32,7 +33,7 @@
     <h2>{{ data.archetype.name }}
       <span class="pips">{% for c in data.archetype.colors %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}</span>
     </h2>
-    {% if data.archetype.strategy %}<p>{{ data.archetype.strategy }}</p>{% endif %}
+    {% for p in data.archetype.strategy|paragraphs %}<p>{{ p }}</p>{% endfor %}
 
     <div class="completion">
       <div class="bar"><span style="width: {{ (100 * data.owned_count / data.valid_count) if data.valid_count else 0 }}%"></span></div>
@@ -66,6 +67,7 @@
     <section class="card">
       <h2>À acheter
         {% if data.buylist.budget_eur is not none %}<span class="muted small">(budget {{ "%.0f"|format(data.buylist.budget_eur) }} €)</span>{% endif %}
+        {% if data.buylist.max_card_price_eur is not none %}<span class="muted small">(max {{ "%.0f"|format(data.buylist.max_card_price_eur) }} €/carte)</span>{% endif %}
       </h2>
       {% if data.buylist.to_buy %}
         <p class="muted small">

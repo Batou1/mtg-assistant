@@ -35,7 +35,11 @@ and a budget-constrained buylist priced in EUR.
    their price, total acquisition cost, and the owned cards that led to them.
 4. **Buylist** — the missing cards are priced in EUR from
    [Scryfall](https://scryfall.com)'s Cardmarket data, and the most synergistic
-   ones are picked greedily within your budget.
+   ones are picked greedily within your budget. A **total budget** and a
+   **per-card price cap** are independent constraints — e.g. "budget 30€ mais
+   pas plus de 5€ par carte" never adds a single card over 5€, even with
+   budget left. Works everywhere a budget does: Commander suggestions, the
+   generated decklist, 60-card archetypes, and pool-build bonus cards.
 5. **Generate a full decklist** — from any suggested commander, build a complete
    100-card Commander deck: owned cards are reused, missing ones bought within
    budget (ranked by popularity-per-euro so the deck stays complete), lands
@@ -83,9 +87,17 @@ and a budget-constrained buylist priced in EUR.
    are saved per profile. The model never names a card outside a tool result (or
    the replayed context of a previous tool result), so suggestions stay grounded.
    Without an API key the chat falls back to a one-shot analysis.
+9. **Local synergy search** (`app/cardsearch.py`) — one of the chat's tools,
+   `search_cards`, scans the whole local card database (colours, type line,
+   ability keywords, oracle text, mana value, legality), so Claude can find
+   real cards matching a strategy ("sacrifice de créatures en mono-noir",
+   "affinité artefacts", "tribal zombie") beyond EDHREC's popularity data or
+   its own training knowledge. Every result is an actual card, safe to name
+   directly in the reply.
 
-Card data, prices and EDHREC pages are resolved **on demand and cached** in
-SQLite — no multi-gigabyte bulk download, minimal disk footprint.
+Card data comes from Scryfall's [bulk-data exports](https://scryfall.com/docs/api/bulk-data)
+(`app/bulk_data.py`), refreshed automatically in the background every 24h —
+see below. EDHREC pages are still resolved **on demand and cached** in SQLite.
 
 ## Requirements
 
@@ -123,6 +135,46 @@ MTG_BRAVE_API_KEY=your-brave-key  # 60-card web research (free tier ≈ 2000 req
 Without the Brave key, 60-card research still runs but ungrounded (Claude
 proposes from its own knowledge only, still Scryfall-validated).
 
+### Card data (Scryfall bulk exports)
+
+`app/scryfall.py` resolves cards from the local cache first and only calls the
+live API on a cache miss. That cache is filled from two of Scryfall's
+[bulk-data exports](https://scryfall.com/docs/api/bulk-data), imported by
+`app/bulk_data.py`:
+
+- **`oracle_cards`** (~180 MB) — one row per Oracle ID, Scryfall's own pick of
+  the canonical printing. Fills the by-name cache, reproducing what a live
+  `/cards/collection` name lookup used to return.
+- **`all_cards`** (~2.5 GB, every printing in every language) — fills the
+  by-id cache (`id:<uuid>`), so an exact printing resolves without a live
+  call, including foreign-language prints a ManaBox export might reference.
+  `default_cards` (English-only, ~550 MB) would cover the common case for
+  less bandwidth, but `all_cards` was kept so foreign-language printings
+  resolve too.
+
+Card **artwork** doesn't need a separate fetch: every card object in both
+exports already carries `image_uris` for its own printing, which is all
+`scryfall.image()` reads. A dedicated `unique_artwork` bulk file (or per-card
+image API calls) would only add value for a gallery of alternate arts per
+card, which this app doesn't have — so it's skipped.
+
+The app checks hourly and re-imports whichever export is more than
+`MTG_BULK_REFRESH_HOURS` old (default 24h), running in a background thread so
+a slow import never blocks startup or requests — see
+`bulk_data.start_background_refresh()` in `app/main.py`.
+
+To bootstrap from a file already downloaded by hand (as documented on the
+bulk-data page) instead of waiting for the first automatic import:
+
+```bash
+python -m app.bulk_data all-cards-20260701092749.jsonl
+```
+
+This imports the local file (no network call for the big export) and then
+fetches the much smaller `oracle_cards` export to fill the by-name cache.
+Without a path argument, `python -m app.bulk_data` downloads both exports
+fresh from the API.
+
 ### Configuration (environment variables)
 
 | Variable             | Default                     | Meaning                              |
@@ -146,6 +198,8 @@ proposes from its own knowledge only, still Scryfall-validated).
 | `MTG_PRICE_TTL_DAYS` | `1`                         | Price cache freshness                |
 | `MTG_CURRENCY`       | `EUR`                       | Budget currency (Cardmarket)         |
 | `MTG_BRAVE_API_KEY`  | *(empty)*                   | Brave Search key (Phase 2 research)  |
+| `MTG_BULK_AUTO_REFRESH` | `1`                      | Auto-refresh Scryfall bulk data (`0` to disable) |
+| `MTG_BULK_REFRESH_HOURS` | `24`                    | Max age before a bulk export is re-imported |
 
 ### Tests
 
@@ -193,6 +247,9 @@ app/
   manabox.py    ManaBox CSV → collection rows
   parsing.py    plain-text decklist parser (reused)
   scryfall.py   card resolution, prices (EUR), images, legality
+  bulk_data.py  Scryfall bulk-data import (cache fill) + 24h auto-refresh
+  cardsearch.py local full-database search: type/keywords/oracle text/legality
+  textutil.py   render LLM free text as clean paragraphs (strips stray Markdown)
   edhrec.py     commander pages: popularity + recommended cards
   commanders.py legal-commander detection
   llm.py        Anthropic (Claude) client: JSON intent, archetypes, game plans

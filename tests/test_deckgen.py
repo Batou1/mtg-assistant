@@ -65,6 +65,22 @@ def test_unfilled_spells_reported_when_pool_too_small():
     assert deck["unfilled_spells"] == 3
 
 
+def test_max_card_price_caps_individual_purchases_even_with_budget_left():
+    # A generous total budget (30) shouldn't let a single card past a strict
+    # per-card cap (1.5): Cool Land (2.0) is skipped even though the budget
+    # has plenty of room, while the cheaper Goblin B (1.0) is still bought.
+    deck = deckgen.build_deck(
+        COMMANDER, DATA, {"goblin a"}, 30.0, CARDS, target_lands=4, deck_size=10,
+        max_card_price=1.5,
+    )
+    names = {c["name"] for g in deck["groups"] for c in g["cards"]}
+    assert "Goblin B" in names
+    assert "Cool Land" not in names
+    assert "Expensive Bomb" not in names
+    assert deck["max_card_price_eur"] == 1.5
+    assert deck["buy_total_eur"] == 1.0
+
+
 def test_no_budget_includes_expensive_cards():
     deck = _build(budget=None)
     names = {c["name"] for g in deck["groups"] for c in g["cards"]}

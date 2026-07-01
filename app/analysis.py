@@ -270,7 +270,10 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
             sub_budget = budget
             if not r["owned"] and budget is not None and r["price_eur"] is not None:
                 sub_budget = max(0.0, round(budget - r["price_eur"], 2))
-            r["buylist"] = buylist.build(r["missing_cards"], sub_budget, client=client)
+            r["buylist"] = buylist.build(
+                r["missing_cards"], sub_budget,
+                max_card_price=intent.get("max_card_price_eur"), client=client,
+            )
             commander_cost = 0.0 if r["owned"] or r["price_eur"] is None else r["price_eur"]
             r["total_cost_eur"] = round(r["buylist"]["total_eur"] + commander_cost, 2)
 

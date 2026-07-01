@@ -11,7 +11,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
-from . import analysis, chat, db, deckgen, formats60, intent, llm, manabox, poolbuild
+from . import (
+    analysis, bulk_data, chat, db, deckgen, formats60, intent, llm, manabox, poolbuild, textutil,
+)
 from .config import settings
 
 app = FastAPI(title="MTG Assistant")
@@ -38,8 +40,15 @@ def _static_version() -> str:
 
 
 templates.env.globals["static_v"] = _static_version()
+templates.env.filters["paragraphs"] = textutil.paragraphs
 
 db.init_db()
+# Keeps the local card cache filled from Scryfall's bulk-data exports, checked
+# hourly and re-imported whenever the export is more than bulk_refresh_hours
+# old — see app/bulk_data.py. Runs in the background so a slow first import
+# never blocks server startup; until it lands, resolve_cards/resolve_ids fall
+# back to the live API on cache misses as before.
+bulk_data.start_background_refresh()
 
 COOKIE = "profile_id"
 CONV_COOKIE = "conversation_id"
@@ -206,11 +215,13 @@ async def generate(
     request: Request,
     commander: str = Form(...),
     budget: str = Form(""),
+    max_card_price: str = Form(""),
     theme: str = Form(""),
 ):
     profile = current_profile(request)
     deck, _data = await run_in_threadpool(
-        deckgen.generate_full_deck, commander, _parse_budget(budget), theme, profile["id"]
+        deckgen.generate_full_deck, commander, _parse_budget(budget), theme, profile["id"],
+        _parse_budget(max_card_price),
     )
     ctx = _base_context(
         request, profile, commander=commander, budget=_parse_budget(budget), deck=deck
@@ -247,6 +258,7 @@ async def build_from_list(
     colors: list[str] = Form([]),
     theme: str = Form(""),
     budget: str = Form(""),
+    max_card_price: str = Form(""),
     file: UploadFile | None = File(None),
 ):
     profile = current_profile(request)
@@ -263,6 +275,7 @@ async def build_from_list(
         "colors": colors,
         "theme": theme,
         "budget_eur": _parse_budget(budget),
+        "max_card_price_eur": _parse_budget(max_card_price),
         "source": "build-form",
     })
     conv_id = await run_in_threadpool(
