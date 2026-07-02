@@ -30,8 +30,9 @@
     {% endif %}
 
     <form action="/import" method="post" enctype="multipart/form-data" class="stack">
-      <label class="filelabel">
-        Importer un export <strong>ManaBox (.csv)</strong>
+      <label class="dropzone">
+        <span class="dz-ico">📄</span>
+        <span class="dz-text">Importer un export <strong>ManaBox (.csv)</strong></span>
         <input type="file" name="file" accept=".csv,text/csv" required>
       </label>
       <button type="submit">Importer</button>

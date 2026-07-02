@@ -2,72 +2,126 @@
 {% block title %}Depuis une liste · MTG Assistant{% endblock %}
 {% block content %}
 
-<section class="card">
-  <h1>🎴 Construire un deck depuis une liste</h1>
-  <p class="muted">
-    Colle ou importe une <strong>liste de cartes</strong> et choisis un format :
-    l'assistant te dit lesquelles garder pour un deck légal, puis ouvre une
-    discussion pour l'ajuster. La liste est <strong>indépendante de ta
-    collection</strong>.
+<div class="page-head">
+  <h1>Construire un deck depuis une liste</h1>
+  <p class="lead">
+    Colle ou importe une liste de cartes, choisis un format : l'assistant en tire
+    le meilleur deck légal, puis ouvre une discussion pour l'ajuster. La liste est
+    indépendante de ta collection.
   </p>
-  <ul class="muted small">
-    <li><strong>Limité</strong> (draft/sealed) : 40 cartes, terrains de base ajoutés.</li>
-    <li><strong>Commander</strong> : 100 cartes singleton, un commandant choisi dans la liste.</li>
-    <li><strong>Modern / Pauper / Standard…</strong> : 60 cartes, légalité vérifiée.</li>
-  </ul>
+</div>
 
-  <p class="status small">
-    LLM :
-    {% if llm_ok %}<span class="badge ok">connecté</span>
-      <span class="muted">(Claude · {{ llm_model }})</span>
-    {% else %}<span class="badge warn">non configuré</span>
-      <span class="muted">repli heuristique actif — ajoute ANTHROPIC_API_KEY pour un meilleur choix</span>{% endif %}
-  </p>
-  {% if not has_collection %}
-  <p class="notice info small">Ta collection est vide : importe-la depuis l'accueil
-    pour activer les recommandations bonus (cartes possédées synergiques).
-    Le deck depuis la liste fonctionne sans collection.</p>
-  {% endif %}
+<div class="build-layout">
+  <form method="post" action="/build" enctype="multipart/form-data" class="card build-form">
 
-  <form method="post" action="/build" enctype="multipart/form-data" class="limited-form">
-    <label for="format"><strong>Format</strong></label>
-    <select id="format" name="format">
-      {% for f in formats %}
-      <option value="{{ f.value }}" {% if f.value == default_format %}selected{% endif %}>{{ f.label }}</option>
-      {% endfor %}
-    </select>
+    <div class="field">
+      <label for="format">Format</label>
+      <select id="format" name="format">
+        {% for f in formats %}
+        <option value="{{ f.value }}" {% if f.value == default_format %}selected{% endif %}>{{ f.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
 
-    <label for="pool"><strong>Liste des cartes</strong> (une par ligne, ex. « 2 Lightning Bolt »)</label>
-    <textarea id="pool" name="pool" rows="12"
-      placeholder="1 Lightning Bolt&#10;1 Llanowar Elves&#10;2 Giant Growth&#10;..."></textarea>
+    <div class="field">
+      <label for="pool">Liste des cartes</label>
+      <p class="hint">Une carte par ligne, ex. « 2 Lightning Bolt »</p>
+      <textarea id="pool" name="pool" rows="12"
+        placeholder="1 Lightning Bolt&#10;1 Llanowar Elves&#10;2 Giant Growth&#10;..."></textarea>
 
-    <div class="row">
-      <label class="file-label">
-        … ou importe un fichier (.txt / .csv ManaBox)
+      <div class="or-divider"><span>ou</span></div>
+
+      <label class="dropzone">
+        <span class="dz-ico">📄</span>
+        <span class="dz-text">Importer un fichier <strong>.txt</strong> ou <strong>.csv ManaBox</strong></span>
         <input type="file" name="file" accept=".txt,.csv,text/plain,text/csv">
       </label>
     </div>
 
     <fieldset class="hints">
       <legend>Orientation (optionnel)</legend>
-      <p class="muted small">Laisse vide pour laisser l'assistant choisir les meilleures couleurs.</p>
-      <div class="color-choices">
-        {% for sym, name in COLOR_NAMES.items() %}
-        <label class="color-choice">
-          <input type="checkbox" name="colors" value="{{ sym }}"> <span class="pip pip-{{ sym }}">{{ sym }}</span> {{ name }}
-        </label>
-        {% endfor %}
+
+      <div class="field">
+        <p class="sublabel">Couleurs — laisse vide pour laisser l'assistant choisir</p>
+        <div class="color-choices">
+          {% for sym, name in COLOR_NAMES.items() %}
+          <label class="color-choice">
+            <input type="checkbox" name="colors" value="{{ sym }}">
+            <span class="pip pip-{{ sym }}">{{ sym }}</span> {{ name }}
+          </label>
+          {% endfor %}
+        </div>
       </div>
-      <input type="text" name="theme" maxlength="120"
-             placeholder="Thème / style (ex. agressif, tempo, contrôle)…">
-      <input type="text" name="budget" inputmode="decimal"
-             placeholder="Budget € pour les cartes bonus à acheter (optionnel)">
-      <input type="text" name="max_card_price" inputmode="decimal"
-             placeholder="Prix max par carte € (optionnel)">
+
+      <div class="field">
+        <p class="sublabel">Thème / style de jeu</p>
+        <input type="text" name="theme" maxlength="120"
+               placeholder="Ex. agressif, tempo, contrôle…">
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <p class="sublabel">Budget cartes bonus</p>
+          <div class="input-euro">
+            <input type="text" name="budget" inputmode="decimal" placeholder="Ex. 30">
+          </div>
+        </div>
+        <div class="field">
+          <p class="sublabel">Prix max par carte</p>
+          <div class="input-euro">
+            <input type="text" name="max_card_price" inputmode="decimal" placeholder="Ex. 5">
+          </div>
+        </div>
+      </div>
     </fieldset>
 
-    <button type="submit">⚙ Construire le deck</button>
+    <button type="submit" class="btn-lg">⚙ Construire le deck</button>
   </form>
-</section>
+
+  <aside class="build-aside">
+    <section class="card">
+      <h3>Formats pris en charge</h3>
+      <ul class="format-list">
+        <li>
+          <span class="fmt-ico">🎴</span>
+          <div>
+            <strong>Limité (draft / sealed)</strong>
+            <p>Deck de 40 cartes, terrains de base ajoutés automatiquement.</p>
+          </div>
+        </li>
+        <li>
+          <span class="fmt-ico">👑</span>
+          <div>
+            <strong>Commander</strong>
+            <p>100 cartes singleton, un commandant choisi dans la liste.</p>
+          </div>
+        </li>
+        <li>
+          <span class="fmt-ico">⚔️</span>
+          <div>
+            <strong>Modern / Pauper / Standard…</strong>
+            <p>Deck de 60 cartes, légalité vérifiée via Scryfall.</p>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h3>Assistant</h3>
+      <p class="status small">
+        LLM :
+        {% if llm_ok %}<span class="badge ok">connecté</span>
+          <span class="muted">(Claude · {{ llm_model }})</span>
+        {% else %}<span class="badge warn">non configuré</span>
+          <span class="muted">repli heuristique actif — ajoute ANTHROPIC_API_KEY pour un meilleur choix</span>{% endif %}
+      </p>
+      {% if not has_collection %}
+      <p class="muted small">Ta collection est vide : importe-la depuis
+        <a href="/">l'accueil</a> pour activer les recommandations bonus
+        (cartes possédées synergiques). Le deck depuis la liste fonctionne sans.</p>
+      {% endif %}
+    </section>
+  </aside>
+</div>
 
 {% endblock %}
