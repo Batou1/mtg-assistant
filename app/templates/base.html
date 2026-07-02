@@ -4,21 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}MTG Assistant{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="/static/style.css?v={{ static_v }}">
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="/">🃏 MTG Assistant</a>
 
-    <div class="topbar-right">
-      <nav>
-        <a href="/">Accueil</a>
-        <a href="/chat">💬 Chat</a>
-        <a href="/build">🎴 Depuis une liste</a>
-        <a href="/collection">Ma collection</a>
-      </nav>
+    <nav class="topnav">
+      <a href="/">Accueil</a>
+      <a href="/chat">💬 Chat</a>
+      <a href="/build">🎴 Depuis une liste</a>
+      <a href="/collection">Ma collection</a>
+    </nav>
 
-      {% if profile %}
+    {% if profile %}
       <div class="profile-area">
         <form method="post" action="/profiles/switch" class="profile-switch" title="Profil actif">
           <span class="profile-icon">👤</span>
@@ -44,8 +46,7 @@
           </div>
         </details>
       </div>
-      {% endif %}
-    </div>
+    {% endif %}
   </header>
 
   <main class="container">
@@ -56,9 +57,37 @@
     Données : <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a>
     &amp; <a href="https://edhrec.com" target="_blank" rel="noopener">EDHREC</a> ·
     LLM : Claude (Anthropic) · Prix Cardmarket (EUR)
+    <span class="version">v{{ app_version }}</span>
   </footer>
 
   <script>
+    // Highlight the nav link matching the current page.
+    (function () {
+      var path = window.location.pathname;
+      document.querySelectorAll(".topbar nav a").forEach(function (a) {
+        var href = a.getAttribute("href");
+        var match = href === "/" ? path === "/" : path.indexOf(href) === 0;
+        if (match) a.classList.add("active");
+      });
+    })();
+
+    // Drop-zone file inputs: show the picked filename inside the label.
+    document.querySelectorAll(".dropzone").forEach(function (dz) {
+      var input = dz.querySelector("input[type=file]");
+      var text = dz.querySelector(".dz-text");
+      if (!input || !text) return;
+      var initial = text.innerHTML;
+      input.addEventListener("change", function () {
+        if (input.files && input.files.length) {
+          dz.classList.add("has-file");
+          text.textContent = "✓ " + input.files[0].name;
+        } else {
+          dz.classList.remove("has-file");
+          text.innerHTML = initial;
+        }
+      });
+    });
+
     // Copies the textarea inside the same .export block as `btn`, with
     // feedback on the button itself. Works over http (dev) via the
     // execCommand fallback since navigator.clipboard needs a secure context.

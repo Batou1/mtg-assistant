@@ -16,7 +16,9 @@ from . import (
 )
 from .config import settings
 
-app = FastAPI(title="MTG Assistant")
+APP_VERSION = "1.0"
+
+app = FastAPI(title="MTG Assistant", version=APP_VERSION)
 
 BASE_DIR = os.path.dirname(__file__)
 STATIC_DIR = os.path.join(BASE_DIR, "static")
@@ -40,6 +42,7 @@ def _static_version() -> str:
 
 
 templates.env.globals["static_v"] = _static_version()
+templates.env.globals["app_version"] = APP_VERSION
 templates.env.filters["paragraphs"] = textutil.paragraphs
 
 db.init_db()
