@@ -6,50 +6,65 @@
   <title>{% block title %}MTG Assistant{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="/static/style.css?v={{ static_v }}">
+  <script>
+    // Applied before paint to avoid a flash of the wrong theme.
+    (function () {
+      var saved = localStorage.getItem("mtg-theme");
+      var theme = saved || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
   <header class="topbar">
-    <a class="brand" href="/">🃏 MTG Assistant</a>
+    <a class="brand" href="/"><span class="brand-mark">✦</span>MTG Assistant</a>
 
     <nav class="topnav">
       <a href="/">Accueil</a>
-      <a href="/chat">💬 Chat</a>
-      <a href="/build">🎴 Depuis une liste</a>
+      <a href="/chat">Chat</a>
+      <a href="/build">Depuis une liste</a>
       <a href="/collection">Ma collection</a>
     </nav>
 
-    {% if profile %}
-      <div class="profile-area">
-        <form method="post" action="/profiles/switch" class="profile-switch" title="Profil actif">
-          <span class="profile-icon">👤</span>
-          <select name="profile_id" onchange="this.form.submit()" aria-label="Profil">
-            {% for p in profiles %}
-              <option value="{{ p.id }}" {% if p.id == profile.id %}selected{% endif %}>{{ p.name }}</option>
-            {% endfor %}
-          </select>
-        </form>
+    <div class="topbar-right">
+      <button type="button" class="theme-toggle" onclick="mtgToggleTheme()" aria-label="Changer de thème">
+        <span class="icon-moon">☾</span><span class="icon-sun">☀</span>
+        <span class="tt-label" data-tt-label>Sombre</span>
+      </button>
 
-        <details class="profile-menu">
-          <summary aria-label="Gérer les profils">⚙</summary>
-          <div class="profile-dropdown">
-            <form method="post" action="/profiles/create" class="row">
-              <input name="name" placeholder="Nouveau profil" maxlength="40" required>
-              <button type="submit">Créer</button>
-            </form>
-            <form method="post" action="/profiles/delete"
-                  onsubmit="return confirm('Supprimer le profil « {{ profile.name }} » et sa collection ?');">
-              <input type="hidden" name="profile_id" value="{{ profile.id }}">
-              <button type="submit" class="danger-link">Supprimer « {{ profile.name }} »</button>
-            </form>
-          </div>
-        </details>
-      </div>
-    {% endif %}
+      {% if profile %}
+        <div class="profile-area">
+          <form method="post" action="/profiles/switch" class="profile-switch" title="Profil actif">
+            <span class="profile-avatar">{{ profile.name[0]|upper }}</span>
+            <select name="profile_id" onchange="this.form.submit()" aria-label="Profil">
+              {% for p in profiles %}
+                <option value="{{ p.id }}" {% if p.id == profile.id %}selected{% endif %}>{{ p.name }}</option>
+              {% endfor %}
+            </select>
+          </form>
+
+          <details class="profile-menu">
+            <summary aria-label="Gérer les profils">⚙</summary>
+            <div class="profile-dropdown">
+              <form method="post" action="/profiles/create" class="row">
+                <input name="name" placeholder="Nouveau profil" maxlength="40" required>
+                <button type="submit">Créer</button>
+              </form>
+              <form method="post" action="/profiles/delete"
+                    onsubmit="return confirm('Supprimer le profil « {{ profile.name }} » et sa collection ?');">
+                <input type="hidden" name="profile_id" value="{{ profile.id }}">
+                <button type="submit" class="danger-link">Supprimer « {{ profile.name }} »</button>
+              </form>
+            </div>
+          </details>
+        </div>
+      {% endif %}
+    </div>
   </header>
 
-  <main class="container">
+  <main class="{% block main_class %}container{% endblock %}">
     {% block content %}{% endblock %}
   </main>
 
@@ -71,6 +86,21 @@
       });
     })();
 
+    // Theme toggle: persisted in localStorage, applied on <html data-theme>.
+    function mtgSyncThemeLabel() {
+      var theme = document.documentElement.getAttribute("data-theme");
+      document.querySelectorAll("[data-tt-label]").forEach(function (el) {
+        el.textContent = theme === "light" ? "Clair" : "Sombre";
+      });
+    }
+    function mtgToggleTheme() {
+      var next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", next);
+      localStorage.setItem("mtg-theme", next);
+      mtgSyncThemeLabel();
+    }
+    mtgSyncThemeLabel();
+
     // Drop-zone file inputs: show the picked filename inside the label.
     document.querySelectorAll(".dropzone").forEach(function (dz) {
       var input = dz.querySelector("input[type=file]");
@@ -87,6 +117,16 @@
         }
       });
     });
+
+    // "Détails" button on commander cards: expand/collapse the card's
+    // secondary sections (buylist + owned/linked card lists).
+    function mtgToggleDetails(btn) {
+      var card = btn.closest(".commander");
+      if (!card) return;
+      var all = card.querySelectorAll("details");
+      var anyClosed = Array.prototype.some.call(all, function (d) { return !d.open; });
+      all.forEach(function (d) { d.open = anyClosed; });
+    }
 
     // Copies the textarea inside the same .export block as `btn`, with
     // feedback on the button itself. Works over http (dev) via the

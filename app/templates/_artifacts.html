@@ -25,56 +25,67 @@
 
 {% macro commanders(art) %}
   {% for n in art.notices %}<div class="notice info">{{ n }}</div>{% endfor %}
+  {% if art.intent %}
+  <div class="intent-chips">
+    {% if art.intent.format %}<span class="chip">Format · <strong>{{ art.intent.format|capitalize }}</strong></span>{% endif %}
+    {% if art.intent.colors %}<span class="chip">Couleur{{ 's' if art.intent.colors|length > 1 }}
+      {% for c in art.intent.colors %}<span class="mana-dot {{ c }}"></span>{% endfor %}</span>{% endif %}
+    {% if art.intent.theme %}<span class="chip">Thème · <strong>{{ art.intent.theme }}</strong></span>{% endif %}
+    {% if art.intent.budget_eur is not none %}<span class="chip">Budget · <strong>{{ "%.0f"|format(art.intent.budget_eur) }} €</strong></span>{% endif %}
+    {% if art.intent.max_card_price_eur is not none %}<span class="chip">Max/carte · <strong>{{ "%.0f"|format(art.intent.max_card_price_eur) }} €</strong></span>{% endif %}
+  </div>
+  {% endif %}
   {% for r in art.results %}
-  <section class="commander card art-card">
+  <section class="commander card art-card"
+           {% if r.color_identity %}style="border-left-color: var(--m{{ r.color_identity[0]|lower }})"{% endif %}>
     <div class="commander-head">
       {% if r.image %}<img class="card-img" src="{{ r.image }}" alt="{{ r.name }}" loading="lazy">{% endif %}
       <div class="commander-meta">
-        <h3>{{ r.name }}
-          {% if r.owned is defined and not r.owned %}<span class="tag buy-tag">proposé · non possédé</span>
-          {% else %}<span class="tag owned-tag">possédé</span>{% endif %}
-          {% if r.below_threshold %}<span class="tag niche-tag">peu joué</span>{% endif %}
-        </h3>
-        <p class="pips">
-          {% for c in r.color_identity %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}
-          {% if not r.color_identity %}<span class="pip pip-C">incolore</span>{% endif %}
-        </p>
-        <p class="muted small">{{ "{:,}".format(r.num_decks).replace(",", " ") }} decks sur EDHREC{% if r.below_threshold %} · sous le seuil habituel{% endif %}</p>
+        <div class="commander-title">
+          <div>
+            <h3>{{ r.name }}</h3>
+            <p class="commander-sub mono">{{ "{:,}".format(r.num_decks).replace(",", " ") }} decks · EDHREC{% if r.below_threshold %} · peu joué{% endif %}</p>
+          </div>
+          {% if r.owned is defined and not r.owned %}<span class="owned-badge to-buy">proposé · non possédé</span>
+          {% else %}<span class="owned-badge">✓ Possédé</span>{% endif %}
+        </div>
         {% if r.owned is defined and not r.owned %}
         <p class="muted small">Commandant à acquérir :
           <strong>{% if r.price_eur is not none %}{{ "%.2f"|format(r.price_eur) }} €{% else %}prix indisponible{% endif %}</strong>
           {% if r.total_cost_eur is not none %} · coût total ~{{ "%.2f"|format(r.total_cost_eur) }} €{% endif %}
           {% if r.link_count %} · {{ r.link_count }} de tes cartes y mènent{% endif %}
         </p>
-        {% if r.linked_owned_cards %}
-        <details class="owned-list">
-          <summary>Tes cartes qui pointent vers ce commandant</summary>
-          <ul class="namelist">{% for name in r.linked_owned_cards %}<li>{{ name }}</li>{% endfor %}</ul>
-        </details>
-        {% endif %}
         {% endif %}
         <div class="completion">
+          <div class="completion-head">
+            <span><strong>{{ r.owned_count }} / {{ r.total_recommended }}</strong> cartes recommandées possédées</span>
+            <span class="completion-pct">{{ ("%.1f"|format(r.pct)).replace(".", ",") }} %</span>
+          </div>
           <div class="bar"><span style="width: {{ r.pct }}%"></span></div>
-          <p><strong>{{ r.owned_count }}</strong> / {{ r.total_recommended }} cartes recommandées possédées
-            (<strong>{{ r.pct }}%</strong>)</p>
         </div>
-        <form method="post" action="/chat/message" class="generate-form">
-          <input type="hidden" name="message" value="Génère la decklist complète pour {{ r.name }}{% if art.intent.budget_eur is not none %} avec un budget de {{ '%.0f'|format(art.intent.budget_eur) }} €{% endif %}{% if art.intent.max_card_price_eur is not none %}, max {{ '%.0f'|format(art.intent.max_card_price_eur) }} € par carte{% endif %}.">
-          <button type="submit">⚙ Générer la decklist complète</button>
-        </form>
+        <div class="card-actions">
+          <form method="post" action="/chat/message" class="generate-form">
+            <input type="hidden" name="message" value="Génère la decklist complète pour {{ r.name }}{% if art.intent.budget_eur is not none %} avec un budget de {{ '%.0f'|format(art.intent.budget_eur) }} €{% endif %}{% if art.intent.max_card_price_eur is not none %}, max {{ '%.0f'|format(art.intent.max_card_price_eur) }} € par carte{% endif %}.">
+            <button type="submit">Générer la decklist complète</button>
+          </form>
+          <button type="button" class="btn-outline" onclick="mtgToggleDetails(this)">Détails</button>
+        </div>
       </div>
     </div>
     {% if r.buylist and r.buylist.to_buy %}
     <details class="buylist">
       <summary>
-        <span class="buylist-title">Liste d'achat
-          {% if r.buylist.budget_eur is not none %}<span class="muted small">(budget {{ "%.0f"|format(r.buylist.budget_eur) }} €)</span>{% endif %}
-          {% if r.buylist.max_card_price_eur is not none %}<span class="muted small">(max {{ "%.0f"|format(r.buylist.max_card_price_eur) }} €/carte)</span>{% endif %}
-        </span>
-        <span class="muted small">{{ r.buylist.bought_count }} carte(s) · total
-          <strong>{{ "%.2f"|format(r.buylist.total_eur) }} €</strong></span>
+        <span class="buylist-title">Liste d'achat</span>
+        <span class="muted small">{{ r.buylist.bought_count }} carte(s)</span>
+        <span class="buylist-total mono">{{ "%.2f"|format(r.buylist.total_eur) }} €{% if r.buylist.budget_eur is not none %} <span class="muted">/ {{ "%.0f"|format(r.buylist.budget_eur) }} €</span>{% endif %}</span>
       </summary>
-      <div class="buy-grid">
+      <div class="buylist-preview">
+        {% for item in r.buylist.to_buy[:2] %}
+        <span class="buylist-chip">{{ item.name }} <span class="mono muted">{{ "%.2f"|format(item.price_eur) }} €</span></span>
+        {% endfor %}
+        {% if r.buylist.to_buy|length > 2 %}<span class="buylist-chip more">+{{ r.buylist.to_buy|length - 2 }} autres</span>{% endif %}
+      </div>
+      <div class="buylist-full">
         {% for item in r.buylist.to_buy %}
         <div class="buy-item">
           {% if item.image %}<img src="{{ item.image }}" alt="{{ item.name }}" loading="lazy">{% endif %}
@@ -83,6 +94,12 @@
         </div>
         {% endfor %}
       </div>
+    </details>
+    {% endif %}
+    {% if r.linked_owned_cards %}
+    <details class="owned-list">
+      <summary>Tes cartes qui pointent vers ce commandant</summary>
+      <ul class="namelist">{% for name in r.linked_owned_cards %}<li>{{ name }}</li>{% endfor %}</ul>
     </details>
     {% endif %}
     {% if r.owned_cards %}
