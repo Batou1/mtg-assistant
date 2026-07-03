@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: oklch(0.13 0.008 260); }
+  .opt { font-family: 'Hanken Grotesk', system-ui, sans-serif; --mono: 'JetBrains Mono', monospace; --mw: oklch(0.90 0.04 90); --mu: oklch(0.66 0.13 245); --mb: oklch(0.55 0.035 300); --mr: oklch(0.64 0.17 25); --mg: oklch(0.62 0.12 150); }
+
+  .optA { --font-head: 'Space Grotesk','Hanken Grotesk',sans-serif;
+    --bg: oklch(0.165 0.012 255); --bg2: oklch(0.205 0.014 255); --bg3: oklch(0.245 0.016 255);
+    --line: oklch(0.30 0.016 255); --text: oklch(0.965 0.005 255); --muted: oklch(0.66 0.012 255);
+    --accent: oklch(0.80 0.13 185); --accent2: oklch(0.72 0.12 205); --accent-ink: oklch(0.18 0.04 200);
+    --ring-track: oklch(0.30 0.016 255); --shadow: 0 20px 50px -22px rgba(0,0,0,.7); }
+  .optA.light { --bg: oklch(0.975 0.005 255); --bg2: oklch(1 0 0); --bg3: oklch(0.955 0.006 255);
+    --line: oklch(0.90 0.008 255); --text: oklch(0.24 0.012 255); --muted: oklch(0.50 0.012 255);
+    --accent: oklch(0.56 0.12 195); --accent2: oklch(0.60 0.12 205); --accent-ink: oklch(0.99 0.01 200);
+    --ring-track: oklch(0.90 0.008 255); --shadow: 0 20px 50px -26px rgba(20,30,45,.22); }
+
+  .optB { --font-head: 'Bricolage Grotesque','Hanken Grotesk',sans-serif;
+    --bg: oklch(0.155 0.012 60); --bg2: oklch(0.195 0.014 58); --bg3: oklch(0.235 0.016 55);
+    --line: oklch(0.30 0.018 55); --text: oklch(0.955 0.008 75); --muted: oklch(0.66 0.014 68);
+    --accent: oklch(0.82 0.12 78); --accent2: oklch(0.72 0.13 52); --accent-ink: oklch(0.22 0.05 70);
+    --ring-track: oklch(0.30 0.018 55); --shadow: 0 20px 50px -22px rgba(0,0,0,.72); }
+  .optC { --font-head: 'Bricolage Grotesque','Hanken Grotesk',sans-serif;
+    --bg: oklch(0.155 0.012 60); --bg2: oklch(0.195 0.014 58); --bg3: oklch(0.235 0.016 55);
+    --line: oklch(0.30 0.018 55); --text: oklch(0.955 0.008 75); --muted: oklch(0.66 0.014 68);
+    --accent: oklch(0.71 0.125 45); --accent2: oklch(0.63 0.13 32); --accent-ink: oklch(0.24 0.04 45);
+    --ring-track: oklch(0.30 0.018 55); --shadow: 0 20px 50px -22px rgba(0,0,0,.72); }
+  .optC.light { --bg: oklch(0.975 0.006 80); --bg2: oklch(1 0 0); --bg3: oklch(0.958 0.008 80);
+    --line: oklch(0.89 0.01 80); --text: oklch(0.24 0.014 60); --muted: oklch(0.48 0.014 66);
+    --accent: oklch(0.55 0.12 42); --accent2: oklch(0.60 0.125 32); --accent-ink: oklch(0.99 0.01 50);
+    --ring-track: oklch(0.89 0.01 80); --shadow: 0 20px 50px -26px rgba(45,32,15,.20); }
+
+  .optD { --font-head: 'Bricolage Grotesque','Hanken Grotesk',sans-serif;
+    --bg: oklch(0.155 0.012 60); --bg2: oklch(0.195 0.014 58); --bg3: oklch(0.235 0.016 55);
+    --line: oklch(0.30 0.018 55); --text: oklch(0.955 0.008 75); --muted: oklch(0.66 0.014 68);
+    --accent: oklch(0.71 0.125 45); --accent2: oklch(0.63 0.13 32); --accent-ink: oklch(0.24 0.04 45);
+    --ring-track: oklch(0.30 0.018 55); --shadow: 0 20px 50px -22px rgba(0,0,0,.72); }
+  .optD.light { --bg: oklch(0.975 0.006 80); --bg2: oklch(1 0 0); --bg3: oklch(0.958 0.008 80);
+    --line: oklch(0.89 0.01 80); --text: oklch(0.24 0.014 60); --muted: oklch(0.48 0.014 66);
+    --accent: oklch(0.55 0.12 42); --accent2: oklch(0.60 0.125 32); --accent-ink: oklch(0.99 0.01 50);
+    --ring-track: oklch(0.89 0.01 80); --shadow: 0 20px 50px -26px rgba(45,32,15,.20); }
+
+  .optB.light { --bg: oklch(0.975 0.008 78); --bg2: oklch(1 0 0); --bg3: oklch(0.958 0.01 78);
+    --line: oklch(0.89 0.012 78); --text: oklch(0.24 0.016 60); --muted: oklch(0.48 0.016 66);
+    --accent: oklch(0.60 0.11 66); --accent2: oklch(0.66 0.12 50); --accent-ink: oklch(0.99 0.02 80);
+    --ring-track: oklch(0.89 0.012 78); --shadow: 0 20px 50px -26px rgba(45,32,15,.20); }
+
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .scrolly::-webkit-scrollbar { width: 9px; }
+  .scrolly::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
+  .scrolly::-webkit-scrollbar-track { background: transparent; }
+</style>
+</helmet>
+
+<section style="padding:56px 60px 20px;display:flex;flex-direction:column;gap:28px;background:oklch(0.13 0.008 260)">
+  <div style="display:flex;flex-direction:column;gap:8px;color:oklch(0.92 0.005 260);font-family:'Space Grotesk',sans-serif">
+    <div style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:oklch(0.62 0.01 260);font-weight:600">Itération 4 · Direction finale Terracotta</div>
+    <h1 style="margin:0;font-size:26px;font-weight:700;letter-spacing:-0.01em">Déclinaison sur les autres écrans</h1>
+    <div style="font-size:15px;color:oklch(0.68 0.008 260)"><a href="#4a" style="color:oklch(0.71 0.125 45);text-decoration:none;font-weight:600">4a Accueil</a> · <a href="#4b" style="color:oklch(0.71 0.125 45);text-decoration:none;font-weight:600">4b Ma collection</a> · <a href="#4c" style="color:oklch(0.71 0.125 45);text-decoration:none;font-weight:600">4c Depuis une liste</a> — même système que <a href="#2a" style="color:oklch(0.71 0.125 45);text-decoration:none;font-weight:600">2a</a>, bascule clair/sombre commune.</div>
+  </div>
+
+  <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+
+    <!-- ============ 4A : ACCUEIL ============ -->
+    <div id="4a" class="opt optD {{ dLight }}" style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px;color:oklch(0.9 0.005 260);font-family:'Bricolage Grotesque',sans-serif">
+        <span style="display:inline-grid;place-items:center;min-width:34px;height:26px;padding:0 9px;border-radius:7px;background:oklch(0.71 0.125 45);color:oklch(0.24 0.04 45);font-weight:700;font-size:14px">4a</span>
+        <span style="font-size:18px;font-weight:700">Accueil</span>
+      </div>
+      <div style="width:1360px;height:864px;border-radius:20px;overflow:hidden;border:1px solid var(--line);background:var(--bg);color:var(--text);display:flex;flex-direction:column;box-shadow:var(--shadow)">
+        <div style="height:62px;flex:none;display:flex;align-items:center;gap:20px;padding:0 22px;border-bottom:1px solid var(--line);background:var(--bg2);position:relative">
+          <div style="position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,var(--mw),var(--mu),var(--mb),var(--mr),var(--mg));opacity:0.5"></div>
+          <div style="display:flex;align-items:center;gap:11px;font-family:var(--font-head);font-weight:700;font-size:17px"><span style="width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,var(--accent),var(--accent2));display:grid;place-items:center;color:var(--accent-ink);font-size:16px">✦</span>MTG Assistant</div>
+          <nav style="display:flex;align-items:center;gap:4px;margin-left:14px">
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;font-weight:700;color:var(--accent-ink);background:var(--accent)">Accueil</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Chat</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Depuis une liste</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Ma collection</span>
+          </nav>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:14px">
+            <button onClick="{{ toggleD }}" style="display:flex;align-items:center;gap:8px;height:36px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:var(--bg3);color:var(--text);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer"><span style="font-size:14px">{{ dIcon }}</span>{{ dThemeLabel }}</button>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 12px 5px 5px;border-radius:999px;background:var(--bg3);border:1px solid var(--line)"><span style="width:26px;height:26px;border-radius:50%;background:linear-gradient(150deg,var(--accent),var(--accent2));display:grid;place-items:center;color:var(--accent-ink);font-weight:700;font-size:13px">B</span><span style="font-size:13px;font-weight:600">Bastien</span></div>
+            <span style="width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--bg3);display:grid;place-items:center;color:var(--muted);font-size:16px">⚙</span>
+          </div>
+        </div>
+
+        <div style="flex:1;display:grid;grid-template-columns:1.25fr 0.75fr;gap:28px;padding:48px 52px;min-height:0">
+          <div style="display:flex;flex-direction:column;gap:22px;min-width:0">
+            <div>
+              <h2 style="margin:0 0 10px;font-family:var(--font-head);font-size:38px;font-weight:800;letter-spacing:-0.02em;line-height:1.1">Quel deck veux-tu<br>construire aujourd'hui ?</h2>
+              <div style="font-size:15.5px;color:var(--muted);line-height:1.5">Décris ton envie en français — l'assistant analyse ta collection et te propose des decks à compléter dans ton budget.</div>
+            </div>
+            <div style="padding:20px;border-radius:18px;background:var(--bg2);border:1px solid var(--line);display:flex;flex-direction:column;gap:14px">
+              <div style="min-height:74px;font-size:15px;color:var(--muted);line-height:1.5">« un deck Commander aristocrats sacrifice en noir/rouge, budget 50 €, pas plus de 5 € par carte »</div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)"><span style="width:7px;height:7px;border-radius:50%;background:var(--mg);box-shadow:0 0 8px var(--mg)"></span>Claude connecté</span>
+                <button style="margin-left:auto;height:46px;padding:0 26px;border-radius:999px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent2));color:var(--accent-ink);font-family:var(--font-head);font-weight:700;font-size:15px;cursor:pointer">Lancer l'analyse</button>
+              </div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              <span style="font-size:13px;padding:8px 14px;border-radius:999px;background:var(--bg3);border:1px solid var(--line);color:var(--text);cursor:pointer">Un deck Pauper agro rouge</span>
+              <span style="font-size:13px;padding:8px 14px;border-radius:999px;background:var(--bg3);border:1px solid var(--line);color:var(--text);cursor:pointer">Commander tribal zombie</span>
+              <span style="font-size:13px;padding:8px 14px;border-radius:999px;background:var(--bg3);border:1px solid var(--line);color:var(--text);cursor:pointer">Premodern combo reanimator</span>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+            <div style="padding:18px;border-radius:18px;background:var(--bg2);border:1px solid var(--line);display:flex;flex-direction:column;gap:13px">
+              <div style="display:flex;align-items:baseline;gap:8px"><span style="font-family:var(--font-head);font-weight:700;font-size:16px">Ma collection</span><span style="margin-left:auto;font-size:12px;color:var(--accent);font-weight:600;cursor:pointer">Voir tout →</span></div>
+              <div style="display:flex;gap:18px">
+                <div><div style="font-family:var(--mono);font-weight:600;font-size:20px">1 248</div><div style="font-size:12px;color:var(--muted)">cartes</div></div>
+                <div><div style="font-family:var(--mono);font-weight:600;font-size:20px">736</div><div style="font-size:12px;color:var(--muted)">uniques</div></div>
+                <div><div style="font-family:var(--mono);font-weight:600;font-size:20px">842 €</div><div style="font-size:12px;color:var(--muted)">valeur est.</div></div>
+              </div>
+              <div style="display:flex;height:8px;border-radius:999px;overflow:hidden">
+                <span style="width:14%;background:var(--mw)"></span><span style="width:22%;background:var(--mu)"></span><span style="width:26%;background:var(--mb)"></span><span style="width:18%;background:var(--mr)"></span><span style="width:20%;background:var(--mg)"></span>
+              </div>
+            </div>
+            <div style="padding:22px;border-radius:18px;border:1.5px dashed var(--line);background:var(--bg2);display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
+              <span style="width:38px;height:38px;border-radius:50%;background:var(--bg3);display:grid;place-items:center;color:var(--accent);font-size:18px">↑</span>
+              <div style="font-size:14px;font-weight:600">Dépose ton export ManaBox</div>
+              <div style="font-size:12.5px;color:var(--muted)">.csv — stocké en local, par profil</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:11px;padding:13px 14px;border-radius:14px;border:1px solid color-mix(in oklch, var(--accent) 55%, transparent);background:color-mix(in oklch, var(--accent) 10%, transparent)">
+              <span style="width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:15px">✦</span>
+              <div style="line-height:1.3"><div style="font-size:13px;font-weight:700">Commandants proposés</div><div style="font-size:12px;color:var(--muted)">5 options · il y a 2 h</div></div>
+              <span style="margin-left:auto;color:var(--accent);font-weight:700">→</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 4B : MA COLLECTION ============ -->
+    <div id="4b" class="opt optD {{ dLight }}" style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px;color:oklch(0.9 0.005 260);font-family:'Bricolage Grotesque',sans-serif">
+        <span style="display:inline-grid;place-items:center;min-width:34px;height:26px;padding:0 9px;border-radius:7px;background:oklch(0.71 0.125 45);color:oklch(0.24 0.04 45);font-weight:700;font-size:14px">4b</span>
+        <span style="font-size:18px;font-weight:700">Ma collection</span>
+      </div>
+      <div style="width:1360px;height:864px;border-radius:20px;overflow:hidden;border:1px solid var(--line);background:var(--bg);color:var(--text);display:flex;flex-direction:column;box-shadow:var(--shadow)">
+        <div style="height:62px;flex:none;display:flex;align-items:center;gap:20px;padding:0 22px;border-bottom:1px solid var(--line);background:var(--bg2);position:relative">
+          <div style="position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,var(--mw),var(--mu),var(--mb),var(--mr),var(--mg));opacity:0.5"></div>
+          <div style="display:flex;align-items:center;gap:11px;font-family:var(--font-head);font-weight:700;font-size:17px"><span style="width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,var(--accent),var(--accent2));display:grid;place-items:center;color:var(--accent-ink);font-size:16px">✦</span>MTG Assistant</div>
+          <nav style="display:flex;align-items:center;gap:4px;margin-left:14px">
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Accueil</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Chat</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Depuis une liste</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;font-weight:700;color:var(--accent-ink);background:var(--accent)">Ma collection</span>
+          </nav>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:14px">
+            <button onClick="{{ toggleD }}" style="display:flex;align-items:center;gap:8px;height:36px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:var(--bg3);color:var(--text);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer"><span style="font-size:14px">{{ dIcon }}</span>{{ dThemeLabel }}</button>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 12px 5px 5px;border-radius:999px;background:var(--bg3);border:1px solid var(--line)"><span style="width:26px;height:26px;border-radius:50%;background:linear-gradient(150deg,var(--accent),var(--accent2));display:grid;place-items:center;color:var(--accent-ink);font-weight:700;font-size:13px">B</span><span style="font-size:13px;font-weight:600">Bastien</span></div>
+            <span style="width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--bg3);display:grid;place-items:center;color:var(--muted);font-size:16px">⚙</span>
+          </div>
+        </div>
+
+        <div style="flex:1;display:flex;flex-direction:column;gap:18px;padding:30px 40px;min-height:0">
+          <div style="display:flex;align-items:center;gap:16px">
+            <h2 style="margin:0;font-family:var(--font-head);font-size:26px;font-weight:800;letter-spacing:-0.01em">Ma collection</h2>
+            <span style="font-size:13px;color:var(--muted);font-family:var(--mono)">1 248 cartes · 736 uniques · 842 €</span>
+            <button style="margin-left:auto;height:42px;padding:0 20px;border-radius:999px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent2));color:var(--accent-ink);font-family:var(--font-head);font-weight:700;font-size:13.5px;cursor:pointer">Importer ManaBox</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="flex:1;max-width:340px;display:flex;align-items:center;gap:9px;height:42px;padding:0 15px;border-radius:999px;border:1px solid var(--line);background:var(--bg2);color:var(--muted);font-size:13.5px">⌕ Rechercher une carte…</div>
+            <div style="display:flex;gap:6px">
+              <span style="width:26px;height:26px;border-radius:50%;background:var(--mw);border:2px solid var(--line);cursor:pointer"></span>
+              <span style="width:26px;height:26px;border-radius:50%;background:var(--mu);border:2px solid var(--line);cursor:pointer"></span>
+              <span style="width:26px;height:26px;border-radius:50%;background:var(--mb);border:2px solid var(--accent);cursor:pointer"></span>
+              <span style="width:26px;height:26px;border-radius:50%;background:var(--mr);border:2px solid var(--line);cursor:pointer"></span>
+              <span style="width:26px;height:26px;border-radius:50%;background:var(--mg);border:2px solid var(--line);cursor:pointer"></span>
+            </div>
+            <span style="font-size:13px;padding:9px 14px;border-radius:999px;background:var(--bg2);border:1px solid var(--line);color:var(--text)">Type · Tous</span>
+            <span style="font-size:13px;padding:9px 14px;border-radius:999px;background:var(--bg2);border:1px solid var(--line);color:var(--text)">Tri · Valeur ↓</span>
+          </div>
+
+          <div style="flex:1;display:grid;grid-template-columns:repeat(6,1fr);gap:16px;min-height:0;align-content:start">
+            <div style="display:flex;flex-direction:column;gap:7px"><div style="position:relative;border-radius:10px;overflow:hidden;background:var(--bg3);aspect-ratio:0.717"><img src="https://api.scryfall.com/cards/named?exact=Rhystic%20Study&format=image&version=normal" alt="Rhystic Study" style="width:100%;height:100%;object-fit:cover;display:block"><span style="position:absolute;top:7px;right:7px;font-size:11px;font-weight:700;font-family:var(--mono);padding:3px 7px;border-radius:7px;background:rgba(0,0,0,.72);color:#fff">×1</span></div><div style="display:flex;font-size:12px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Rhystic Study</span><span style="margin-left:auto;color:var(--accent);font-family:var(--mono);font-weight:600">38,50 €</span></div></div>
+            <div style="display:flex;flex-direction:column;gap:7px"><div style="position:relative;border-radius:10px;overflow:hidden;background:var(--bg3);aspect-ratio:0.717"><img src="https://api.scryfall.com/cards/named?exact=Birds%20of%20Paradise&format=image&version=normal" alt="Birds of Paradise" style="width:100%;height:100%;object-fit:cover;display:block"><span style="position:absolute;top:7px;right:7px;font-size:11px;font-weight:700;font-family:var(--mono);padding:3px 7px;border-radius:7px;background:rgba(0,0,0,.72);color:#fff">×2</span></div><div style="display:flex;font-size:12px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Birds of Paradise</span><span style="margin-left:auto;color:var(--accent);font-family:var(--mono);font-weight:600">6,80 €</span></div></div>
+            <div style="display:flex;flex-direction:column;gap:7px"><div style="position:relative;border-radius:10px;overflow:hidden;background:var(--bg3);aspect-ratio:0.717"><img src="https://api.scryfall.com/cards/named?exact=Swords%20to%20Plowshares&format=image&version=normal" alt="Swords to Plowshares" style="width:100%;height:100%;object-fit:cover;display:block"><span style="position:absolute;top:7px;right:7px;font-size:11px;font-weight:700;font-family:var(--mono);padding:3px 7px;border-radius:7px;background:rgba(0,0,0,.72);color:#fff">×3</span></div><div style="display:flex;font-size:12px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Swords to Plowshares</span><span style="margin-left:auto;color:var(--accent);font-family:var(--mono);font-weight:600">3,20 €</span></div></div>
+            <div style="display:flex;flex-direction:column;gap:7px"><div style="position:relative;border-radius:10px;overflow:hidden;background:var(--bg3);aspect-ratio:0.717"><img src="https://api.scryfall.com/cards/named?exact=Counterspell&format=image&version=normal" alt="Counterspell" style="width:100%;height:100%;object-fit:cover;display:block"><span style="position:absolute;top:7px;right:7px;font-size:11px;font-weight:700;font-family:var(--mono);padding:3px 7px;border-radius:7px;background:rgba(0,0,0,.72);color:#fff">×4</span></div><div style="display:flex;font-size:12px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Counterspell</span><span style="margin-left:auto;color:var(--accent);font-family:var(--mono);font-weight:600">2,40 €</span></div></div>
+            <div style="display:flex;flex-direction:column;gap:7px"><div style="position:relative;border-radius:10px;overflow:hidden;background:var(--bg3);aspect-ratio:0.717"><img src="https://api.scryfall.com/cards/named?exact=Lightning%20Bolt&format=image&version=normal" alt="Lightning Bolt" style="width:100%;height:100%;object-fit:cover;display:block"><span style="position:absolute;top:7px;right:7px;font-size:11px;font-weight:700;font-family:var(--mono);padding:3px 7px;border-radius:7px;background:rgba(0,0,0,.72);color:#fff">×4</span></div><div style="display:flex;font-size:12px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Lightning Bolt</span><span style="margin-left:auto;color:var(--accent);font-family:var(--mono);font-weight:600">1,80 €</span></div></div>
+            <div style="display:flex;flex-direction:column;gap:7px"><div style="position:relative;border-radius:10px;overflow:hidden;background:var(--bg3);aspect-ratio:0.717"><img src="https://api.scryfall.com/cards/named?exact=Fatal%20Push&format=image&version=normal" alt="Fatal Push" style="width:100%;height:100%;object-fit:cover;display:block"><span style="position:absolute;top:7px;right:7px;font-size:11px;font-weight:700;font-family:var(--mono);padding:3px 7px;border-radius:7px;background:rgba(0,0,0,.72);color:#fff">×2</span></div><div style="display:flex;font-size:12px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Fatal Push</span><span style="margin-left:auto;color:var(--accent);font-family:var(--mono);font-weight:600">1,60 €</span></div></div>
+            <div style="display:flex;flex-direction:column;gap:7px"><div style="position:relative;border-radius:10px;overflow:hidden;background:var(--bg3);aspect-ratio:0.717"><img src="https://api.scryfall.com/cards/named?exact=Llanowar%20Elves&format=image&version=normal" alt="Llanowar Elves" style="width:100%;height:100%;object-fit:cover;display:block"><span style="position:absolute;top:7px;right:7px;font-size:11px;font-weight:700;font-family:var(--mono);padding:3px 7px;border-radius:7px;background:rgba(0,0,0,.72);color:#fff">×4</span></div><div style="display:flex;font-size:12px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Llanowar Elves</span><span style="margin-left:auto;color:var(--accent);font-family:var(--mono);font-weight:600">1,50 €</span></div></div>
+            <div style="display:flex;flex-direction:column;gap:7px"><div style="position:relative;border-radius:10px;overflow:hidden;background:var(--bg3);aspect-ratio:0.717"><img src="https://api.scryfall.com/cards/named?exact=Beast%20Within&format=image&version=normal" alt="Beast Within" style="width:100%;height:100%;object-fit:cover;display:block"><span style="position:absolute;top:7px;right:7px;font-size:11px;font-weight:700;font-family:var(--mono);padding:3px 7px;border-radius:7px;background:rgba(0,0,0,.72);color:#fff">×1</span></div><div style="display:flex;font-size:12px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Beast Within</span><span style="margin-left:auto;color:var(--accent);font-family:var(--mono);font-weight:600">1,40 €</span></div></div>
+            <div style="display:flex;flex-direction:column;gap:7px"><div style="position:relative;border-radius:10px;overflow:hidden;background:var(--bg3);aspect-ratio:0.717"><img src="https://api.scryfall.com/cards/named?exact=Sol%20Ring&format=image&version=normal" alt="Sol Ring" style="width:100%;height:100%;object-fit:cover;display:block"><span style="position:absolute;top:7px;right:7px;font-size:11px;font-weight:700;font-family:var(--mono);padding:3px 7px;border-radius:7px;background:rgba(0,0,0,.72);color:#fff">×1</span></div><div style="display:flex;font-size:12px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Sol Ring</span><span style="margin-left:auto;color:var(--accent);font-family:var(--mono);font-weight:600">1,20 €</span></div></div>
+            <div style="display:flex;flex-direction:column;gap:7px"><div style="position:relative;border-radius:10px;overflow:hidden;background:var(--bg3);aspect-ratio:0.717"><img src="https://api.scryfall.com/cards/named?exact=Brainstorm&format=image&version=normal" alt="Brainstorm" style="width:100%;height:100%;object-fit:cover;display:block"><span style="position:absolute;top:7px;right:7px;font-size:11px;font-weight:700;font-family:var(--mono);padding:3px 7px;border-radius:7px;background:rgba(0,0,0,.72);color:#fff">×4</span></div><div style="display:flex;font-size:12px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Brainstorm</span><span style="margin-left:auto;color:var(--accent);font-family:var(--mono);font-weight:600">1,10 €</span></div></div>
+            <div style="display:flex;flex-direction:column;gap:7px"><div style="position:relative;border-radius:10px;overflow:hidden;background:var(--bg3);aspect-ratio:0.717"><img src="https://api.scryfall.com/cards/named?exact=Dark%20Ritual&format=image&version=normal" alt="Dark Ritual" style="width:100%;height:100%;object-fit:cover;display:block"><span style="position:absolute;top:7px;right:7px;font-size:11px;font-weight:700;font-family:var(--mono);padding:3px 7px;border-radius:7px;background:rgba(0,0,0,.72);color:#fff">×4</span></div><div style="display:flex;font-size:12px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Dark Ritual</span><span style="margin-left:auto;color:var(--accent);font-family:var(--mono);font-weight:600">0,90 €</span></div></div>
+            <div style="display:flex;flex-direction:column;gap:7px"><div style="position:relative;border-radius:10px;overflow:hidden;background:var(--bg3);aspect-ratio:0.717"><img src="https://api.scryfall.com/cards/named?exact=Cultivate&format=image&version=normal" alt="Cultivate" style="width:100%;height:100%;object-fit:cover;display:block"><span style="position:absolute;top:7px;right:7px;font-size:11px;font-weight:700;font-family:var(--mono);padding:3px 7px;border-radius:7px;background:rgba(0,0,0,.72);color:#fff">×3</span></div><div style="display:flex;font-size:12px"><span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Cultivate</span><span style="margin-left:auto;color:var(--accent);font-family:var(--mono);font-weight:600">0,80 €</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 4C : DEPUIS UNE LISTE ============ -->
+    <div id="4c" class="opt optD {{ dLight }}" style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px;color:oklch(0.9 0.005 260);font-family:'Bricolage Grotesque',sans-serif">
+        <span style="display:inline-grid;place-items:center;min-width:34px;height:26px;padding:0 9px;border-radius:7px;background:oklch(0.71 0.125 45);color:oklch(0.24 0.04 45);font-weight:700;font-size:14px">4c</span>
+        <span style="font-size:18px;font-weight:700">Depuis une liste</span>
+      </div>
+      <div style="width:1360px;height:864px;border-radius:20px;overflow:hidden;border:1px solid var(--line);background:var(--bg);color:var(--text);display:flex;flex-direction:column;box-shadow:var(--shadow)">
+        <div style="height:62px;flex:none;display:flex;align-items:center;gap:20px;padding:0 22px;border-bottom:1px solid var(--line);background:var(--bg2);position:relative">
+          <div style="position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,var(--mw),var(--mu),var(--mb),var(--mr),var(--mg));opacity:0.5"></div>
+          <div style="display:flex;align-items:center;gap:11px;font-family:var(--font-head);font-weight:700;font-size:17px"><span style="width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,var(--accent),var(--accent2));display:grid;place-items:center;color:var(--accent-ink);font-size:16px">✦</span>MTG Assistant</div>
+          <nav style="display:flex;align-items:center;gap:4px;margin-left:14px">
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Accueil</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Chat</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;font-weight:700;color:var(--accent-ink);background:var(--accent)">Depuis une liste</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Ma collection</span>
+          </nav>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:14px">
+            <button onClick="{{ toggleD }}" style="display:flex;align-items:center;gap:8px;height:36px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:var(--bg3);color:var(--text);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer"><span style="font-size:14px">{{ dIcon }}</span>{{ dThemeLabel }}</button>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 12px 5px 5px;border-radius:999px;background:var(--bg3);border:1px solid var(--line)"><span style="width:26px;height:26px;border-radius:50%;background:linear-gradient(150deg,var(--accent),var(--accent2));display:grid;place-items:center;color:var(--accent-ink);font-weight:700;font-size:13px">B</span><span style="font-size:13px;font-weight:600">Bastien</span></div>
+            <span style="width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--bg3);display:grid;place-items:center;color:var(--muted);font-size:16px">⚙</span>
+          </div>
+        </div>
+
+        <div style="flex:1;display:grid;grid-template-columns:1fr 0.85fr;gap:28px;padding:40px 52px;min-height:0">
+          <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+            <div>
+              <h2 style="margin:0 0 8px;font-family:var(--font-head);font-size:28px;font-weight:800;letter-spacing:-0.01em">Construis un deck depuis ta liste</h2>
+              <div style="font-size:14.5px;color:var(--muted);line-height:1.5">Colle une liste de cartes (ou dépose un .txt / .csv) — indépendante de ta collection.</div>
+            </div>
+            <div style="flex:1;padding:18px;border-radius:16px;background:var(--bg2);border:1px solid var(--line);font-family:var(--mono);font-size:13px;line-height:1.9;color:var(--text);overflow:hidden">1 Karumonix, the Rat King<br>4 Village Rites<br>2 Blood Artist<br>1 Skullclamp<br>3 Typhoid Rats<br>1 Ashnod's Altar<br>2 Deadly Dispute<br>1 Phyrexian Tower<br><span style="color:var(--muted)">…</span></div>
+            <div style="padding:14px;border-radius:14px;border:1.5px dashed var(--line);background:var(--bg2);display:flex;align-items:center;justify-content:center;gap:10px;font-size:13px;color:var(--muted)"><span style="color:var(--accent);font-size:16px">↑</span> ou dépose un fichier .txt / .csv ManaBox</div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700">Format</div>
+              <div style="display:flex;flex-wrap:wrap;gap:7px">
+                <span style="font-size:13px;padding:8px 15px;border-radius:999px;background:var(--bg2);border:1px solid var(--line);color:var(--text)">Limité 40</span>
+                <span style="font-size:13px;padding:8px 15px;border-radius:999px;background:var(--accent);border:1px solid var(--accent);color:var(--accent-ink);font-weight:700">Commander</span>
+                <span style="font-size:13px;padding:8px 15px;border-radius:999px;background:var(--bg2);border:1px solid var(--line);color:var(--text)">Modern</span>
+                <span style="font-size:13px;padding:8px 15px;border-radius:999px;background:var(--bg2);border:1px solid var(--line);color:var(--text)">Pauper</span>
+                <span style="font-size:13px;padding:8px 15px;border-radius:999px;background:var(--bg2);border:1px solid var(--line);color:var(--text)">Premodern</span>
+                <span style="font-size:13px;padding:8px 15px;border-radius:999px;background:var(--bg2);border:1px solid var(--line);color:var(--muted)">+3</span>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700">Couleurs <span style="font-weight:400;text-transform:none;letter-spacing:0">(optionnel — auto sinon)</span></div>
+              <div style="display:flex;gap:8px">
+                <span style="width:30px;height:30px;border-radius:50%;background:var(--mw);border:2px solid var(--line);cursor:pointer"></span>
+                <span style="width:30px;height:30px;border-radius:50%;background:var(--mu);border:2px solid var(--line);cursor:pointer"></span>
+                <span style="width:30px;height:30px;border-radius:50%;background:var(--mb);border:2px solid var(--accent);cursor:pointer;box-shadow:0 0 0 3px color-mix(in oklch, var(--accent) 30%, transparent)"></span>
+                <span style="width:30px;height:30px;border-radius:50%;background:var(--mr);border:2px solid var(--line);cursor:pointer"></span>
+                <span style="width:30px;height:30px;border-radius:50%;background:var(--mg);border:2px solid var(--line);cursor:pointer"></span>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div style="display:flex;flex-direction:column;gap:7px">
+                <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700">Budget bonus</div>
+                <div style="display:flex;align-items:center;height:44px;padding:0 15px;border-radius:12px;border:1px solid var(--line);background:var(--bg2);font-family:var(--mono);font-size:14px">30 €</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:7px">
+                <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700">Prix max / carte</div>
+                <div style="display:flex;align-items:center;height:44px;padding:0 15px;border-radius:12px;border:1px solid var(--line);background:var(--bg2);font-family:var(--mono);font-size:14px">5 €</div>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700">Thème <span style="font-weight:400;text-transform:none;letter-spacing:0">(optionnel)</span></div>
+              <div style="display:flex;align-items:center;height:44px;padding:0 15px;border-radius:12px;border:1px solid var(--line);background:var(--bg2);font-size:14px;color:var(--muted)">« aristocrats sacrifice »</div>
+            </div>
+            <button style="height:52px;border-radius:999px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent2));color:var(--accent-ink);font-family:var(--font-head);font-weight:700;font-size:16px;cursor:pointer;margin-top:6px">Construire le deck</button>
+            <div style="font-size:12.5px;color:var(--muted);text-align:center">Le résultat s'ouvre dans le chat — tu peux itérer en conversation.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section style="padding:56px 60px 20px;display:flex;flex-direction:column;gap:24px;background:oklch(0.13 0.008 260)">
+  <div style="display:flex;flex-direction:column;gap:8px;color:oklch(0.92 0.005 260);font-family:'Space Grotesk',sans-serif">
+    <div style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:oklch(0.62 0.01 260);font-weight:600">Itération 3 · Nuancier d'accent</div>
+    <h1 style="margin:0;font-size:26px;font-weight:700;letter-spacing:-0.01em">Choisissez l'accent — de l'or au saumon</h1>
+    <div style="font-size:15px;color:oklch(0.68 0.008 260)">Cliquez « Appliquer à <a href="#2a" style="color:oklch(0.75 0.095 78);text-decoration:none;font-weight:600">2a</a> » pour recolorer la maquette en direct (sombre et clair). Sélection actuelle : <strong style="color:oklch(0.9 0.005 260)">{{ cPalName }}</strong></div>
+  </div>
+
+  <div id="3a" style="display:flex;gap:18px;flex-wrap:wrap;align-items:stretch">
+
+    <div style="width:236px;padding:18px;border-radius:16px;background:oklch(0.195 0.014 58);border:1px solid oklch(0.30 0.018 55);display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="width:22px;height:22px;border-radius:50%;background:oklch(0.82 0.12 78)"></span>
+        <span style="width:14px;height:14px;border-radius:50%;background:oklch(0.72 0.13 52)"></span>
+        <span style="margin-left:auto;font-size:11px;color:oklch(0.6 0.014 68);font-family:'JetBrains Mono',monospace">C .12 · H 78</span>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:oklch(0.95 0.008 75);font-family:'Bricolage Grotesque',sans-serif">Or vif <span style="font-weight:500;color:oklch(0.6 0.014 68);font-size:12px">(= 1b)</span></div>
+      <div style="height:40px;border-radius:999px;background:linear-gradient(120deg,oklch(0.82 0.12 78),oklch(0.72 0.13 52));color:oklch(0.22 0.05 70);display:grid;place-items:center;font-size:13px;font-weight:700;font-family:'Bricolage Grotesque',sans-serif">Générer la decklist</div>
+      <div style="align-self:flex-end;padding:8px 12px;border-radius:12px 12px 3px 12px;background:linear-gradient(130deg,oklch(0.82 0.12 78),oklch(0.72 0.13 52));color:oklch(0.22 0.05 70);font-size:12px;font-weight:600">budget 50 €</div>
+      <button onClick="{{ pick0 }}" style="height:34px;border-radius:9px;border:1px solid oklch(0.34 0.018 55);background:transparent;color:oklch(0.9 0.008 75);cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600;margin-top:auto">Appliquer à 2a →</button>
+    </div>
+
+    <div style="width:236px;padding:18px;border-radius:16px;background:oklch(0.195 0.014 58);border:1px solid oklch(0.30 0.018 55);display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="width:22px;height:22px;border-radius:50%;background:oklch(0.75 0.095 78)"></span>
+        <span style="width:14px;height:14px;border-radius:50%;background:oklch(0.66 0.105 55)"></span>
+        <span style="margin-left:auto;font-size:11px;color:oklch(0.6 0.014 68);font-family:'JetBrains Mono',monospace">C .10 · H 78</span>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:oklch(0.95 0.008 75);font-family:'Bricolage Grotesque',sans-serif">Or équilibré <span style="font-weight:500;color:oklch(0.6 0.014 68);font-size:12px">(2a actuel)</span></div>
+      <div style="height:40px;border-radius:999px;background:linear-gradient(120deg,oklch(0.75 0.095 78),oklch(0.66 0.105 55));color:oklch(0.22 0.04 70);display:grid;place-items:center;font-size:13px;font-weight:700;font-family:'Bricolage Grotesque',sans-serif">Générer la decklist</div>
+      <div style="align-self:flex-end;padding:8px 12px;border-radius:12px 12px 3px 12px;background:linear-gradient(130deg,oklch(0.75 0.095 78),oklch(0.66 0.105 55));color:oklch(0.22 0.04 70);font-size:12px;font-weight:600">budget 50 €</div>
+      <button onClick="{{ pick1 }}" style="height:34px;border-radius:9px;border:1px solid oklch(0.34 0.018 55);background:transparent;color:oklch(0.9 0.008 75);cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600;margin-top:auto">Appliquer à 2a →</button>
+    </div>
+
+    <div style="width:236px;padding:18px;border-radius:16px;background:oklch(0.195 0.014 58);border:1px solid oklch(0.30 0.018 55);display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="width:22px;height:22px;border-radius:50%;background:oklch(0.76 0.115 62)"></span>
+        <span style="width:14px;height:14px;border-radius:50%;background:oklch(0.67 0.12 45)"></span>
+        <span style="margin-left:auto;font-size:11px;color:oklch(0.6 0.014 68);font-family:'JetBrains Mono',monospace">C .12 · H 62</span>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:oklch(0.95 0.008 75);font-family:'Bricolage Grotesque',sans-serif">Ambre</div>
+      <div style="height:40px;border-radius:999px;background:linear-gradient(120deg,oklch(0.76 0.115 62),oklch(0.67 0.12 45));color:oklch(0.23 0.04 60);display:grid;place-items:center;font-size:13px;font-weight:700;font-family:'Bricolage Grotesque',sans-serif">Générer la decklist</div>
+      <div style="align-self:flex-end;padding:8px 12px;border-radius:12px 12px 3px 12px;background:linear-gradient(130deg,oklch(0.76 0.115 62),oklch(0.67 0.12 45));color:oklch(0.23 0.04 60);font-size:12px;font-weight:600">budget 50 €</div>
+      <button onClick="{{ pick2 }}" style="height:34px;border-radius:9px;border:1px solid oklch(0.34 0.018 55);background:transparent;color:oklch(0.9 0.008 75);cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600;margin-top:auto">Appliquer à 2a →</button>
+    </div>
+
+    <div style="width:236px;padding:18px;border-radius:16px;background:oklch(0.195 0.014 58);border:1px solid oklch(0.30 0.018 55);display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="width:22px;height:22px;border-radius:50%;background:oklch(0.71 0.125 45)"></span>
+        <span style="width:14px;height:14px;border-radius:50%;background:oklch(0.63 0.13 32)"></span>
+        <span style="margin-left:auto;font-size:11px;color:oklch(0.6 0.014 68);font-family:'JetBrains Mono',monospace">C .13 · H 45</span>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:oklch(0.95 0.008 75);font-family:'Bricolage Grotesque',sans-serif">Terracotta</div>
+      <div style="height:40px;border-radius:999px;background:linear-gradient(120deg,oklch(0.71 0.125 45),oklch(0.63 0.13 32));color:oklch(0.24 0.04 45);display:grid;place-items:center;font-size:13px;font-weight:700;font-family:'Bricolage Grotesque',sans-serif">Générer la decklist</div>
+      <div style="align-self:flex-end;padding:8px 12px;border-radius:12px 12px 3px 12px;background:linear-gradient(130deg,oklch(0.71 0.125 45),oklch(0.63 0.13 32));color:oklch(0.24 0.04 45);font-size:12px;font-weight:600">budget 50 €</div>
+      <button onClick="{{ pick3 }}" style="height:34px;border-radius:9px;border:1px solid oklch(0.34 0.018 55);background:transparent;color:oklch(0.9 0.008 75);cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600;margin-top:auto">Appliquer à 2a →</button>
+    </div>
+
+    <div style="width:236px;padding:18px;border-radius:16px;background:oklch(0.195 0.014 58);border:1px solid oklch(0.30 0.018 55);display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="width:22px;height:22px;border-radius:50%;background:oklch(0.78 0.105 33)"></span>
+        <span style="width:14px;height:14px;border-radius:50%;background:oklch(0.70 0.115 22)"></span>
+        <span style="margin-left:auto;font-size:11px;color:oklch(0.6 0.014 68);font-family:'JetBrains Mono',monospace">C .11 · H 33</span>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:oklch(0.95 0.008 75);font-family:'Bricolage Grotesque',sans-serif">Saumon</div>
+      <div style="height:40px;border-radius:999px;background:linear-gradient(120deg,oklch(0.78 0.105 33),oklch(0.70 0.115 22));color:oklch(0.25 0.04 33);display:grid;place-items:center;font-size:13px;font-weight:700;font-family:'Bricolage Grotesque',sans-serif">Générer la decklist</div>
+      <div style="align-self:flex-end;padding:8px 12px;border-radius:12px 12px 3px 12px;background:linear-gradient(130deg,oklch(0.78 0.105 33),oklch(0.70 0.115 22));color:oklch(0.25 0.04 33);font-size:12px;font-weight:600">budget 50 €</div>
+      <button onClick="{{ pick4 }}" style="height:34px;border-radius:9px;border:1px solid oklch(0.34 0.018 55);background:transparent;color:oklch(0.9 0.008 75);cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600;margin-top:auto">Appliquer à 2a →</button>
+    </div>
+
+    <div style="width:236px;padding:18px;border-radius:16px;background:oklch(0.195 0.014 58);border:1px solid oklch(0.30 0.018 55);display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="width:22px;height:22px;border-radius:50%;background:oklch(0.80 0.095 25)"></span>
+        <span style="width:14px;height:14px;border-radius:50%;background:oklch(0.72 0.105 15)"></span>
+        <span style="margin-left:auto;font-size:11px;color:oklch(0.6 0.014 68);font-family:'JetBrains Mono',monospace">C .10 · H 25</span>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:oklch(0.95 0.008 75);font-family:'Bricolage Grotesque',sans-serif">Corail rosé</div>
+      <div style="height:40px;border-radius:999px;background:linear-gradient(120deg,oklch(0.80 0.095 25),oklch(0.72 0.105 15));color:oklch(0.25 0.04 25);display:grid;place-items:center;font-size:13px;font-weight:700;font-family:'Bricolage Grotesque',sans-serif">Générer la decklist</div>
+      <div style="align-self:flex-end;padding:8px 12px;border-radius:12px 12px 3px 12px;background:linear-gradient(130deg,oklch(0.80 0.095 25),oklch(0.72 0.105 15));color:oklch(0.25 0.04 25);font-size:12px;font-weight:600">budget 50 €</div>
+      <button onClick="{{ pick5 }}" style="height:34px;border-radius:9px;border:1px solid oklch(0.34 0.018 55);background:transparent;color:oklch(0.9 0.008 75);cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600;margin-top:auto">Appliquer à 2a →</button>
+    </div>
+
+  </div>
+</section>
+
+<section style="padding:56px 60px 40px;display:flex;flex-direction:column;gap:28px;background:oklch(0.13 0.008 260)">
+  <div style="display:flex;flex-direction:column;gap:8px;color:oklch(0.92 0.005 260);font-family:'Space Grotesk',sans-serif">
+    <div style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:oklch(0.62 0.01 260);font-weight:600">Itération 2 · Arcane adouci</div>
+    <h1 style="margin:0;font-size:26px;font-weight:700;letter-spacing:-0.01em">Écran Chat — accent retenu : Terracotta</h1>
+    <div style="font-size:15px;color:oklch(0.68 0.008 260)"><a href="#2a" style="color:oklch(0.71 0.125 45);text-decoration:none;font-weight:600">2a</a> est la référence de la direction finale — recolorable via le nuancier du tour 3.</div>
+  </div>
+
+  <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+    <!-- ===================== OPTION 2A : ARCANE ADOUCI ===================== -->
+    <div id="2a" class="opt optC {{ cLight }}" style="display:flex;flex-direction:column;gap:14px;--accent:{{ cAccent }};--accent2:{{ cAccent2 }};--accent-ink:{{ cAccentInk }}">
+      <div style="display:flex;align-items:center;gap:10px;color:oklch(0.9 0.005 260);font-family:'Bricolage Grotesque',sans-serif">
+        <span style="display:inline-grid;place-items:center;min-width:34px;height:26px;padding:0 9px;border-radius:7px;background:oklch(0.71 0.125 45);color:oklch(0.24 0.04 45);font-weight:700;font-size:14px">2a</span>
+        <span style="font-size:18px;font-weight:700">Arcane Terracotta</span>
+        <span style="font-size:13px;color:oklch(0.6 0.01 260)">— direction finale, écran Chat</span>
+      </div>
+
+      <div style="width:1360px;height:864px;border-radius:20px;overflow:hidden;border:1px solid var(--line);background:var(--bg);color:var(--text);display:flex;flex-direction:column;box-shadow:var(--shadow)">
+        <!-- Topbar -->
+        <div style="height:62px;flex:none;display:flex;align-items:center;gap:20px;padding:0 22px;border-bottom:1px solid var(--line);background:var(--bg2);position:relative">
+          <div style="position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,var(--mw),var(--mu),var(--mb),var(--mr),var(--mg));opacity:0.5"></div>
+          <div style="display:flex;align-items:center;gap:11px;font-family:var(--font-head);font-weight:700;font-size:17px;letter-spacing:-0.01em">
+            <span style="width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,var(--accent),var(--accent2));display:grid;place-items:center;color:var(--accent-ink);font-size:16px">✦</span>
+            MTG Assistant
+          </div>
+          <nav style="display:flex;align-items:center;gap:4px;margin-left:14px">
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Accueil</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;font-weight:700;color:var(--accent-ink);background:var(--accent)">Chat</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Depuis une liste</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Ma collection</span>
+          </nav>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:14px">
+            <button onClick="{{ toggleC }}" style="display:flex;align-items:center;gap:8px;height:36px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:var(--bg3);color:var(--text);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer">
+              <span style="font-size:14px">{{ cIcon }}</span>{{ cThemeLabel }}
+            </button>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 12px 5px 5px;border-radius:999px;background:var(--bg3);border:1px solid var(--line)">
+              <span style="width:26px;height:26px;border-radius:50%;background:linear-gradient(150deg,var(--accent),var(--accent2));display:grid;place-items:center;color:var(--accent-ink);font-weight:700;font-size:13px">B</span>
+              <span style="font-size:13px;font-weight:600">Bastien</span>
+            </div>
+            <span style="width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--bg3);display:grid;place-items:center;color:var(--muted);font-size:16px">⚙</span>
+          </div>
+        </div>
+
+        <!-- Body -->
+        <div style="flex:1;display:flex;min-height:0">
+          <!-- Sidebar -->
+          <aside style="width:290px;flex:none;border-right:1px solid var(--line);background:var(--bg2);display:flex;flex-direction:column;min-height:0">
+            <div style="padding:16px 16px 12px">
+              <button style="width:100%;height:44px;border-radius:999px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent2));color:var(--accent-ink);font-family:var(--font-head);font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
+                <span style="font-size:17px">+</span> Nouvelle conversation
+              </button>
+            </div>
+            <div style="padding:2px 20px 8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700">Conversations</div>
+            <div class="scrolly" style="flex:1;overflow:auto;padding:0 10px 12px;display:flex;flex-direction:column;gap:2px">
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--accent-ink);background:var(--accent);font-weight:700">Deck commander sacrifice mono-noir</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--text)">Un deck premodern combo reanimator</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--text)">Deck Limité GP synergies</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--text)">Commander vert aggro stompy</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--text)">Propose un deck aristocrats</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--text)">Deck mono-bleu contrôle tempo</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--text)">Génère une decklist Pauper</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--text)">Deck Modern affinité artefacts</div>
+            </div>
+            <div style="padding:12px 16px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700">Propositions · 1</div>
+              <div style="display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:13px;border:1px solid color-mix(in oklch, var(--accent) 55%, transparent);background:color-mix(in oklch, var(--accent) 10%, transparent)">
+                <span style="width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:15px">✦</span>
+                <div style="line-height:1.3"><div style="font-size:13px;font-weight:700">Commandants proposés</div><div style="font-size:12px;color:var(--muted)">5 options</div></div>
+              </div>
+            </div>
+          </aside>
+
+          <!-- Main chat -->
+          <main style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0">
+            <div class="scrolly" style="flex:1;overflow:auto;padding:26px 34px;display:flex;flex-direction:column;gap:22px">
+              <div style="align-self:center;display:flex;align-items:center;gap:9px;padding:6px 13px;border-radius:999px;background:var(--bg2);border:1px solid var(--line);font-size:12px;color:var(--muted)">
+                <span style="width:7px;height:7px;border-radius:50%;background:var(--mg);box-shadow:0 0 8px var(--mg)"></span> Claude connecté · claude-sonnet-5
+              </div>
+              <div style="align-self:flex-end;max-width:70%;padding:13px 17px;border-radius:16px 16px 4px 16px;background:linear-gradient(130deg,var(--accent),var(--accent2));color:var(--accent-ink);font-size:14.5px;font-weight:600;line-height:1.45">Un deck Commander aristocrats sacrifice en mono-noir, budget 50 €</div>
+              <div style="display:flex;gap:13px;max-width:96%">
+                <span style="width:32px;height:32px;flex:none;border-radius:50%;background:var(--bg3);border:1px solid var(--line);display:grid;place-items:center;color:var(--accent);font-size:15px;margin-top:2px">✦</span>
+                <div style="display:flex;flex-direction:column;gap:16px;flex:1;min-width:0">
+                  <div style="font-size:14.5px;line-height:1.55;color:var(--text)">Voici 2 commandants <strong>mono-noir</strong> de ta collection taillés pour un plan aristocrats / sacrifice. Je te montre ta complétude et la liste d'achat pour finir dans le budget.</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:7px">
+                    <span style="font-size:12px;padding:5px 12px;border-radius:999px;background:var(--bg3);border:1px solid var(--line);color:var(--muted)">Format · <strong style="color:var(--text)">Commander</strong></span>
+                    <span style="font-size:12px;padding:5px 12px;border-radius:999px;background:var(--bg3);border:1px solid var(--line);color:var(--muted);display:inline-flex;align-items:center;gap:6px">Couleur <span style="width:14px;height:14px;border-radius:50%;background:var(--mb);border:1px solid rgba(255,255,255,.2)"></span><strong style="color:var(--text)">Noir</strong></span>
+                    <span style="font-size:12px;padding:5px 12px;border-radius:999px;background:var(--bg3);border:1px solid var(--line);color:var(--muted)">Thème · <strong style="color:var(--text)">sacrifice</strong></span>
+                    <span style="font-size:12px;padding:5px 12px;border-radius:999px;background:var(--bg3);border:1px solid var(--line);color:var(--muted)">Budget · <strong style="color:var(--text)">50 €</strong></span>
+                  </div>
+
+                  <!-- Commander card 1 (C) -->
+                  <article style="display:flex;gap:20px;padding:20px;background:var(--bg2);border:1px solid var(--line);border-radius:18px;position:relative;overflow:hidden;animation:fadeUp .5s both">
+                    <div style="position:absolute;top:0;left:0;bottom:0;width:3px;background:var(--mb)"></div>
+                    <div style="width:176px;height:245px;flex:none;border-radius:12px;overflow:hidden;background:linear-gradient(160deg,var(--bg3),var(--bg));box-shadow:0 0 0 1px color-mix(in oklch,var(--accent) 30%,transparent),0 12px 30px -10px rgba(0,0,0,.6)">
+                      <img src="https://api.scryfall.com/cards/named?exact=Karumonix,%20the%20Rat%20King&format=image&version=normal" alt="Karumonix, the Rat King" style="width:100%;height:100%;object-fit:cover;display:block">
+                    </div>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
+                      <div style="display:flex;align-items:flex-start;gap:11px">
+                        <div style="min-width:0">
+                          <h3 style="margin:0;font-family:var(--font-head);font-size:21px;font-weight:700;letter-spacing:-0.01em">Karumonix, the Rat King</h3>
+                          <div style="margin-top:5px;font-size:12.5px;color:var(--muted);font-family:var(--mono)">6 646 decks · EDHREC</div>
+                        </div>
+                        <span style="margin-left:auto;font-size:11px;font-weight:700;padding:5px 11px;border-radius:999px;background:color-mix(in oklch, var(--mg) 20%, transparent);color:var(--mg);white-space:nowrap">✓ Possédé</span>
+                      </div>
+                      <div>
+                        <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13.5px;margin-bottom:7px"><span style="color:var(--muted)"><strong style="color:var(--text);font-size:15px">93 / 229</strong> cartes possédées</span><span style="font-family:var(--font-head);font-weight:700;font-size:16px;color:var(--accent)">40,6 %</span></div>
+                        <div style="height:9px;border-radius:999px;background:var(--ring-track);overflow:hidden"><div style="width:40.6%;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent2),var(--accent))"></div></div>
+                      </div>
+                      <div style="border:1px solid var(--line);border-radius:13px;overflow:hidden">
+                        <div style="display:flex;align-items:center;gap:8px;padding:10px 13px;background:var(--bg3);font-size:12.5px">
+                          <span style="font-weight:700">Liste d'achat</span><span style="color:var(--muted)">26 cartes</span>
+                          <span style="margin-left:auto;font-family:var(--mono);font-weight:600;color:var(--accent)">45,98 € <span style="color:var(--muted);font-weight:400">/ 50 €</span></span>
+                        </div>
+                        <div style="display:flex;gap:8px;padding:11px 13px;overflow:hidden">
+                          <span style="font-size:12px;padding:6px 10px;border-radius:999px;background:var(--bg3);color:var(--text);white-space:nowrap">Ashnod's Altar <span style="color:var(--muted);font-family:var(--mono)">6,50 €</span></span>
+                          <span style="font-size:12px;padding:6px 10px;border-radius:999px;background:var(--bg3);color:var(--text);white-space:nowrap">Blood Artist <span style="color:var(--muted);font-family:var(--mono)">2,40 €</span></span>
+                          <span style="font-size:12px;padding:6px 10px;border-radius:999px;background:var(--bg3);color:var(--muted);white-space:nowrap">+24 autres</span>
+                        </div>
+                      </div>
+                      <div style="display:flex;gap:10px;margin-top:auto">
+                        <button style="flex:1;height:44px;border-radius:999px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent2));color:var(--accent-ink);font-family:var(--font-head);font-weight:700;font-size:14px;cursor:pointer">Générer la decklist complète</button>
+                        <button style="height:44px;padding:0 18px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--text);font-size:13.5px;font-weight:600;cursor:pointer">Détails</button>
+                      </div>
+                    </div>
+                  </article>
+
+                  <!-- Commander card 2 (C) -->
+                  <article style="display:flex;gap:20px;padding:20px;background:var(--bg2);border:1px solid var(--line);border-radius:18px;position:relative;overflow:hidden;animation:fadeUp .6s both">
+                    <div style="position:absolute;top:0;left:0;bottom:0;width:3px;background:var(--mb)"></div>
+                    <div style="width:176px;height:245px;flex:none;border-radius:12px;overflow:hidden;background:linear-gradient(160deg,var(--bg3),var(--bg));box-shadow:0 0 0 1px color-mix(in oklch,var(--accent) 30%,transparent),0 12px 30px -10px rgba(0,0,0,.6)">
+                      <img src="https://api.scryfall.com/cards/named?exact=Skithiryx,%20the%20Blight%20Dragon&format=image&version=normal" alt="Skithiryx, the Blight Dragon" style="width:100%;height:100%;object-fit:cover;display:block">
+                    </div>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
+                      <div style="display:flex;align-items:flex-start;gap:11px">
+                        <div style="min-width:0">
+                          <h3 style="margin:0;font-family:var(--font-head);font-size:21px;font-weight:700;letter-spacing:-0.01em">Skithiryx, the Blight Dragon</h3>
+                          <div style="margin-top:5px;font-size:12.5px;color:var(--muted);font-family:var(--mono)">3 026 decks · EDHREC</div>
+                        </div>
+                        <span style="margin-left:auto;font-size:11px;font-weight:700;padding:5px 11px;border-radius:999px;background:color-mix(in oklch, var(--mg) 20%, transparent);color:var(--mg);white-space:nowrap">✓ Possédé</span>
+                      </div>
+                      <div>
+                        <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13.5px;margin-bottom:7px"><span style="color:var(--muted)"><strong style="color:var(--text);font-size:15px">87 / 276</strong> cartes possédées</span><span style="font-family:var(--font-head);font-weight:700;font-size:16px;color:var(--accent)">31,5 %</span></div>
+                        <div style="height:9px;border-radius:999px;background:var(--ring-track);overflow:hidden"><div style="width:31.5%;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent2),var(--accent))"></div></div>
+                      </div>
+                      <div style="border:1px solid var(--line);border-radius:13px;overflow:hidden">
+                        <div style="display:flex;align-items:center;gap:8px;padding:10px 13px;background:var(--bg3);font-size:12.5px">
+                          <span style="font-weight:700">Liste d'achat</span><span style="color:var(--muted)">31 cartes</span>
+                          <span style="margin-left:auto;font-family:var(--mono);font-weight:600;color:var(--accent)">48,20 € <span style="color:var(--muted);font-weight:400">/ 50 €</span></span>
+                        </div>
+                        <div style="display:flex;gap:8px;padding:11px 13px;overflow:hidden">
+                          <span style="font-size:12px;padding:6px 10px;border-radius:999px;background:var(--bg3);color:var(--text);white-space:nowrap">Phyrexian Tower <span style="color:var(--muted);font-family:var(--mono)">9,10 €</span></span>
+                          <span style="font-size:12px;padding:6px 10px;border-radius:999px;background:var(--bg3);color:var(--text);white-space:nowrap">Skullclamp <span style="color:var(--muted);font-family:var(--mono)">3,80 €</span></span>
+                          <span style="font-size:12px;padding:6px 10px;border-radius:999px;background:var(--bg3);color:var(--muted);white-space:nowrap">+29 autres</span>
+                        </div>
+                      </div>
+                      <div style="display:flex;gap:10px;margin-top:auto">
+                        <button style="flex:1;height:44px;border-radius:999px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent2));color:var(--accent-ink);font-family:var(--font-head);font-weight:700;font-size:14px;cursor:pointer">Générer la decklist complète</button>
+                        <button style="height:44px;padding:0 18px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--text);font-size:13.5px;font-weight:600;cursor:pointer">Détails</button>
+                      </div>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            </div>
+
+            <div style="flex:none;padding:16px 34px 20px;border-top:1px solid var(--line);background:var(--bg2)">
+              <div style="display:flex;align-items:center;gap:12px;padding:8px 8px 8px 18px;border-radius:999px;border:1px solid var(--line);background:var(--bg3)">
+                <input placeholder="Écris ton message…  « plutôt en mono-noir », « monte le budget à 80 € »" style="flex:1;border:none;outline:none;background:transparent;color:var(--text);font-family:inherit;font-size:14.5px" />
+                <button style="width:44px;height:44px;border-radius:50%;border:none;background:linear-gradient(120deg,var(--accent),var(--accent2));color:var(--accent-ink);cursor:pointer;display:grid;place-items:center">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>
+                </button>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="min-height:100vh;padding:56px 60px 90px;display:flex;flex-direction:column;gap:28px;background:oklch(0.13 0.008 260)">
+  <div style="display:flex;flex-direction:column;gap:8px;color:oklch(0.92 0.005 260);font-family:'Space Grotesk',sans-serif">
+    <div style="font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:oklch(0.62 0.01 260);font-weight:600">Refonte · Écran Chat</div>
+    <h1 style="margin:0;font-size:30px;font-weight:700;letter-spacing:-0.01em">Deux directions pour MTG Assistant</h1>
+    <div style="font-size:15px;color:oklch(0.68 0.008 260)">Chaque maquette a une bascule clair / sombre en haut à droite. Comparez <a href="#1a" style="color:oklch(0.82 0.13 185);text-decoration:none;font-weight:600">1a · Obsidian</a> et <a href="#1b" style="color:oklch(0.82 0.12 78);text-decoration:none;font-weight:600">1b · Arcane</a>.</div>
+  </div>
+
+  <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+
+    <!-- ===================== OPTION 1A : OBSIDIAN ===================== -->
+    <div id="1a" class="opt optA {{ aLight }}" style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px;color:oklch(0.9 0.005 260);font-family:'Space Grotesk',sans-serif">
+        <span style="display:inline-grid;place-items:center;min-width:34px;height:26px;padding:0 9px;border-radius:7px;background:oklch(0.80 0.13 185);color:oklch(0.18 0.04 200);font-weight:700;font-size:14px">1a</span>
+        <span style="font-size:18px;font-weight:600">Obsidian</span>
+        <span style="font-size:13px;color:oklch(0.6 0.01 260)">— froid, minimal, focus contenu</span>
+      </div>
+
+      <div style="width:1360px;height:864px;border-radius:20px;overflow:hidden;border:1px solid var(--line);background:var(--bg);color:var(--text);display:flex;flex-direction:column;box-shadow:var(--shadow)">
+        <!-- Topbar -->
+        <div style="height:62px;flex:none;display:flex;align-items:center;gap:20px;padding:0 22px;border-bottom:1px solid var(--line);background:var(--bg2)">
+          <div style="display:flex;align-items:center;gap:11px;font-family:var(--font-head);font-weight:700;font-size:17px;letter-spacing:-0.01em">
+            <span style="width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,var(--accent),var(--accent2));display:grid;place-items:center;color:var(--accent-ink);font-size:16px">◈</span>
+            MTG Assistant
+          </div>
+          <nav style="display:flex;align-items:center;gap:4px;margin-left:14px">
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Accueil</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;font-weight:600;color:var(--accent-ink);background:var(--accent)">Chat</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Depuis une liste</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Ma collection</span>
+          </nav>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:14px">
+            <button onClick="{{ toggleA }}" style="display:flex;align-items:center;gap:8px;height:36px;padding:0 13px;border-radius:9px;border:1px solid var(--line);background:var(--bg3);color:var(--text);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer">
+              <span style="font-size:14px">{{ aIcon }}</span>{{ aThemeLabel }}
+            </button>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 10px 5px 5px;border-radius:999px;background:var(--bg3);border:1px solid var(--line)">
+              <span style="width:26px;height:26px;border-radius:50%;background:linear-gradient(150deg,var(--accent),var(--accent2));display:grid;place-items:center;color:var(--accent-ink);font-weight:700;font-size:13px">B</span>
+              <span style="font-size:13px;font-weight:600">Bastien</span>
+            </div>
+            <span style="width:36px;height:36px;border-radius:9px;border:1px solid var(--line);background:var(--bg3);display:grid;place-items:center;color:var(--muted);font-size:16px">⚙</span>
+          </div>
+        </div>
+
+        <!-- Body -->
+        <div style="flex:1;display:flex;min-height:0">
+          <!-- Sidebar -->
+          <aside style="width:290px;flex:none;border-right:1px solid var(--line);background:var(--bg2);display:flex;flex-direction:column;min-height:0">
+            <div style="padding:16px 16px 12px">
+              <button style="width:100%;height:44px;border-radius:11px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent2));color:var(--accent-ink);font-family:var(--font-head);font-weight:600;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
+                <span style="font-size:17px">+</span> Nouvelle conversation
+              </button>
+            </div>
+            <div style="padding:2px 20px 8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600">Conversations</div>
+            <div class="scrolly" style="flex:1;overflow:auto;padding:0 10px 12px;display:flex;flex-direction:column;gap:2px">
+              <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:13.5px;color:var(--accent-ink);background:var(--accent);font-weight:600">Deck commander sacrifice mono-noir</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:13.5px;color:var(--text)">Un deck premodern combo reanimator</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:13.5px;color:var(--text)">Deck Limité GP synergies</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:13.5px;color:var(--text)">Commander vert aggro stompy</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:13.5px;color:var(--text)">Propose un deck aristocrats</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:13.5px;color:var(--text)">Deck mono-bleu contrôle tempo</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:13.5px;color:var(--text)">Génère une decklist Pauper</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;font-size:13.5px;color:var(--text)">Deck Modern affinité artefacts</div>
+            </div>
+            <div style="padding:12px 16px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600">Propositions · 1</div>
+              <div style="display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:11px;border:1px solid var(--accent);background:color-mix(in oklch, var(--accent) 12%, transparent)">
+                <span style="width:30px;height:30px;border-radius:8px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:15px">✦</span>
+                <div style="line-height:1.3"><div style="font-size:13px;font-weight:600">Commandants proposés</div><div style="font-size:12px;color:var(--muted)">5 options</div></div>
+              </div>
+            </div>
+          </aside>
+
+          <!-- Main chat -->
+          <main style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0">
+            <div class="scrolly" style="flex:1;overflow:auto;padding:26px 34px;display:flex;flex-direction:column;gap:22px">
+              <!-- status -->
+              <div style="align-self:center;display:flex;align-items:center;gap:9px;padding:6px 13px;border-radius:999px;background:var(--bg2);border:1px solid var(--line);font-size:12px;color:var(--muted)">
+                <span style="width:7px;height:7px;border-radius:50%;background:var(--mg);box-shadow:0 0 8px var(--mg)"></span> Claude connecté · claude-sonnet-5
+              </div>
+              <!-- user bubble -->
+              <div style="align-self:flex-end;max-width:70%;padding:13px 17px;border-radius:16px 16px 4px 16px;background:linear-gradient(130deg,var(--accent),var(--accent2));color:var(--accent-ink);font-size:14.5px;font-weight:500;line-height:1.45">Un deck Commander aristocrats sacrifice en mono-noir, budget 50 €</div>
+              <!-- assistant -->
+              <div style="display:flex;gap:13px;max-width:96%">
+                <span style="width:32px;height:32px;flex:none;border-radius:9px;background:var(--bg3);border:1px solid var(--line);display:grid;place-items:center;color:var(--accent);font-size:15px;margin-top:2px">◈</span>
+                <div style="display:flex;flex-direction:column;gap:16px;flex:1;min-width:0">
+                  <div style="font-size:14.5px;line-height:1.55;color:var(--text)">Voici 2 commandants <strong>mono-noir</strong> de ta collection qui collent à un plan aristocrats / sacrifice. Voici combien de leurs cartes clés tu possèdes déjà, et la liste d'achat pour compléter dans le budget.</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:7px">
+                    <span style="font-size:12px;padding:5px 11px;border-radius:999px;background:var(--bg3);border:1px solid var(--line);color:var(--muted)">Format · <strong style="color:var(--text)">Commander</strong></span>
+                    <span style="font-size:12px;padding:5px 11px;border-radius:999px;background:var(--bg3);border:1px solid var(--line);color:var(--muted)">Couleur · <strong style="color:var(--text)">Noir</strong></span>
+                    <span style="font-size:12px;padding:5px 11px;border-radius:999px;background:var(--bg3);border:1px solid var(--line);color:var(--muted)">Thème · <strong style="color:var(--text)">sacrifice</strong></span>
+                    <span style="font-size:12px;padding:5px 11px;border-radius:999px;background:var(--bg3);border:1px solid var(--line);color:var(--muted)">Budget · <strong style="color:var(--text)">50 €</strong></span>
+                  </div>
+
+                  <!-- Commander card 1 -->
+                  <article style="display:flex;gap:20px;padding:18px;background:var(--bg2);border:1px solid var(--line);border-radius:18px;animation:fadeUp .5s both">
+                    <div style="width:172px;height:240px;flex:none;border-radius:11px;overflow:hidden;background:linear-gradient(160deg,var(--bg3),var(--bg));box-shadow:0 10px 26px -10px rgba(0,0,0,.6)">
+                      <img src="https://api.scryfall.com/cards/named?exact=Karumonix,%20the%20Rat%20King&format=image&version=normal" alt="Karumonix, the Rat King" style="width:100%;height:100%;object-fit:cover;display:block">
+                    </div>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:13px">
+                      <div style="display:flex;align-items:flex-start;gap:11px">
+                        <div style="min-width:0">
+                          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+                            <h3 style="margin:0;font-family:var(--font-head);font-size:19px;font-weight:700;letter-spacing:-0.01em">Karumonix, the Rat King</h3>
+                            <span style="width:22px;height:22px;border-radius:50%;background:var(--mb);border:1px solid rgba(255,255,255,.18);color:oklch(0.92 0.02 300);display:grid;place-items:center;font-size:12px;font-weight:700">B</span>
+                          </div>
+                          <div style="margin-top:5px;font-size:12.5px;color:var(--muted);font-family:var(--mono)">6 646 decks · EDHREC</div>
+                        </div>
+                        <span style="margin-left:auto;font-size:11px;font-weight:600;padding:5px 10px;border-radius:999px;background:color-mix(in oklch, var(--mg) 22%, transparent);color:var(--mg);white-space:nowrap">✓ Possédé</span>
+                      </div>
+
+                      <div style="display:flex;align-items:center;gap:16px">
+                        <div style="position:relative;width:66px;height:66px;flex:none">
+                          <svg width="66" height="66" viewBox="0 0 66 66" style="transform:rotate(-90deg)">
+                            <circle cx="33" cy="33" r="28" fill="none" stroke="var(--ring-track)" stroke-width="6"></circle>
+                            <circle cx="33" cy="33" r="28" fill="none" stroke="var(--accent)" stroke-width="6" stroke-linecap="round" stroke-dasharray="175.9" stroke-dashoffset="104.5"></circle>
+                          </svg>
+                          <div style="position:absolute;inset:0;display:grid;place-items:center;font-family:var(--mono);font-weight:600;font-size:14px">41%</div>
+                        </div>
+                        <div style="font-size:13.5px;line-height:1.5;color:var(--muted)"><strong style="color:var(--text);font-size:15px">93 / 229</strong> cartes recommandées possédées</div>
+                      </div>
+
+                      <!-- buylist -->
+                      <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden">
+                        <div style="display:flex;align-items:center;gap:8px;padding:10px 13px;background:var(--bg3);font-size:12.5px">
+                          <span style="font-weight:600">Liste d'achat</span>
+                          <span style="color:var(--muted)">26 cartes</span>
+                          <span style="margin-left:auto;font-family:var(--mono);font-weight:600;color:var(--accent)">45,98 € <span style="color:var(--muted);font-weight:400">/ 50 €</span></span>
+                        </div>
+                        <div style="display:flex;gap:8px;padding:11px 13px;overflow:hidden">
+                          <span style="font-size:12px;padding:6px 10px;border-radius:8px;background:var(--bg3);color:var(--text);white-space:nowrap">Ashnod's Altar <span style="color:var(--muted);font-family:var(--mono)">6,50 €</span></span>
+                          <span style="font-size:12px;padding:6px 10px;border-radius:8px;background:var(--bg3);color:var(--text);white-space:nowrap">Blood Artist <span style="color:var(--muted);font-family:var(--mono)">2,40 €</span></span>
+                          <span style="font-size:12px;padding:6px 10px;border-radius:8px;background:var(--bg3);color:var(--text);white-space:nowrap">Deadly Dispute <span style="color:var(--muted);font-family:var(--mono)">0,90 €</span></span>
+                          <span style="font-size:12px;padding:6px 10px;border-radius:8px;background:var(--bg3);color:var(--muted);white-space:nowrap">+22 autres</span>
+                        </div>
+                      </div>
+
+                      <div style="display:flex;gap:10px;margin-top:auto">
+                        <button style="flex:1;height:42px;border-radius:11px;border:none;background:var(--accent);color:var(--accent-ink);font-family:var(--font-head);font-weight:600;font-size:14px;cursor:pointer">Générer la decklist complète</button>
+                        <button style="height:42px;padding:0 16px;border-radius:11px;border:1px solid var(--line);background:transparent;color:var(--text);font-size:13.5px;font-weight:500;cursor:pointer">Détails</button>
+                      </div>
+                    </div>
+                  </article>
+
+                  <!-- Commander card 2 -->
+                  <article style="display:flex;gap:20px;padding:18px;background:var(--bg2);border:1px solid var(--line);border-radius:18px;animation:fadeUp .6s both">
+                    <div style="width:172px;height:240px;flex:none;border-radius:11px;overflow:hidden;background:linear-gradient(160deg,var(--bg3),var(--bg));box-shadow:0 10px 26px -10px rgba(0,0,0,.6)">
+                      <img src="https://api.scryfall.com/cards/named?exact=Skithiryx,%20the%20Blight%20Dragon&format=image&version=normal" alt="Skithiryx, the Blight Dragon" style="width:100%;height:100%;object-fit:cover;display:block">
+                    </div>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:13px">
+                      <div style="display:flex;align-items:flex-start;gap:11px">
+                        <div style="min-width:0">
+                          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+                            <h3 style="margin:0;font-family:var(--font-head);font-size:19px;font-weight:700;letter-spacing:-0.01em">Skithiryx, the Blight Dragon</h3>
+                            <span style="width:22px;height:22px;border-radius:50%;background:var(--mb);border:1px solid rgba(255,255,255,.18);color:oklch(0.92 0.02 300);display:grid;place-items:center;font-size:12px;font-weight:700">B</span>
+                          </div>
+                          <div style="margin-top:5px;font-size:12.5px;color:var(--muted);font-family:var(--mono)">3 026 decks · EDHREC</div>
+                        </div>
+                        <span style="margin-left:auto;font-size:11px;font-weight:600;padding:5px 10px;border-radius:999px;background:color-mix(in oklch, var(--mg) 22%, transparent);color:var(--mg);white-space:nowrap">✓ Possédé</span>
+                      </div>
+                      <div style="display:flex;align-items:center;gap:16px">
+                        <div style="position:relative;width:66px;height:66px;flex:none">
+                          <svg width="66" height="66" viewBox="0 0 66 66" style="transform:rotate(-90deg)">
+                            <circle cx="33" cy="33" r="28" fill="none" stroke="var(--ring-track)" stroke-width="6"></circle>
+                            <circle cx="33" cy="33" r="28" fill="none" stroke="var(--accent)" stroke-width="6" stroke-linecap="round" stroke-dasharray="175.9" stroke-dashoffset="120.5"></circle>
+                          </svg>
+                          <div style="position:absolute;inset:0;display:grid;place-items:center;font-family:var(--mono);font-weight:600;font-size:14px">32%</div>
+                        </div>
+                        <div style="font-size:13.5px;line-height:1.5;color:var(--muted)"><strong style="color:var(--text);font-size:15px">87 / 276</strong> cartes recommandées possédées</div>
+                      </div>
+                      <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden">
+                        <div style="display:flex;align-items:center;gap:8px;padding:10px 13px;background:var(--bg3);font-size:12.5px">
+                          <span style="font-weight:600">Liste d'achat</span>
+                          <span style="color:var(--muted)">31 cartes</span>
+                          <span style="margin-left:auto;font-family:var(--mono);font-weight:600;color:var(--accent)">48,20 € <span style="color:var(--muted);font-weight:400">/ 50 €</span></span>
+                        </div>
+                        <div style="display:flex;gap:8px;padding:11px 13px;overflow:hidden">
+                          <span style="font-size:12px;padding:6px 10px;border-radius:8px;background:var(--bg3);color:var(--text);white-space:nowrap">Phyrexian Tower <span style="color:var(--muted);font-family:var(--mono)">9,10 €</span></span>
+                          <span style="font-size:12px;padding:6px 10px;border-radius:8px;background:var(--bg3);color:var(--text);white-space:nowrap">Skullclamp <span style="color:var(--muted);font-family:var(--mono)">3,80 €</span></span>
+                          <span style="font-size:12px;padding:6px 10px;border-radius:8px;background:var(--bg3);color:var(--muted);white-space:nowrap">+29 autres</span>
+                        </div>
+                      </div>
+                      <div style="display:flex;gap:10px;margin-top:auto">
+                        <button style="flex:1;height:42px;border-radius:11px;border:none;background:var(--accent);color:var(--accent-ink);font-family:var(--font-head);font-weight:600;font-size:14px;cursor:pointer">Générer la decklist complète</button>
+                        <button style="height:42px;padding:0 16px;border-radius:11px;border:1px solid var(--line);background:transparent;color:var(--text);font-size:13.5px;font-weight:500;cursor:pointer">Détails</button>
+                      </div>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            </div>
+
+            <!-- input -->
+            <div style="flex:none;padding:16px 34px 20px;border-top:1px solid var(--line);background:var(--bg2)">
+              <div style="display:flex;align-items:center;gap:12px;padding:8px 8px 8px 18px;border-radius:14px;border:1px solid var(--line);background:var(--bg3)">
+                <input placeholder="Écris ton message…  « plutôt en mono-noir », « monte le budget à 80 € »" style="flex:1;border:none;outline:none;background:transparent;color:var(--text);font-family:inherit;font-size:14.5px" />
+                <button style="width:42px;height:42px;border-radius:10px;border:none;background:var(--accent);color:var(--accent-ink);cursor:pointer;display:grid;place-items:center">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>
+                </button>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== OPTION 1B : ARCANE ===================== -->
+    <div id="1b" class="opt optB {{ bLight }}" style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px;color:oklch(0.9 0.005 260);font-family:'Bricolage Grotesque',sans-serif">
+        <span style="display:inline-grid;place-items:center;min-width:34px;height:26px;padding:0 9px;border-radius:7px;background:oklch(0.82 0.12 78);color:oklch(0.22 0.05 70);font-weight:700;font-size:14px">1b</span>
+        <span style="font-size:18px;font-weight:700">Arcane</span>
+        <span style="font-size:13px;color:oklch(0.6 0.01 260)">— chaud, or, couleurs de mana en accent</span>
+      </div>
+
+      <div style="width:1360px;height:864px;border-radius:20px;overflow:hidden;border:1px solid var(--line);background:var(--bg);color:var(--text);display:flex;flex-direction:column;box-shadow:var(--shadow)">
+        <!-- Topbar -->
+        <div style="height:62px;flex:none;display:flex;align-items:center;gap:20px;padding:0 22px;border-bottom:1px solid var(--line);background:var(--bg2);position:relative">
+          <div style="position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,var(--mw),var(--mu),var(--mb),var(--mr),var(--mg))"></div>
+          <div style="display:flex;align-items:center;gap:11px;font-family:var(--font-head);font-weight:700;font-size:17px;letter-spacing:-0.01em">
+            <span style="width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,var(--accent),var(--accent2));display:grid;place-items:center;color:var(--accent-ink);font-size:16px">✦</span>
+            MTG Assistant
+          </div>
+          <nav style="display:flex;align-items:center;gap:4px;margin-left:14px">
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Accueil</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;font-weight:700;color:var(--accent-ink);background:var(--accent)">Chat</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Depuis une liste</span>
+            <span style="padding:8px 14px;border-radius:9px;font-size:14px;color:var(--muted)">Ma collection</span>
+          </nav>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:14px">
+            <button onClick="{{ toggleB }}" style="display:flex;align-items:center;gap:8px;height:36px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:var(--bg3);color:var(--text);font-family:inherit;font-size:13px;font-weight:500;cursor:pointer">
+              <span style="font-size:14px">{{ bIcon }}</span>{{ bThemeLabel }}
+            </button>
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 12px 5px 5px;border-radius:999px;background:var(--bg3);border:1px solid var(--line)">
+              <span style="width:26px;height:26px;border-radius:50%;background:linear-gradient(150deg,var(--accent),var(--accent2));display:grid;place-items:center;color:var(--accent-ink);font-weight:700;font-size:13px">B</span>
+              <span style="font-size:13px;font-weight:600">Bastien</span>
+            </div>
+            <span style="width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--bg3);display:grid;place-items:center;color:var(--muted);font-size:16px">⚙</span>
+          </div>
+        </div>
+
+        <!-- Body -->
+        <div style="flex:1;display:flex;min-height:0">
+          <!-- Sidebar -->
+          <aside style="width:290px;flex:none;border-right:1px solid var(--line);background:var(--bg2);display:flex;flex-direction:column;min-height:0">
+            <div style="padding:16px 16px 12px">
+              <button style="width:100%;height:44px;border-radius:999px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent2));color:var(--accent-ink);font-family:var(--font-head);font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
+                <span style="font-size:17px">+</span> Nouvelle conversation
+              </button>
+            </div>
+            <div style="padding:2px 20px 8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700">Conversations</div>
+            <div class="scrolly" style="flex:1;overflow:auto;padding:0 10px 12px;display:flex;flex-direction:column;gap:2px">
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--accent-ink);background:var(--accent);font-weight:700;border-left:3px solid var(--accent2)">Deck commander sacrifice mono-noir</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--text)">Un deck premodern combo reanimator</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--text)">Deck Limité GP synergies</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--text)">Commander vert aggro stompy</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--text)">Propose un deck aristocrats</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--text)">Deck mono-bleu contrôle tempo</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--text)">Génère une decklist Pauper</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;font-size:13.5px;color:var(--text)">Deck Modern affinité artefacts</div>
+            </div>
+            <div style="padding:12px 16px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700">Propositions · 1</div>
+              <div style="display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:13px;border:1px solid var(--accent);background:color-mix(in oklch, var(--accent) 14%, transparent)">
+                <span style="width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:15px">✦</span>
+                <div style="line-height:1.3"><div style="font-size:13px;font-weight:700">Commandants proposés</div><div style="font-size:12px;color:var(--muted)">5 options</div></div>
+              </div>
+            </div>
+          </aside>
+
+          <!-- Main chat -->
+          <main style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0">
+            <div class="scrolly" style="flex:1;overflow:auto;padding:26px 34px;display:flex;flex-direction:column;gap:22px">
+              <div style="align-self:center;display:flex;align-items:center;gap:9px;padding:6px 13px;border-radius:999px;background:var(--bg2);border:1px solid var(--line);font-size:12px;color:var(--muted)">
+                <span style="width:7px;height:7px;border-radius:50%;background:var(--mg);box-shadow:0 0 8px var(--mg)"></span> Claude connecté · claude-sonnet-5
+              </div>
+              <div style="align-self:flex-end;max-width:70%;padding:13px 17px;border-radius:16px 16px 4px 16px;background:linear-gradient(130deg,var(--accent),var(--accent2));color:var(--accent-ink);font-size:14.5px;font-weight:600;line-height:1.45">Un deck Commander aristocrats sacrifice en mono-noir, budget 50 €</div>
+              <div style="display:flex;gap:13px;max-width:96%">
+                <span style="width:32px;height:32px;flex:none;border-radius:50%;background:var(--bg3);border:1px solid var(--line);display:grid;place-items:center;color:var(--accent);font-size:15px;margin-top:2px">✦</span>
+                <div style="display:flex;flex-direction:column;gap:16px;flex:1;min-width:0">
+                  <div style="font-size:14.5px;line-height:1.55;color:var(--text)">Voici 2 commandants <strong>mono-noir</strong> de ta collection taillés pour un plan aristocrats / sacrifice. Je te montre ta complétude et la liste d'achat pour finir dans le budget.</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:7px">
+                    <span style="font-size:12px;padding:5px 12px;border-radius:999px;background:var(--bg3);border:1px solid var(--line);color:var(--muted)">Format · <strong style="color:var(--text)">Commander</strong></span>
+                    <span style="font-size:12px;padding:5px 12px;border-radius:999px;background:var(--bg3);border:1px solid var(--line);color:var(--muted);display:inline-flex;align-items:center;gap:6px">Couleur <span style="width:14px;height:14px;border-radius:50%;background:var(--mb);border:1px solid rgba(255,255,255,.2)"></span><strong style="color:var(--text)">Noir</strong></span>
+                    <span style="font-size:12px;padding:5px 12px;border-radius:999px;background:var(--bg3);border:1px solid var(--line);color:var(--muted)">Thème · <strong style="color:var(--text)">sacrifice</strong></span>
+                    <span style="font-size:12px;padding:5px 12px;border-radius:999px;background:var(--bg3);border:1px solid var(--line);color:var(--muted)">Budget · <strong style="color:var(--text)">50 €</strong></span>
+                  </div>
+
+                  <!-- Commander card 1 (B) -->
+                  <article style="display:flex;gap:20px;padding:20px;background:var(--bg2);border:1px solid var(--line);border-radius:18px;position:relative;overflow:hidden;animation:fadeUp .5s both">
+                    <div style="position:absolute;top:0;left:0;bottom:0;width:3px;background:var(--mb)"></div>
+                    <div style="width:176px;height:245px;flex:none;border-radius:12px;overflow:hidden;background:linear-gradient(160deg,var(--bg3),var(--bg));box-shadow:0 0 0 1px color-mix(in oklch,var(--accent) 40%,transparent),0 12px 30px -10px rgba(0,0,0,.6)">
+                      <img src="https://api.scryfall.com/cards/named?exact=Karumonix,%20the%20Rat%20King&format=image&version=normal" alt="Karumonix, the Rat King" style="width:100%;height:100%;object-fit:cover;display:block">
+                    </div>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
+                      <div style="display:flex;align-items:flex-start;gap:11px">
+                        <div style="min-width:0">
+                          <h3 style="margin:0;font-family:var(--font-head);font-size:21px;font-weight:700;letter-spacing:-0.01em">Karumonix, the Rat King</h3>
+                          <div style="margin-top:5px;font-size:12.5px;color:var(--muted);font-family:var(--mono)">6 646 decks · EDHREC</div>
+                        </div>
+                        <span style="margin-left:auto;font-size:11px;font-weight:700;padding:5px 11px;border-radius:999px;background:color-mix(in oklch, var(--mg) 24%, transparent);color:var(--mg);white-space:nowrap">✓ Possédé</span>
+                      </div>
+                      <div>
+                        <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13.5px;margin-bottom:7px"><span style="color:var(--muted)"><strong style="color:var(--text);font-size:15px">93 / 229</strong> cartes possédées</span><span style="font-family:var(--font-head);font-weight:700;font-size:16px;color:var(--accent)">40,6 %</span></div>
+                        <div style="height:9px;border-radius:999px;background:var(--ring-track);overflow:hidden"><div style="width:40.6%;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent2),var(--accent))"></div></div>
+                      </div>
+                      <div style="border:1px solid var(--line);border-radius:13px;overflow:hidden">
+                        <div style="display:flex;align-items:center;gap:8px;padding:10px 13px;background:var(--bg3);font-size:12.5px">
+                          <span style="font-weight:700">Liste d'achat</span><span style="color:var(--muted)">26 cartes</span>
+                          <span style="margin-left:auto;font-family:var(--mono);font-weight:600;color:var(--accent)">45,98 € <span style="color:var(--muted);font-weight:400">/ 50 €</span></span>
+                        </div>
+                        <div style="display:flex;gap:8px;padding:11px 13px;overflow:hidden">
+                          <span style="font-size:12px;padding:6px 10px;border-radius:999px;background:var(--bg3);color:var(--text);white-space:nowrap">Ashnod's Altar <span style="color:var(--muted);font-family:var(--mono)">6,50 €</span></span>
+                          <span style="font-size:12px;padding:6px 10px;border-radius:999px;background:var(--bg3);color:var(--text);white-space:nowrap">Blood Artist <span style="color:var(--muted);font-family:var(--mono)">2,40 €</span></span>
+                          <span style="font-size:12px;padding:6px 10px;border-radius:999px;background:var(--bg3);color:var(--muted);white-space:nowrap">+24 autres</span>
+                        </div>
+                      </div>
+                      <div style="display:flex;gap:10px;margin-top:auto">
+                        <button style="flex:1;height:44px;border-radius:999px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent2));color:var(--accent-ink);font-family:var(--font-head);font-weight:700;font-size:14px;cursor:pointer">Générer la decklist complète</button>
+                        <button style="height:44px;padding:0 18px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--text);font-size:13.5px;font-weight:600;cursor:pointer">Détails</button>
+                      </div>
+                    </div>
+                  </article>
+
+                  <!-- Commander card 2 (B) -->
+                  <article style="display:flex;gap:20px;padding:20px;background:var(--bg2);border:1px solid var(--line);border-radius:18px;position:relative;overflow:hidden;animation:fadeUp .6s both">
+                    <div style="position:absolute;top:0;left:0;bottom:0;width:3px;background:var(--mb)"></div>
+                    <div style="width:176px;height:245px;flex:none;border-radius:12px;overflow:hidden;background:linear-gradient(160deg,var(--bg3),var(--bg));box-shadow:0 0 0 1px color-mix(in oklch,var(--accent) 40%,transparent),0 12px 30px -10px rgba(0,0,0,.6)">
+                      <img src="https://api.scryfall.com/cards/named?exact=Skithiryx,%20the%20Blight%20Dragon&format=image&version=normal" alt="Skithiryx, the Blight Dragon" style="width:100%;height:100%;object-fit:cover;display:block">
+                    </div>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
+                      <div style="display:flex;align-items:flex-start;gap:11px">
+                        <div style="min-width:0">
+                          <h3 style="margin:0;font-family:var(--font-head);font-size:21px;font-weight:700;letter-spacing:-0.01em">Skithiryx, the Blight Dragon</h3>
+                          <div style="margin-top:5px;font-size:12.5px;color:var(--muted);font-family:var(--mono)">3 026 decks · EDHREC</div>
+                        </div>
+                        <span style="margin-left:auto;font-size:11px;font-weight:700;padding:5px 11px;border-radius:999px;background:color-mix(in oklch, var(--mg) 24%, transparent);color:var(--mg);white-space:nowrap">✓ Possédé</span>
+                      </div>
+                      <div>
+                        <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13.5px;margin-bottom:7px"><span style="color:var(--muted)"><strong style="color:var(--text);font-size:15px">87 / 276</strong> cartes possédées</span><span style="font-family:var(--font-head);font-weight:700;font-size:16px;color:var(--accent)">31,5 %</span></div>
+                        <div style="height:9px;border-radius:999px;background:var(--ring-track);overflow:hidden"><div style="width:31.5%;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent2),var(--accent))"></div></div>
+                      </div>
+                      <div style="border:1px solid var(--line);border-radius:13px;overflow:hidden">
+                        <div style="display:flex;align-items:center;gap:8px;padding:10px 13px;background:var(--bg3);font-size:12.5px">
+                          <span style="font-weight:700">Liste d'achat</span><span style="color:var(--muted)">31 cartes</span>
+                          <span style="margin-left:auto;font-family:var(--mono);font-weight:600;color:var(--accent)">48,20 € <span style="color:var(--muted);font-weight:400">/ 50 €</span></span>
+                        </div>
+                        <div style="display:flex;gap:8px;padding:11px 13px;overflow:hidden">
+                          <span style="font-size:12px;padding:6px 10px;border-radius:999px;background:var(--bg3);color:var(--text);white-space:nowrap">Phyrexian Tower <span style="color:var(--muted);font-family:var(--mono)">9,10 €</span></span>
+                          <span style="font-size:12px;padding:6px 10px;border-radius:999px;background:var(--bg3);color:var(--text);white-space:nowrap">Skullclamp <span style="color:var(--muted);font-family:var(--mono)">3,80 €</span></span>
+                          <span style="font-size:12px;padding:6px 10px;border-radius:999px;background:var(--bg3);color:var(--muted);white-space:nowrap">+29 autres</span>
+                        </div>
+                      </div>
+                      <div style="display:flex;gap:10px;margin-top:auto">
+                        <button style="flex:1;height:44px;border-radius:999px;border:none;background:linear-gradient(120deg,var(--accent),var(--accent2));color:var(--accent-ink);font-family:var(--font-head);font-weight:700;font-size:14px;cursor:pointer">Générer la decklist complète</button>
+                        <button style="height:44px;padding:0 18px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--text);font-size:13.5px;font-weight:600;cursor:pointer">Détails</button>
+                      </div>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            </div>
+
+            <div style="flex:none;padding:16px 34px 20px;border-top:1px solid var(--line);background:var(--bg2)">
+              <div style="display:flex;align-items:center;gap:12px;padding:8px 8px 8px 18px;border-radius:999px;border:1px solid var(--line);background:var(--bg3)">
+                <input placeholder="Écris ton message…  « plutôt en mono-noir », « monte le budget à 80 € »" style="flex:1;border:none;outline:none;background:transparent;color:var(--text);font-family:inherit;font-size:14.5px" />
+                <button style="width:44px;height:44px;border-radius:50%;border:none;background:linear-gradient(120deg,var(--accent),var(--accent2));color:var(--accent-ink);cursor:pointer;display:grid;place-items:center">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>
+                </button>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { aLight: false, bLight: false, cLight: false, cPal: 3, dLight: false };
+  static PALETTES = [
+    { name: 'Or vif',        dark: ['oklch(0.82 0.12 78)',  'oklch(0.72 0.13 52)',  'oklch(0.22 0.05 70)'], light: ['oklch(0.60 0.11 66)',  'oklch(0.66 0.12 50)',  'oklch(0.99 0.02 80)'] },
+    { name: 'Or équilibré',  dark: ['oklch(0.75 0.095 78)', 'oklch(0.66 0.105 55)', 'oklch(0.22 0.04 70)'], light: ['oklch(0.56 0.095 70)', 'oklch(0.61 0.10 52)',  'oklch(0.99 0.01 80)'] },
+    { name: 'Ambre',         dark: ['oklch(0.76 0.115 62)', 'oklch(0.67 0.12 45)',  'oklch(0.23 0.04 60)'], light: ['oklch(0.57 0.11 58)',  'oklch(0.62 0.115 45)', 'oklch(0.99 0.01 70)'] },
+    { name: 'Terracotta',    dark: ['oklch(0.71 0.125 45)', 'oklch(0.63 0.13 32)',  'oklch(0.24 0.04 45)'], light: ['oklch(0.55 0.12 42)',  'oklch(0.60 0.125 32)', 'oklch(0.99 0.01 50)'] },
+    { name: 'Saumon',        dark: ['oklch(0.78 0.105 33)', 'oklch(0.70 0.115 22)', 'oklch(0.25 0.04 33)'], light: ['oklch(0.58 0.11 33)',  'oklch(0.63 0.115 24)', 'oklch(0.99 0.01 40)'] },
+    { name: 'Corail rosé',   dark: ['oklch(0.80 0.095 25)', 'oklch(0.72 0.105 15)', 'oklch(0.25 0.04 25)'], light: ['oklch(0.60 0.10 26)',  'oklch(0.65 0.105 17)', 'oklch(0.99 0.01 30)'] },
+  ];
+  renderVals() {
+    const pal = Component.PALETTES[this.state.cPal];
+    const trio = this.state.cLight ? pal.light : pal.dark;
+    return {
+      cPalName: pal.name,
+      cAccent: trio[0], cAccent2: trio[1], cAccentInk: trio[2],
+      pick0: () => this.setState({ cPal: 0 }),
+      pick1: () => this.setState({ cPal: 1 }),
+      pick2: () => this.setState({ cPal: 2 }),
+      pick3: () => this.setState({ cPal: 3 }),
+      pick4: () => this.setState({ cPal: 4 }),
+      pick5: () => this.setState({ cPal: 5 }),
+      dLight: this.state.dLight ? 'light' : '',
+      dIcon: this.state.dLight ? '☀' : '☾',
+      dThemeLabel: this.state.dLight ? 'Clair' : 'Sombre',
+      toggleD: () => this.setState(s => ({ dLight: !s.dLight })),
+      cLight: this.state.cLight ? 'light' : '',
+      cIcon: this.state.cLight ? '☀' : '☾',
+      cThemeLabel: this.state.cLight ? 'Clair' : 'Sombre',
+      toggleC: () => this.setState(s => ({ cLight: !s.cLight })),
+      aLight: this.state.aLight ? 'light' : '',
+      bLight: this.state.bLight ? 'light' : '',
+      aIcon: this.state.aLight ? '☀' : '☾',
+      bIcon: this.state.bLight ? '☀' : '☾',
+      aThemeLabel: this.state.aLight ? 'Clair' : 'Sombre',
+      bThemeLabel: this.state.bLight ? 'Clair' : 'Sombre',
+      toggleA: () => this.setState(s => ({ aLight: !s.aLight })),
+      toggleB: () => this.setState(s => ({ bLight: !s.bLight })),
+    };
+  }
+}
+</script>
+</body>
+</html>

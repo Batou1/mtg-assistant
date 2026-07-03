@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% import "_artifacts.html" as artifacts %}
 {% block title %}Chat · MTG Assistant{% endblock %}
+{% block body_class %}chat-page{% endblock %}
+{% block main_class %}chat-shell{% endblock %}
 {% block content %}
 
 {# Flatten artifacts across the thread: stable anchor ids + the latest id per
@@ -18,7 +20,10 @@
 <div class="chat-layout">
   <!-- Conversations sidebar -->
   <aside class="chat-sidebar">
-    <form method="post" action="/chat/new"><button type="submit" class="new-chat">+ Nouvelle conversation</button></form>
+    <div class="sidebar-top">
+      <form method="post" action="/chat/new"><button type="submit" class="new-chat"><span style="font-size: 1.05rem;">+</span> Nouvelle conversation</button></form>
+    </div>
+    <h4 class="sidebar-label">Conversations</h4>
     <ul class="conv-list">
       {% for c in conversations %}
       <li class="{{ 'active' if c.id == conversation.id else '' }}">
@@ -35,29 +40,32 @@
     </ul>
 
     {% if ns.flat %}
-    <nav class="deck-nav">
-      <h4>Propositions ({{ ns.flat|length }})</h4>
-      <ul>
-        {% for item in ns.flat %}
-        <li class="{{ 'current' if item.id == ns.last.get(item.art.type) else 'past' }}">
-          <a href="#{{ item.id }}">{{ artifacts.label(item.art) }}</a>
-        </li>
-        {% endfor %}
-      </ul>
-    </nav>
+    <div class="sidebar-bottom">
+      <h4 class="sidebar-label" style="padding: 0;">Propositions · {{ ns.flat|length }}</h4>
+      <div class="sidebar-proposals">
+        <nav class="deck-nav">
+          <ul>
+            {% for item in ns.flat %}
+            <li class="{{ 'current' if item.id == ns.last.get(item.art.type) else 'past' }}">
+              <a href="#{{ item.id }}">{{ artifacts.label(item.art) }}</a>
+            </li>
+            {% endfor %}
+          </ul>
+        </nav>
+      </div>
+    </div>
     {% endif %}
   </aside>
 
   <!-- Conversation thread -->
   <section class="chat-main">
-    <p class="status small">
-      LLM :
-      {% if llm_ok %}<span class="badge ok">connecté</span> <span class="muted">(Claude · {{ llm_model }})</span>
-      {% else %}<span class="badge warn">non configuré</span>
-        <span class="muted">repli ponctuel actif — ajoute ANTHROPIC_API_KEY pour le vrai chat</span>{% endif %}
-    </p>
-
     <div class="chat-thread">
+      <div class="status-pill">
+        <span class="status-dot {{ 'on' if llm_ok else '' }}"></span>
+        {% if llm_ok %}Claude connecté · {{ llm_model }}
+        {% else %}mode heuristique — ajoute ANTHROPIC_API_KEY pour le vrai chat{% endif %}
+      </div>
+
       {% if not messages %}
         <div class="chat-empty muted">
           <p>👋 Décris ce que tu veux construire et on itère ensemble. L'assistant
@@ -81,32 +89,36 @@
       {% for m in messages %}
       {% set mi = loop.index0 %}
       <div class="msg msg-{{ m.role }}">
-        <div class="bubble">
-          {% for para in m.content.split("\n") %}{% if para.strip() %}<p>{{ para }}</p>{% endif %}{% endfor %}
-        </div>
-        {% if m.artifacts %}
-        <div class="msg-artifacts">
-          {% for art in m.artifacts %}
-          {% set aid = 'art-' ~ mi ~ '-' ~ loop.index0 %}
-          {% set superseded = ns.last.get(art.type) != aid %}
-          <div class="art-wrap{{ ' superseded' if superseded }}" id="{{ aid }}">
-            {% if superseded %}
-            <details class="art-collapsed">
-              <summary>{{ artifacts.label(art) }}</summary>
-              {{ artifacts.render(art) }}
-            </details>
-            {% else %}
-            {{ artifacts.render(art) }}
-            {% endif %}
+        {% if m.role == 'assistant' %}<span class="msg-avatar">✦</span>{% endif %}
+        <div class="msg-content">
+          <div class="bubble">
+            {% for para in m.content.split("\n") %}{% if para.strip() %}<p>{{ para }}</p>{% endif %}{% endfor %}
           </div>
-          {% endfor %}
+          {% if m.artifacts %}
+          <div class="msg-artifacts">
+            {% for art in m.artifacts %}
+            {% set aid = 'art-' ~ mi ~ '-' ~ loop.index0 %}
+            {% set superseded = ns.last.get(art.type) != aid %}
+            <div class="art-wrap{{ ' superseded' if superseded }}" id="{{ aid }}" style="animation-delay: {{ (loop.index0 * 0.1)|round(2) }}s">
+              {% if superseded %}
+              <details class="art-collapsed">
+                <summary>{{ artifacts.label(art) }}</summary>
+                {{ artifacts.render(art) }}
+              </details>
+              {% else %}
+              {{ artifacts.render(art) }}
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
         </div>
-        {% endif %}
       </div>
       {% endfor %}
 
       {% if pending %}
       <div class="msg msg-assistant" id="pending-bubble">
+        <span class="msg-avatar">✦</span>
         <div class="bubble typing">
           <span class="typing-dots"><span></span><span></span><span></span></span>
           <span class="muted small">L'assistant réfléchit… (recherche EDHREC, prix, génération)</span>
@@ -117,10 +129,15 @@
 
     <form method="post" action="/chat/message" class="chat-input" id="chat-input">
       <input type="hidden" name="conversation_id" value="{{ conversation.id }}">
-      <textarea name="message" rows="2" placeholder="Écris ton message…" required autofocus
-                {{ 'disabled' if pending }}
-                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit();}"></textarea>
-      <button type="submit" {{ 'disabled' if pending }}>Envoyer</button>
+      <div class="input-pill">
+        <textarea name="message" rows="1" required autofocus
+                  placeholder="Écris ton message…  « plutôt en mono-noir », « monte le budget à 80 € »"
+                  {{ 'disabled' if pending }}
+                  onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit();}"></textarea>
+        <button type="submit" class="send-btn" {{ 'disabled' if pending }} aria-label="Envoyer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>
+        </button>
+      </div>
     </form>
   </section>
 </div>

@@ -2,73 +2,84 @@
 {% block content %}
 
 <section class="hero">
-  <h1>Construis ton prochain deck Commander</h1>
+  <h1>Quel deck veux-tu construire aujourd'hui ?</h1>
   <p class="muted">
-    Importe ta collection, décris ce que tu veux en français, et l'assistant te
-    propose des commandants jouables avec tes cartes — avec analyse de complétude
-    et liste d'achat dans ton budget.
+    Décris ce que tu veux en français, et l'assistant te propose des commandants
+    jouables avec ta collection — avec analyse de complétude et liste d'achat
+    dans ton budget.
   </p>
 </section>
 
 <div class="grid-2">
-  <!-- Collection status + import -->
-  <section class="card">
-    <h2>1 · Collection de {{ profile.name }}</h2>
-    {% if total %}
-      <p class="stat"><strong>{{ total }}</strong> cartes ({{ distinct }} uniques)</p>
-      {% if source %}<p class="muted small">Source : {{ source }}</p>{% endif %}
-      <p><a class="link" href="/collection">Voir la collection →</a></p>
-    {% else %}
-      <p class="muted">Aucune collection importée pour l'instant.</p>
-    {% endif %}
-
-    {% if import_done %}
-      <div class="notice ok">
-        Import réussi : {{ imported_rows }} lignes enregistrées.
-        {% if import_error_count %}<br>{{ import_error_count }} ligne(s) ignorée(s).{% endif %}
-      </div>
-    {% endif %}
-
-    <form action="/import" method="post" enctype="multipart/form-data" class="stack">
-      <label class="dropzone">
-        <span class="dz-ico">📄</span>
-        <span class="dz-text">Importer un export <strong>ManaBox (.csv)</strong></span>
-        <input type="file" name="file" accept=".csv,text/csv" required>
-      </label>
-      <button type="submit">Importer</button>
-    </form>
-  </section>
-
   <!-- Deck wish -->
-  <section class="card">
-    <h2>2 · Mon envie de deck</h2>
-    <p class="status">
-      LLM :
-      {% if llm_ok %}
-        <span class="badge ok">connecté</span> <span class="muted small">(Claude · {{ llm_model }})</span>
-      {% else %}
-        <span class="badge warn">non configuré</span>
-        <span class="muted small">ajoute ANTHROPIC_API_KEY dans .env (repli heuristique actif)</span>
-      {% endif %}
-    </p>
+  <section class="card wish-card">
     <form action="/suggest" method="post" class="stack">
-      <textarea name="wish" rows="4" placeholder="Ex : un deck Commander aristocrats sacrifice en noir/rouge, budget 50€"></textarea>
-      <button type="submit" {% if not total %}disabled title="Importe d'abord ta collection"{% endif %}>
-        Proposer des decks
-      </button>
+      <textarea name="wish" rows="5" placeholder="Ex : un deck Commander aristocrats sacrifice en noir/rouge, budget 50€"></textarea>
+      <div class="wish-footer">
+        <p class="status small" style="margin: 0;">
+          <span class="status-dot {{ 'on' if llm_ok else '' }}" style="display: inline-block; vertical-align: middle; margin-right: 6px;"></span>
+          {% if llm_ok %}Claude connecté <span class="muted">· {{ llm_model }}</span>
+          {% else %}<span class="muted">mode heuristique — ajoute ANTHROPIC_API_KEY</span>{% endif %}
+        </p>
+        <button type="submit" {% if not total %}disabled title="Importe d'abord ta collection"{% endif %}>
+          Lancer l'analyse
+        </button>
+      </div>
       {% if not total %}<p class="muted small">Importe ta collection pour activer les suggestions.</p>{% endif %}
     </form>
+    <div class="wish-examples">
+      <button type="button" onclick="mtgFillWish(this)" data-text="deck tokens vert/blanc qui fait beaucoup de jetons">deck tokens vert/blanc</button>
+      <button type="button" onclick="mtgFillWish(this)" data-text="reanimator noir, je veux ressusciter de grosses créatures, budget 40 euros">reanimator noir, budget 40€</button>
+      <button type="button" onclick="mtgFillWish(this)" data-text="quelque chose de contrôle bleu/noir compétitif">contrôle bleu/noir</button>
+    </div>
     <details class="examples">
-      <summary>Exemples d'envies</summary>
+      <summary>Plus d'exemples</summary>
       <ul>
-        <li>« deck tokens vert/blanc qui fait beaucoup de jetons »</li>
-        <li>« reanimator noir, je veux ressusciter de grosses créatures, budget 40 euros »</li>
-        <li>« quelque chose de contrôle bleu/noir compétitif »</li>
         <li>« un deck Premodern agressif blanc/vert »</li>
         <li>« budget 30€ mais pas plus de 5€ par carte »</li>
       </ul>
     </details>
   </section>
+
+  <!-- Collection status + import -->
+  <div class="stack" style="margin-top: 0;">
+    <section class="card">
+      <h2>Ma collection</h2>
+      {% if total %}
+        <div class="collection-stats">
+          <div><div class="stat-num">{{ total }}</div><div class="stat-label">cartes</div></div>
+          <div><div class="stat-num">{{ distinct }}</div><div class="stat-label">uniques</div></div>
+        </div>
+        {% if source %}<p class="muted small">Source : {{ source }}</p>{% endif %}
+        <p><a class="link" href="/collection">Voir tout →</a></p>
+      {% else %}
+        <p class="muted">Aucune collection importée pour l'instant.</p>
+      {% endif %}
+
+      {% if import_done %}
+        <div class="notice ok">
+          Import réussi : {{ imported_rows }} lignes enregistrées.
+          {% if import_error_count %}<br>{{ import_error_count }} ligne(s) ignorée(s).{% endif %}
+        </div>
+      {% endif %}
+
+      <form action="/import" method="post" enctype="multipart/form-data" class="stack">
+        <label class="dropzone">
+          <span class="dz-ico">↑</span>
+          <span class="dz-text">Importer un export <strong>ManaBox (.csv)</strong></span>
+          <input type="file" name="file" accept=".csv,text/csv" required>
+        </label>
+        <button type="submit">Importer</button>
+      </form>
+    </section>
+  </div>
 </div>
+
+<script>
+  function mtgFillWish(btn) {
+    var form = btn.closest(".card").querySelector("textarea[name=wish]");
+    if (form) { form.value = btn.getAttribute("data-text"); form.focus(); }
+  }
+</script>
 
 {% endblock %}

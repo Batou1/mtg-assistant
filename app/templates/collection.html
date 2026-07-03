@@ -3,18 +3,75 @@
 {% block content %}
 
 <a class="link back" href="/">← Accueil</a>
-<h1>Collection — {{ profile.name }}</h1>
+<div class="page-head" style="display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+  <div>
+    <h1 style="font-size: 1.7rem; margin-bottom: 4px;">Ma collection</h1>
+    <p class="muted mono small">{{ total }} cartes · {{ distinct }} uniques</p>
+  </div>
+  <a href="/"><button type="button">Importer ManaBox</button></a>
+</div>
 
 {% if cards %}
-  <p class="muted">{{ total }} cartes · {{ distinct }} uniques</p>
-  <table class="collection-table">
+  <div class="collection-toolbar">
+    <input type="text" class="collection-search" id="collection-search" placeholder="Rechercher une carte…">
+    <button type="button" class="chip" data-sort="name" id="sort-name">Tri · Nom</button>
+    <button type="button" class="chip active" data-sort="qty" id="sort-qty">Tri · Quantité ↓</button>
+  </div>
+  <table class="collection-table" id="collection-table">
     <thead><tr><th>Carte</th><th class="num">Quantité</th></tr></thead>
     <tbody>
       {% for raw_name, name_key, qty in cards %}
-      <tr><td>{{ raw_name }}</td><td class="num">{{ qty }}</td></tr>
+      <tr data-name="{{ raw_name|lower }}" data-qty="{{ qty }}">
+        <td>{{ raw_name }}</td>
+        <td class="num"><span class="qty-badge">×{{ qty }}</span></td>
+      </tr>
       {% endfor %}
     </tbody>
   </table>
+  <p class="muted small" id="collection-empty" style="display: none;">Aucune carte ne correspond à la recherche.</p>
+
+  <script>
+    (function () {
+      var search = document.getElementById("collection-search");
+      var table = document.getElementById("collection-table");
+      var empty = document.getElementById("collection-empty");
+      var rows = Array.prototype.slice.call(table.querySelectorAll("tbody tr"));
+      var sortKey = "qty";
+
+      function apply() {
+        var q = (search.value || "").trim().toLowerCase();
+        var visible = 0;
+        rows.forEach(function (tr) {
+          var match = !q || tr.getAttribute("data-name").indexOf(q) !== -1;
+          tr.style.display = match ? "" : "none";
+          if (match) visible++;
+        });
+        empty.style.display = visible ? "none" : "";
+      }
+
+      function sortRows() {
+        var tbody = table.querySelector("tbody");
+        rows.sort(function (a, b) {
+          if (sortKey === "qty") return Number(b.getAttribute("data-qty")) - Number(a.getAttribute("data-qty"));
+          return a.getAttribute("data-name").localeCompare(b.getAttribute("data-name"));
+        });
+        rows.forEach(function (tr) { tbody.appendChild(tr); });
+      }
+
+      sortRows();
+      search.addEventListener("input", apply);
+      document.getElementById("sort-name").addEventListener("click", function () {
+        sortKey = "name"; sortRows();
+        this.classList.add("active");
+        document.getElementById("sort-qty").classList.remove("active");
+      });
+      document.getElementById("sort-qty").addEventListener("click", function () {
+        sortKey = "qty"; sortRows();
+        this.classList.add("active");
+        document.getElementById("sort-name").classList.remove("active");
+      });
+    })();
+  </script>
 {% else %}
   <p class="muted">Aucune carte. Importe un export ManaBox depuis l'accueil.</p>
 {% endif %}
