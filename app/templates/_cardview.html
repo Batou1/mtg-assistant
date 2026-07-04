@@ -1,0 +1,33 @@
+{# Card image ⇄ text toggle, shared by every screen that shows a card.
+   Renders both an image block and a text block; the global navbar toggle
+   (data-card-view="image"|"text" on <html>) shows one and hides the other
+   via CSS — no per-page JS needed. The text block is looked up from the
+   local Scryfall cache by name, so callers don't need to plumb mana
+   cost / type / oracle text through their own data. #}
+{% macro image_or_text(name, image, price_eur=none, qty=none, extra_class="") %}
+  {% set card = card_lookup(name) %}
+  <div class="cv-img-wrap {{ extra_class }}">
+    {% if image %}
+      <img src="{{ image }}" alt="{{ name }}" loading="lazy">
+    {% else %}
+      <div class="cv-img-placeholder">{{ name }}</div>
+    {% endif %}
+    {% if qty %}<span class="cv-qty-badge">×{{ qty }}</span>{% endif %}
+  </div>
+  <div class="cv-text-card {{ extra_class }}">
+    <div class="cv-head">
+      <span class="cv-name">{{ name }}</span>
+      {% if qty %}<span class="cv-qty mono">×{{ qty }}</span>{% endif %}
+    </div>
+    {% if card %}
+      {% set cost = card|mana_cost %}
+      {% if cost %}<div class="cv-cost mono">{{ cost }}</div>{% endif %}
+      {% if card.type_line %}<div class="cv-type">{{ card.type_line }}</div>{% endif %}
+      {% set text = card|oracle_text %}
+      {% if text %}<div class="cv-oracle">{{ text }}</div>{% endif %}
+      {% set pt = card|power_toughness %}
+      {% if pt %}<div class="cv-pt mono">{{ pt }}</div>{% endif %}
+    {% endif %}
+    {% if price_eur is not none %}<div class="cv-price mono">{{ "%.2f"|format(price_eur) }} €</div>{% endif %}
+  </div>
+{% endmacro %}

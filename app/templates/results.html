@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_cardview.html" as cardview %}
 {% block title %}Suggestions · MTG Assistant{% endblock %}
 {% block content %}
 
@@ -41,7 +42,7 @@
   {% for r in data.results %}
   <section class="commander card">
     <div class="commander-head">
-      {% if r.image %}<img class="card-img" src="{{ r.image }}" alt="{{ r.name }}" loading="lazy">{% endif %}
+      {{ cardview.image_or_text(r.name, r.image, extra_class="cv-commander") }}
       <div class="commander-meta">
         <h3>{{ r.name }}
           {% if r.owned is defined and not r.owned %}<span class="tag buy-tag">proposé · non possédé</span>
@@ -102,7 +103,7 @@
         <div class="buy-grid">
           {% for item in r.buylist.to_buy %}
           <div class="buy-item">
-            {% if item.image %}<img src="{{ item.image }}" alt="{{ item.name }}" loading="lazy">{% endif %}
+            {{ cardview.image_or_text(item.name, item.image, extra_class="cv-buyitem") }}
             <span class="buy-name">{{ item.name }}</span>
             <span class="buy-price">{{ "%.2f"|format(item.price_eur) }} €</span>
           </div>

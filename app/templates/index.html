@@ -49,7 +49,20 @@
         <div class="collection-stats">
           <div><div class="stat-num">{{ total }}</div><div class="stat-label">cartes</div></div>
           <div><div class="stat-num">{{ distinct }}</div><div class="stat-label">uniques</div></div>
+          <div><div class="stat-num">{{ "%.0f"|format(total_value) }} €</div><div class="stat-label">valeur estimée</div></div>
         </div>
+        {% if color_breakdown %}
+          {% set cb_total = color_breakdown.values()|sum %}
+          {% if cb_total %}
+            <div class="wubrg-bar" title="Répartition des couleurs">
+              {% for c in ["W", "U", "B", "R", "G", "C"] %}
+                {% if color_breakdown[c] %}
+                  <span class="wubrg-seg {{ c }}" style="width: {{ (color_breakdown[c] / cb_total * 100)|round(2) }}%"></span>
+                {% endif %}
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endif %}
         {% if source %}<p class="muted small">Source : {{ source }}</p>{% endif %}
         <p><a class="link" href="/collection">Voir tout →</a></p>
       {% else %}

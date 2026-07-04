@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_cardview.html" as cardview %}
 {% block title %}Ma collection · MTG Assistant{% endblock %}
 {% block content %}
 
@@ -6,7 +7,7 @@
 <div class="page-head" style="display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
   <div>
     <h1 style="font-size: 1.7rem; margin-bottom: 4px;">Ma collection</h1>
-    <p class="muted mono small">{{ total }} cartes · {{ distinct }} uniques</p>
+    <p class="muted mono small">{{ total }} cartes · {{ distinct }} uniques · {{ "%.2f"|format(total_value) }} €</p>
   </div>
   <a href="/"><button type="button">Importer ManaBox</button></a>
 </div>
@@ -14,61 +15,101 @@
 {% if cards %}
   <div class="collection-toolbar">
     <input type="text" class="collection-search" id="collection-search" placeholder="Rechercher une carte…">
-    <button type="button" class="chip" data-sort="name" id="sort-name">Tri · Nom</button>
-    <button type="button" class="chip active" data-sort="qty" id="sort-qty">Tri · Quantité ↓</button>
-  </div>
-  <table class="collection-table" id="collection-table">
-    <thead><tr><th>Carte</th><th class="num">Quantité</th></tr></thead>
-    <tbody>
-      {% for raw_name, name_key, qty in cards %}
-      <tr data-name="{{ raw_name|lower }}" data-qty="{{ qty }}">
-        <td>{{ raw_name }}</td>
-        <td class="num"><span class="qty-badge">×{{ qty }}</span></td>
-      </tr>
+    <div class="pip-filters" id="pip-filters">
+      {% for c in ["W", "U", "B", "R", "G"] %}
+        <button type="button" class="pip-filter" data-color="{{ c }}" title="{{ COLOR_NAMES[c] }}">
+          <span class="pip-swatch {{ c }}"></span>
+        </button>
       {% endfor %}
-    </tbody>
-  </table>
-  <p class="muted small" id="collection-empty" style="display: none;">Aucune carte ne correspond à la recherche.</p>
+    </div>
+    <select class="chip" id="type-filter">
+      <option value="">Type · Tous</option>
+      <option value="Creature">Créatures</option>
+      <option value="Instant">Éphémères</option>
+      <option value="Sorcery">Rituels</option>
+      <option value="Artifact">Artefacts</option>
+      <option value="Enchantment">Enchantements</option>
+      <option value="Planeswalker">Planeswalkers</option>
+      <option value="Land">Terrains</option>
+    </select>
+    <button type="button" class="chip" data-sort="value" id="sort-value">Tri · Valeur ↓</button>
+    <button type="button" class="chip active" data-sort="qty" id="sort-qty">Tri · Quantité ↓</button>
+    <button type="button" class="chip" data-sort="name" id="sort-name">Tri · Nom</button>
+  </div>
+
+  <div class="collection-grid" id="collection-grid">
+    {% for c in cards %}
+    <div class="col-tile"
+         data-name="{{ c.name|lower }}"
+         data-qty="{{ c.qty }}"
+         data-value="{{ c.line_total or 0 }}"
+         data-type="{{ c.type_line|lower }}"
+         data-colors="{{ c.colors|join(',') }}">
+      {{ cardview.image_or_text(c.name, c.image, price_eur=c.price_eur, qty=c.qty) }}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="muted small" id="collection-empty" style="display: none;">Aucune carte ne correspond aux filtres.</p>
 
   <script>
     (function () {
       var search = document.getElementById("collection-search");
-      var table = document.getElementById("collection-table");
+      var typeFilter = document.getElementById("type-filter");
+      var grid = document.getElementById("collection-grid");
       var empty = document.getElementById("collection-empty");
-      var rows = Array.prototype.slice.call(table.querySelectorAll("tbody tr"));
+      var tiles = Array.prototype.slice.call(grid.querySelectorAll(".col-tile"));
+      var activeColors = [];
       var sortKey = "qty";
 
       function apply() {
         var q = (search.value || "").trim().toLowerCase();
+        var type = typeFilter.value.toLowerCase();
         var visible = 0;
-        rows.forEach(function (tr) {
-          var match = !q || tr.getAttribute("data-name").indexOf(q) !== -1;
-          tr.style.display = match ? "" : "none";
+        tiles.forEach(function (tile) {
+          var matchName = !q || tile.getAttribute("data-name").indexOf(q) !== -1;
+          var matchType = !type || tile.getAttribute("data-type").indexOf(type) !== -1;
+          var colors = tile.getAttribute("data-colors").split(",").filter(Boolean);
+          var matchColor = !activeColors.length || activeColors.every(function (c) { return colors.indexOf(c) !== -1; });
+          var match = matchName && matchType && matchColor;
+          tile.style.display = match ? "" : "none";
           if (match) visible++;
         });
         empty.style.display = visible ? "none" : "";
       }
 
-      function sortRows() {
-        var tbody = table.querySelector("tbody");
-        rows.sort(function (a, b) {
+      function sortTiles() {
+        tiles.sort(function (a, b) {
           if (sortKey === "qty") return Number(b.getAttribute("data-qty")) - Number(a.getAttribute("data-qty"));
+          if (sortKey === "value") return Number(b.getAttribute("data-value")) - Number(a.getAttribute("data-value"));
           return a.getAttribute("data-name").localeCompare(b.getAttribute("data-name"));
         });
-        rows.forEach(function (tr) { tbody.appendChild(tr); });
+        tiles.forEach(function (tile) { grid.appendChild(tile); });
       }
 
-      sortRows();
+      function setSort(key, btn) {
+        sortKey = key;
+        sortTiles();
+        document.querySelectorAll(".collection-toolbar [data-sort]").forEach(function (b) {
+          b.classList.remove("active");
+        });
+        btn.classList.add("active");
+      }
+
+      sortTiles();
       search.addEventListener("input", apply);
-      document.getElementById("sort-name").addEventListener("click", function () {
-        sortKey = "name"; sortRows();
-        this.classList.add("active");
-        document.getElementById("sort-qty").classList.remove("active");
-      });
-      document.getElementById("sort-qty").addEventListener("click", function () {
-        sortKey = "qty"; sortRows();
-        this.classList.add("active");
-        document.getElementById("sort-name").classList.remove("active");
+      typeFilter.addEventListener("change", apply);
+      document.getElementById("sort-name").addEventListener("click", function () { setSort("name", this); });
+      document.getElementById("sort-qty").addEventListener("click", function () { setSort("qty", this); });
+      document.getElementById("sort-value").addEventListener("click", function () { setSort("value", this); });
+
+      document.querySelectorAll(".pip-filter").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var c = btn.getAttribute("data-color");
+          var i = activeColors.indexOf(c);
+          if (i === -1) { activeColors.push(c); btn.classList.add("active"); }
+          else { activeColors.splice(i, 1); btn.classList.remove("active"); }
+          apply();
+        });
       });
     })();
   </script>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_cardview.html" as cardview %}
 {% block title %}Deck {{ commander }} · MTG Assistant{% endblock %}
 {% block content %}
 
@@ -13,7 +14,7 @@
 
 <section class="deck-header card">
   <div class="commander-head">
-    {% if deck.commander.image %}<img class="card-img" src="{{ deck.commander.image }}" alt="{{ deck.commander.name }}">{% endif %}
+    {{ cardview.image_or_text(deck.commander.name, deck.commander.image, extra_class="cv-commander") }}
     <div class="commander-meta">
       <h1>{{ deck.commander.name }}</h1>
       <p class="pips">
@@ -99,7 +100,7 @@
       <div class="buy-grid">
         {% for c in deck.buy_list %}
         <div class="buy-item">
-          {% if c.image %}<img src="{{ c.image }}" alt="{{ c.name }}" loading="lazy">{% endif %}
+          {{ cardview.image_or_text(c.name, c.image, extra_class="cv-buyitem") }}
           <span class="buy-name">{{ c.name }}</span>
           <span class="buy-price">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur) }} €{% else %}—{% endif %}</span>
         </div>

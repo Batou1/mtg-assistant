@@ -9,11 +9,14 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="/static/style.css?v={{ static_v }}">
   <script>
-    // Applied before paint to avoid a flash of the wrong theme.
+    // Applied before paint to avoid a flash of the wrong theme/card-view.
     (function () {
       var saved = localStorage.getItem("mtg-theme");
       var theme = saved || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
       document.documentElement.setAttribute("data-theme", theme);
+
+      var view = localStorage.getItem("mtg-card-view") === "text" ? "text" : "image";
+      document.documentElement.setAttribute("data-card-view", view);
     })();
   </script>
 </head>
@@ -29,6 +32,11 @@
     </nav>
 
     <div class="topbar-right">
+      <button type="button" class="theme-toggle card-view-toggle" onclick="mtgToggleCardView()" aria-label="Basculer images / texte">
+        <span class="icon-cv-image">🖼</span><span class="icon-cv-text">📄</span>
+        <span class="tt-label" data-cv-label>Images</span>
+      </button>
+
       <button type="button" class="theme-toggle" onclick="mtgToggleTheme()" aria-label="Changer de thème">
         <span class="icon-moon">☾</span><span class="icon-sun">☀</span>
         <span class="tt-label" data-tt-label>Sombre</span>
@@ -100,6 +108,22 @@
       mtgSyncThemeLabel();
     }
     mtgSyncThemeLabel();
+
+    // Card view toggle: images vs text, applies globally (collection grid,
+    // commander portraits, buylist thumbnails) via [data-card-view] on <html>.
+    function mtgSyncCardViewLabel() {
+      var view = document.documentElement.getAttribute("data-card-view");
+      document.querySelectorAll("[data-cv-label]").forEach(function (el) {
+        el.textContent = view === "text" ? "Texte" : "Images";
+      });
+    }
+    function mtgToggleCardView() {
+      var next = document.documentElement.getAttribute("data-card-view") === "text" ? "image" : "text";
+      document.documentElement.setAttribute("data-card-view", next);
+      localStorage.setItem("mtg-card-view", next);
+      mtgSyncCardViewLabel();
+    }
+    mtgSyncCardViewLabel();
 
     // Drop-zone file inputs: show the picked filename inside the label.
     document.querySelectorAll(".dropzone").forEach(function (dz) {

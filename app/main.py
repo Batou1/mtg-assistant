@@ -12,7 +12,8 @@ from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
 from . import (
-    analysis, bulk_data, chat, db, deckgen, formats60, intent, llm, manabox, poolbuild, textutil,
+    analysis, bulk_data, chat, collection as collection_mod, db, deckgen, formats60, intent, llm,
+    manabox, poolbuild, scryfall, textutil,
 )
 from .config import settings
 
@@ -44,6 +45,14 @@ def _static_version() -> str:
 templates.env.globals["static_v"] = _static_version()
 templates.env.globals["app_version"] = APP_VERSION
 templates.env.filters["paragraphs"] = textutil.paragraphs
+
+# Looks up a card by name in the local Scryfall cache (no network call) so
+# templates can render a text-only view (name/cost/type/oracle text) as an
+# alternative to the card image, toggled globally via the navbar switch.
+templates.env.globals["card_lookup"] = lambda name: db.get_card((name or "").strip().lower())
+templates.env.filters["mana_cost"] = lambda card: scryfall.mana_cost(card) if card else ""
+templates.env.filters["oracle_text"] = lambda card: scryfall.oracle_text(card) if card else ""
+templates.env.filters["power_toughness"] = lambda card: scryfall.power_toughness(card) if card else ""
 
 db.init_db()
 # Keeps the local card cache filled from Scryfall's bulk-data exports, checked
@@ -86,11 +95,14 @@ def _render(request: Request, profile: dict, name: str, ctx: dict) -> HTMLRespon
 
 def _home_context(request: Request, profile: dict, **extra) -> dict:
     distinct, total = db.collection_count(profile["id"])
+    rows = collection_mod.enrich(profile["id"]) if total else []
     return _base_context(
         request,
         profile,
         distinct=distinct,
         total=total,
+        total_value=collection_mod.total_value_eur(rows) if total else 0,
+        color_breakdown=collection_mod.color_breakdown(rows) if total else None,
         source=profile.get("collection_source"),
         llm_ok=llm.is_available(),
         llm_model=settings.anthropic_model,
@@ -164,13 +176,14 @@ async def import_collection(request: Request, file: UploadFile = File(...)):
 @app.get("/collection", response_class=HTMLResponse)
 def collection(request: Request):
     profile = current_profile(request)
-    cards = db.collection_names(profile["id"])
+    cards = collection_mod.enrich(profile["id"])
     ctx = _base_context(
         request,
         profile,
         cards=cards,
         distinct=len(cards),
-        total=sum(q for _, _, q in cards),
+        total=sum(c["qty"] for c in cards),
+        total_value=collection_mod.total_value_eur(cards),
     )
     return _render(request, profile, "collection.html", ctx)
 
