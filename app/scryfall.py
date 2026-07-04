@@ -169,6 +169,55 @@ def price_eur(card: dict) -> float | None:
     return None
 
 
+def mana_cost(card: dict) -> str:
+    """Mana cost string, e.g. '{2}{R}'. For double-faced cards, both faces'
+    costs joined with ' // ' (a face with no cost, e.g. a back land face, is
+    skipped).
+    """
+    cost = card.get("mana_cost")
+    if cost:
+        return cost
+    faces = card.get("card_faces") or []
+    costs = [f["mana_cost"] for f in faces if f.get("mana_cost")]
+    return " // ".join(costs)
+
+
+def power_toughness(card: dict) -> str:
+    """'P/T' for creatures, e.g. '8/8'. For double-faced cards where more than
+    one face is a creature, both joined with ' // '. Empty for non-creatures.
+    """
+    if "power" in card and "toughness" in card:
+        return f"{card['power']}/{card['toughness']}"
+    faces = card.get("card_faces") or []
+    pts = [
+        f"{f['power']}/{f['toughness']}" for f in faces
+        if "power" in f and "toughness" in f
+    ]
+    return " // ".join(pts)
+
+
+def oracle_text(card: dict) -> str:
+    """Rules text. For double-faced/split cards, each face's name, type and
+    text are stacked so both halves are readable.
+    """
+    text = card.get("oracle_text")
+    if text:
+        return text
+    faces = card.get("card_faces") or []
+    if not faces:
+        return ""
+    parts = []
+    for face in faces:
+        header = " ".join(
+            p for p in (face.get("name"), face.get("mana_cost")) if p
+        )
+        body = "\n".join(
+            p for p in (header, face.get("type_line"), face.get("oracle_text")) if p
+        )
+        parts.append(body)
+    return "\n\n".join(parts)
+
+
 def legal_in(card: dict, fmt: str) -> bool:
     """True if the card is legal (or restricted) in ``fmt``."""
     status = (card.get("legalities") or {}).get(fmt.lower())

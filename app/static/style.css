@@ -135,6 +135,11 @@ a:hover { text-decoration: underline; }
 [data-theme="light"] .theme-toggle .icon-moon { display: none; }
 [data-theme="light"] .theme-toggle .icon-sun { display: inline; }
 
+/* Card view toggle (images / text) — same pill style as the theme toggle */
+.card-view-toggle .icon-cv-text { display: none; }
+[data-card-view="text"] .card-view-toggle .icon-cv-image { display: none; }
+[data-card-view="text"] .card-view-toggle .icon-cv-text { display: inline; }
+
 /* Mobile: brand + profile on the first row, nav as a scrollable pill row below. */
 @media (max-width: 760px) {
   .topbar { padding: 10px 14px 8px; height: auto; }
@@ -518,6 +523,102 @@ details.buylist > .buy-grid { padding: 14px; margin-top: 0; }
   border-radius: 999px; background: var(--bg3); font-family: var(--font-mono); font-size: .82rem;
 }
 
+/* Color-pip filter buttons (search toolbar) */
+.pip-filters { display: flex; gap: 6px; }
+.pip-filter {
+  background: transparent; border: none; box-shadow: none; padding: 2px; border-radius: 50%;
+  line-height: 0; cursor: pointer;
+}
+.pip-filter:hover { transform: none; filter: none; box-shadow: none; }
+.pip-filter .pip-swatch { width: 26px; height: 26px; border-width: 2px; }
+.pip-filter.active .pip-swatch { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 30%, transparent); }
+
+#type-filter { width: auto; height: 42px; padding-top: 0; padding-bottom: 0; }
+
+/* ==========================================================================
+   Card image ⇄ text view — shared by every screen (collection grid,
+   commander portraits, buylist thumbnails). Driven globally by
+   [data-card-view] on <html>, set from the navbar toggle in base.html.
+   ========================================================================== */
+.cv-text-card { display: none; }
+[data-card-view="text"] .cv-img-wrap { display: none !important; }
+[data-card-view="text"] .cv-text-card { display: flex; }
+
+.cv-text-card {
+  flex-direction: column; gap: 6px; min-width: 0;
+  background: var(--bg2); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+.cv-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.cv-name { font-family: var(--font-display); font-weight: 700; font-size: .92rem; }
+.cv-qty { font-size: .75rem; color: var(--muted); flex-shrink: 0; }
+.cv-cost { font-size: .78rem; color: var(--accent); }
+.cv-type { font-size: .74rem; color: var(--muted); padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.cv-oracle { font-size: .8125rem; line-height: 1.5; white-space: pre-line; }
+.cv-pt { align-self: flex-end; font-size: .8125rem; font-weight: 700; color: var(--text); }
+.cv-price { margin-top: auto; padding-top: 6px; font-family: var(--font-mono); font-size: .8rem; color: var(--accent); text-align: right; }
+
+/* Card-image grid (collection page) */
+.collection-grid {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-top: 18px;
+}
+@media (max-width: 980px) { .collection-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 640px) { .collection-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; } }
+@media (max-width: 420px) { .collection-grid { grid-template-columns: repeat(2, 1fr); } }
+[data-card-view="text"] .collection-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+
+.col-tile { min-width: 0; }
+.collection-grid .cv-img-wrap {
+  position: relative; aspect-ratio: 0.717; border-radius: 10px; overflow: hidden;
+  background: var(--bg3); border: 1px solid var(--line);
+}
+.collection-grid .cv-img-wrap img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  transition: transform .18s ease;
+}
+.col-tile:hover .cv-img-wrap img { transform: scale(1.04); }
+.cv-img-placeholder {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  text-align: center; padding: 10px; font-size: .72rem; color: var(--muted);
+}
+.collection-grid .cv-qty-badge {
+  position: absolute; top: 6px; right: 6px; padding: 2px 7px; border-radius: 999px;
+  background: rgba(0, 0, 0, .72); color: #fff; font-family: var(--font-mono); font-size: .68rem;
+}
+.collection-grid .cv-text-card { height: 100%; }
+
+/* Commander portrait (chat/results/deck/archetype) */
+.cv-img-wrap.cv-commander {
+  width: 176px; flex-shrink: 0; border-radius: 12px; overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--accent) 30%, transparent);
+  box-shadow: 0 6px 24px -6px rgba(0,0,0,.55);
+}
+.cv-img-wrap.cv-commander img { width: 100%; display: block; transition: transform .2s ease; }
+.cv-img-wrap.cv-commander:hover img { transform: scale(1.03) rotate(.5deg); }
+/* Flexible (not fixed-width): the commander card sits in layouts of very
+   different widths (full page vs. the narrower chat thread column), so it
+   shrinks down to a readable minimum and wraps onto its own row rather than
+   squeezing the meta column to nothing. */
+.commander-head { flex-wrap: wrap; }
+.cv-text-card.cv-commander { flex: 1 1 220px; max-width: 320px; }
+.commander-meta { flex: 1 1 220px; }
+@media (max-width: 600px) {
+  .cv-img-wrap.cv-commander { align-self: center; width: 165px; }
+  .cv-img-wrap.cv-commander:hover img { transform: none; }
+  .cv-text-card.cv-commander { max-width: 100%; }
+}
+
+/* Buylist / owned-cards thumbnails (buy-grid items) */
+.buy-item .cv-img-wrap.cv-buyitem img {
+  width: 100%; border-radius: 8px; box-shadow: 0 4px 14px -4px rgba(0,0,0,.55);
+  transition: transform .18s ease;
+}
+.buy-item:hover .cv-img-wrap.cv-buyitem img { transform: translateY(-3px) scale(1.04); }
+.cv-text-card.cv-buyitem { width: 100%; padding: 10px 12px; }
+[data-card-view="text"] .buy-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+/* The text card already has the name as its header — don't repeat it below. */
+[data-card-view="text"] .buy-item > .buy-name { display: none; }
+
 /* --- Iterative chat (Phase 3) ---------------------------------------------- */
 
 /* Full-height app shell: flush 290px sidebar + thread, input docked at the
@@ -805,6 +906,16 @@ details.buylist > .buy-grid { padding: 14px; margin-top: 0; }
 .collection-stats { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 14px; }
 .collection-stats .stat-num { font-family: var(--font-mono); font-size: 1.3rem; font-weight: 700; }
 .collection-stats .stat-label { font-size: .78rem; color: var(--muted); }
+
+/* Segmented WUBRG color-distribution bar (home collection card) */
+.wubrg-bar {
+  display: flex; height: 8px; border-radius: 999px; overflow: hidden;
+  background: var(--ring-track); margin: 0 0 14px;
+}
+.wubrg-seg { display: block; height: 100%; }
+.wubrg-seg.W { background: var(--mw); } .wubrg-seg.U { background: var(--mu); }
+.wubrg-seg.B { background: var(--mb); } .wubrg-seg.R { background: var(--mr); }
+.wubrg-seg.G { background: var(--mg); } .wubrg-seg.C { background: var(--muted); }
 
 /* ==========================================================================
    Mobile

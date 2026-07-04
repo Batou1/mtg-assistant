@@ -1,5 +1,6 @@
 {# Reusable renderers for chat artifacts (Commander suggestions, 60-card
    archetype, full decklist). Each macro takes the artifact's data dict. #}
+{% import "_cardview.html" as cardview %}
 
 {# Compact one-line summary of an artifact, reused by the sidebar deck index
    and by the collapsed header of superseded artifacts. #}
@@ -39,7 +40,7 @@
   <section class="commander card art-card"
            {% if r.color_identity %}style="border-left-color: var(--m{{ r.color_identity[0]|lower }})"{% endif %}>
     <div class="commander-head">
-      {% if r.image %}<img class="card-img" src="{{ r.image }}" alt="{{ r.name }}" loading="lazy">{% endif %}
+      {{ cardview.image_or_text(r.name, r.image, extra_class="cv-commander") }}
       <div class="commander-meta">
         <div class="commander-title">
           <div>
@@ -88,7 +89,7 @@
       <div class="buylist-full">
         {% for item in r.buylist.to_buy %}
         <div class="buy-item">
-          {% if item.image %}<img src="{{ item.image }}" alt="{{ item.name }}" loading="lazy">{% endif %}
+          {{ cardview.image_or_text(item.name, item.image, extra_class="cv-buyitem") }}
           <span class="buy-name">{{ item.name }}</span>
           <span class="buy-price">{{ "%.2f"|format(item.price_eur) }} €</span>
         </div>
@@ -129,7 +130,7 @@
       <div class="buy-grid">
         {% for c in data.owned_cards %}
         <div class="buy-item">
-          {% if c.image %}<img src="{{ c.image }}" alt="{{ c.name }}" loading="lazy">{% endif %}
+          {{ cardview.image_or_text(c.name, c.image, extra_class="cv-buyitem") }}
           <span class="buy-name">{{ c.name }}</span>
           <span class="tag owned-tag">possédée</span>
         </div>
@@ -150,7 +151,7 @@
       <div class="buy-grid">
         {% for item in data.buylist.to_buy %}
         <div class="buy-item">
-          {% if item.image %}<img src="{{ item.image }}" alt="{{ item.name }}" loading="lazy">{% endif %}
+          {{ cardview.image_or_text(item.name, item.image, extra_class="cv-buyitem") }}
           <span class="buy-name">{{ item.name }}</span>
           <span class="buy-price">{{ "%.2f"|format(item.price_eur) }} €</span>
         </div>
@@ -169,7 +170,7 @@
   {% set deck = art.deck %}
   <section class="card art-card">
     <div class="commander-head">
-      {% if deck.commander.image %}<img class="card-img" src="{{ deck.commander.image }}" alt="{{ deck.commander.name }}" loading="lazy">{% endif %}
+      {{ cardview.image_or_text(deck.commander.name, deck.commander.image, extra_class="cv-commander") }}
       <div class="commander-meta">
         <h3>{{ deck.commander.name }}</h3>
         <ul class="chips">
@@ -242,7 +243,7 @@
     </h3>
     {% if data.commander %}
     <div class="commander-head">
-      {% if data.commander.image %}<img class="card-img" src="{{ data.commander.image }}" alt="{{ data.commander.name }}" loading="lazy">{% endif %}
+      {{ cardview.image_or_text(data.commander.name, data.commander.image, extra_class="cv-commander") }}
       <div class="commander-meta"><h4>Commandant : {{ data.commander.name }}</h4></div>
     </div>
     {% endif %}
@@ -272,7 +273,7 @@
       <div class="buy-grid">
         {% for item in data.bonus.owned %}
         <div class="buy-item">
-          {% if item.image %}<img src="{{ item.image }}" alt="{{ item.name }}" loading="lazy">{% endif %}
+          {{ cardview.image_or_text(item.name, item.image, extra_class="cv-buyitem") }}
           <span class="buy-name">{{ item.name }}</span>
           <span class="tag owned-tag">possédée</span>
         </div>
@@ -284,7 +285,7 @@
       <div class="buy-grid">
         {% for item in data.bonus.buy %}
         <div class="buy-item">
-          {% if item.image %}<img src="{{ item.image }}" alt="{{ item.name }}" loading="lazy">{% endif %}
+          {{ cardview.image_or_text(item.name, item.image, extra_class="cv-buyitem") }}
           <span class="buy-name">{{ item.name }}</span>
           <span class="buy-price">{{ "%.2f"|format(item.price_eur) }} €</span>
         </div>
