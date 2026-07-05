@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% import "_cardview.html" as cardview %}
 {% block title %}Ma collection · MTG Assistant{% endblock %}
 {% block content %}
 
@@ -37,65 +36,118 @@
     <button type="button" class="chip" data-sort="name" id="sort-name">Tri · Nom</button>
   </div>
 
-  <div class="collection-grid" id="collection-grid">
-    {% for c in cards %}
-    <div class="col-tile"
-         data-name="{{ c.name|lower }}"
-         data-qty="{{ c.qty }}"
-         data-value="{{ c.line_total or 0 }}"
-         data-type="{{ c.type_line|lower }}"
-         data-colors="{{ c.colors|join(',') }}">
-      {{ cardview.image_or_text(c.name, c.image, price_eur=c.price_eur, qty=c.qty) }}
-    </div>
-    {% endfor %}
-  </div>
+  {# Tiles are rendered client-side in chunks as you scroll: a 10k+ card
+     collection server-rendered both image and text blocks per card, which
+     meant a multi-MB HTML page and a huge initial DOM. The tile markup
+     mirrors the image_or_text macro in _cardview.html — keep them in sync. #}
+  <div class="collection-grid" id="collection-grid"></div>
+  <div id="collection-sentinel" aria-hidden="true"></div>
   <p class="muted small" id="collection-empty" style="display: none;">Aucune carte ne correspond aux filtres.</p>
 
+  <script id="collection-data" type="application/json">{{ cards|tojson }}</script>
   <script>
     (function () {
+      var DATA = JSON.parse(document.getElementById("collection-data").textContent);
+      var CHUNK = 60;
+      // Matches .collection-grid column counts across breakpoints, so the
+      // browser picks the small (146w) thumb on 1x screens and the normal
+      // (488w) image on hiDPI screens — sharp at every zoom level.
+      var SIZES = "(max-width: 420px) 46vw, (max-width: 640px) 31vw, (max-width: 980px) 23vw, 15vw";
+
       var search = document.getElementById("collection-search");
       var typeFilter = document.getElementById("type-filter");
       var grid = document.getElementById("collection-grid");
+      var sentinel = document.getElementById("collection-sentinel");
       var empty = document.getElementById("collection-empty");
-      var tiles = Array.prototype.slice.call(grid.querySelectorAll(".col-tile"));
       var activeColors = [];
       var sortKey = "qty";
+      var filtered = [];
+      var rendered = 0;
+
+      function el(tag, className, text) {
+        var node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text) node.textContent = text;
+        return node;
+      }
+
+      function makeTile(c) {
+        var tile = el("div", "col-tile");
+        var wrap = el("div", "cv-img-wrap");
+        if (c.image) {
+          var img = document.createElement("img");
+          img.alt = c.name;
+          img.loading = "lazy";
+          img.decoding = "async";
+          img.src = c.image;
+          if (c.image_small && c.image_small !== c.image) {
+            img.srcset = c.image_small + " 146w, " + c.image + " 488w";
+            img.sizes = SIZES;
+          }
+          wrap.appendChild(img);
+        } else {
+          wrap.appendChild(el("div", "cv-img-placeholder", c.name));
+        }
+        if (c.qty) wrap.appendChild(el("span", "cv-qty-badge", "×" + c.qty));
+        tile.appendChild(wrap);
+
+        var text = el("div", "cv-text-card");
+        var head = el("div", "cv-head");
+        head.appendChild(el("span", "cv-name", c.name));
+        if (c.qty) head.appendChild(el("span", "cv-qty mono", "×" + c.qty));
+        text.appendChild(head);
+        if (c.mana_cost) text.appendChild(el("div", "cv-cost mono", c.mana_cost));
+        if (c.type_line) text.appendChild(el("div", "cv-type", c.type_line));
+        if (c.oracle_text) text.appendChild(el("div", "cv-oracle", c.oracle_text));
+        if (c.power_toughness) text.appendChild(el("div", "cv-pt mono", c.power_toughness));
+        if (c.price_eur !== null && c.price_eur !== undefined) {
+          text.appendChild(el("div", "cv-price mono", c.price_eur.toFixed(2) + " €"));
+        }
+        tile.appendChild(text);
+        return tile;
+      }
+
+      function renderMore() {
+        var end = Math.min(rendered + CHUNK, filtered.length);
+        if (end <= rendered) return;
+        var frag = document.createDocumentFragment();
+        for (var i = rendered; i < end; i++) frag.appendChild(makeTile(filtered[i]));
+        rendered = end;
+        grid.appendChild(frag);
+      }
 
       function apply() {
         var q = (search.value || "").trim().toLowerCase();
         var type = typeFilter.value.toLowerCase();
-        var visible = 0;
-        tiles.forEach(function (tile) {
-          var matchName = !q || tile.getAttribute("data-name").indexOf(q) !== -1;
-          var matchType = !type || tile.getAttribute("data-type").indexOf(type) !== -1;
-          var colors = tile.getAttribute("data-colors").split(",").filter(Boolean);
-          var matchColor = !activeColors.length || activeColors.every(function (c) { return colors.indexOf(c) !== -1; });
-          var match = matchName && matchType && matchColor;
-          tile.style.display = match ? "" : "none";
-          if (match) visible++;
+        filtered = DATA.filter(function (c) {
+          if (q && c.name.toLowerCase().indexOf(q) === -1) return false;
+          if (type && c.type_line.toLowerCase().indexOf(type) === -1) return false;
+          return activeColors.every(function (col) { return c.colors.indexOf(col) !== -1; });
         });
-        empty.style.display = visible ? "none" : "";
+        filtered.sort(function (a, b) {
+          if (sortKey === "qty") return b.qty - a.qty;
+          if (sortKey === "value") return (b.line_total || 0) - (a.line_total || 0);
+          return a.name.localeCompare(b.name);
+        });
+        grid.textContent = "";
+        rendered = 0;
+        renderMore();
+        empty.style.display = filtered.length ? "none" : "";
       }
 
-      function sortTiles() {
-        tiles.sort(function (a, b) {
-          if (sortKey === "qty") return Number(b.getAttribute("data-qty")) - Number(a.getAttribute("data-qty"));
-          if (sortKey === "value") return Number(b.getAttribute("data-value")) - Number(a.getAttribute("data-value"));
-          return a.getAttribute("data-name").localeCompare(b.getAttribute("data-name"));
-        });
-        tiles.forEach(function (tile) { grid.appendChild(tile); });
-      }
+      new IntersectionObserver(function (entries) {
+        if (entries.some(function (e) { return e.isIntersecting; })) renderMore();
+      }, { rootMargin: "800px 0px" }).observe(sentinel);
 
       function setSort(key, btn) {
         sortKey = key;
-        sortTiles();
         document.querySelectorAll(".collection-toolbar [data-sort]").forEach(function (b) {
           b.classList.remove("active");
         });
         btn.classList.add("active");
+        apply();
       }
 
-      sortTiles();
       search.addEventListener("input", apply);
       typeFilter.addEventListener("change", apply);
       document.getElementById("sort-name").addEventListener("click", function () { setSort("name", this); });
@@ -111,6 +163,8 @@
           apply();
         });
       });
+
+      apply();
     })();
   </script>
 {% else %}

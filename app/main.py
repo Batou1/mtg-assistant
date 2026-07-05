@@ -13,7 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from . import (
     analysis, bulk_data, chat, collection as collection_mod, db, deckgen, formats60, intent, llm,
-    manabox, poolbuild, scryfall, textutil,
+    manabox, poolbuild, textutil,
 )
 from .config import settings
 
@@ -46,13 +46,11 @@ templates.env.globals["static_v"] = _static_version()
 templates.env.globals["app_version"] = APP_VERSION
 templates.env.filters["paragraphs"] = textutil.paragraphs
 
-# Looks up a card by name in the local Scryfall cache (no network call) so
-# templates can render a text-only view (name/cost/type/oracle text) as an
+# Looks up a card's text-view fields (cost/type/oracle text/P-T) by name in
+# the local Scryfall cache (no network call), memoized in memory — see
+# collection.card_text_info. Used by _cardview.html to render the text
 # alternative to the card image, toggled globally via the navbar switch.
-templates.env.globals["card_lookup"] = lambda name: db.get_card((name or "").strip().lower())
-templates.env.filters["mana_cost"] = lambda card: scryfall.mana_cost(card) if card else ""
-templates.env.filters["oracle_text"] = lambda card: scryfall.oracle_text(card) if card else ""
-templates.env.filters["power_toughness"] = lambda card: scryfall.power_toughness(card) if card else ""
+templates.env.globals["card_info"] = collection_mod.card_text_info
 
 db.init_db()
 # Keeps the local card cache filled from Scryfall's bulk-data exports, checked
@@ -94,15 +92,14 @@ def _render(request: Request, profile: dict, name: str, ctx: dict) -> HTMLRespon
 
 
 def _home_context(request: Request, profile: dict, **extra) -> dict:
-    distinct, total = db.collection_count(profile["id"])
-    rows = collection_mod.enrich(profile["id"]) if total else []
+    stats = collection_mod.stats(profile["id"])
     return _base_context(
         request,
         profile,
-        distinct=distinct,
-        total=total,
-        total_value=collection_mod.total_value_eur(rows) if total else 0,
-        color_breakdown=collection_mod.color_breakdown(rows) if total else None,
+        distinct=stats["distinct"],
+        total=stats["total"],
+        total_value=stats["total_value"],
+        color_breakdown=stats["color_breakdown"] if stats["total"] else None,
         source=profile.get("collection_source"),
         llm_ok=llm.is_available(),
         llm_model=settings.anthropic_model,

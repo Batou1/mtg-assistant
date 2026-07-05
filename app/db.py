@@ -151,6 +151,33 @@ def get_card(name_key: str, ttl_days: float | None = None):
     return None
 
 
+def get_cards(name_keys, ttl_days: float | None = None) -> dict[str, dict]:
+    """Fetch many cached cards in one connection: {name_key: card_dict}.
+
+    Stale or missing keys are simply absent from the result. Chunked to stay
+    under SQLite's bound-parameter limit. One page render used to call
+    ``get_card`` once per card — thousands of connections; this replaces them
+    with a handful of IN queries.
+    """
+    ttl = settings.cache_ttl_days if ttl_days is None else ttl_days
+    keys = list(name_keys)
+    out: dict[str, dict] = {}
+    if not keys:
+        return out
+    with get_conn() as conn:
+        for i in range(0, len(keys), 900):
+            chunk = keys[i : i + 900]
+            placeholders = ",".join("?" * len(chunk))
+            rows = conn.execute(
+                f"SELECT name_key, data, fetched_at FROM cards WHERE name_key IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            for r in rows:
+                if _fresh(r["fetched_at"], ttl):
+                    out[r["name_key"]] = json.loads(r["data"])
+    return out
+
+
 def set_card(name_key: str, data: dict) -> None:
     with get_conn() as conn:
         conn.execute(
@@ -284,6 +311,7 @@ def delete_profile(profile_id: int) -> None:
         for cid in ids:
             conn.execute("DELETE FROM messages WHERE conversation_id=?", (cid,))
         conn.execute("DELETE FROM conversations WHERE profile_id=?", (pid,))
+        conn.execute("DELETE FROM meta WHERE key=?", (f"collection_stats:{pid}",))
         conn.execute("DELETE FROM profiles WHERE id=?", (pid,))
         _ensure_default_profile(conn)
 
@@ -322,6 +350,8 @@ def replace_collection(profile_id: int, rows, source: str | None = None) -> None
             }
     with get_conn() as conn:
         conn.execute("DELETE FROM collection WHERE profile_id=?", (pid,))
+        # The home page caches per-profile stats (value, colors) in meta.
+        conn.execute("DELETE FROM meta WHERE key=?", (f"collection_stats:{pid}",))
         for r in merged.values():
             conn.execute(
                 """INSERT OR REPLACE INTO collection
@@ -386,6 +416,13 @@ def get_meta(key: str):
 def set_meta(key: str, value: str) -> None:
     with get_conn() as conn:
         conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))
+
+
+def delete_meta_prefix(prefix: str) -> None:
+    """Drop every meta row whose key starts with ``prefix`` (cache invalidation)."""
+    with get_conn() as conn:
+        escaped = prefix.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+        conn.execute("DELETE FROM meta WHERE key LIKE ? ESCAPE '\\'", (escaped + "%",))
 
 
 # --- Chat: conversations + messages (per profile) ------------------------

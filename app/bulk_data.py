@@ -33,7 +33,7 @@ from datetime import datetime
 
 import httpx
 
-from . import db, scryfall
+from . import collection, db, scryfall
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -221,6 +221,11 @@ def refresh(force: bool = False, types=BULK_TYPES) -> dict:
             db.set_meta(f"bulk_{bulk_type}_synced_at", str(time.time()))
             imported[bulk_type] = count
             logger.info("bulk_data: imported %d %s rows", count, bulk_type)
+    if imported:
+        # Card data changed: drop the in-memory text-view cache and the
+        # per-profile collection stats (prices feed the cached total value).
+        collection.clear_text_cache()
+        db.delete_meta_prefix(collection.STATS_META_PREFIX)
     return imported
 
 

@@ -145,14 +145,28 @@ def resolve_ids(ids, client: httpx.Client | None = None):
 
 # --- Convenience accessors on a Scryfall card dict -----------------------
 
-def image(card: dict) -> str | None:
+def _image_uris(card: dict) -> dict | None:
     uris = card.get("image_uris")
     if uris:
-        return uris.get("normal") or uris.get("large") or uris.get("small")
+        return uris
     faces = card.get("card_faces") or []
     if faces and faces[0].get("image_uris"):
-        face = faces[0]["image_uris"]
-        return face.get("normal") or face.get("large")
+        return faces[0]["image_uris"]
+    return None
+
+
+def image(card: dict) -> str | None:
+    uris = _image_uris(card)
+    if uris:
+        return uris.get("normal") or uris.get("large") or uris.get("small")
+    return None
+
+
+def image_small(card: dict) -> str | None:
+    """Thumbnail-sized (~146px) image, for dense grids; falls back to normal."""
+    uris = _image_uris(card)
+    if uris:
+        return uris.get("small") or uris.get("normal")
     return None
 
 

@@ -2,13 +2,17 @@
    Renders both an image block and a text block; the global navbar toggle
    (data-card-view="image"|"text" on <html>) shows one and hides the other
    via CSS — no per-page JS needed. The text block is looked up from the
-   local Scryfall cache by name, so callers don't need to plumb mana
-   cost / type / oracle text through their own data. #}
+   local Scryfall cache by name via card_info (memoized, small dict — not
+   the full card JSON), so callers don't need to plumb mana cost / type /
+   oracle text through their own data.
+   The collection grid does NOT use this macro: it renders tiles client-side
+   from JSON (collection.html) to keep 10k+ cards off the server-rendered
+   DOM — keep the two markups in sync. #}
 {% macro image_or_text(name, image, price_eur=none, qty=none, extra_class="") %}
-  {% set card = card_lookup(name) %}
+  {% set info = card_info(name) %}
   <div class="cv-img-wrap {{ extra_class }}">
     {% if image %}
-      <img src="{{ image }}" alt="{{ name }}" loading="lazy">
+      <img src="{{ image }}" alt="{{ name }}" loading="lazy" decoding="async">
     {% else %}
       <div class="cv-img-placeholder">{{ name }}</div>
     {% endif %}
@@ -19,14 +23,11 @@
       <span class="cv-name">{{ name }}</span>
       {% if qty %}<span class="cv-qty mono">×{{ qty }}</span>{% endif %}
     </div>
-    {% if card %}
-      {% set cost = card|mana_cost %}
-      {% if cost %}<div class="cv-cost mono">{{ cost }}</div>{% endif %}
-      {% if card.type_line %}<div class="cv-type">{{ card.type_line }}</div>{% endif %}
-      {% set text = card|oracle_text %}
-      {% if text %}<div class="cv-oracle">{{ text }}</div>{% endif %}
-      {% set pt = card|power_toughness %}
-      {% if pt %}<div class="cv-pt mono">{{ pt }}</div>{% endif %}
+    {% if info %}
+      {% if info.mana_cost %}<div class="cv-cost mono">{{ info.mana_cost }}</div>{% endif %}
+      {% if info.type_line %}<div class="cv-type">{{ info.type_line }}</div>{% endif %}
+      {% if info.oracle_text %}<div class="cv-oracle">{{ info.oracle_text }}</div>{% endif %}
+      {% if info.power_toughness %}<div class="cv-pt mono">{{ info.power_toughness }}</div>{% endif %}
     {% endif %}
     {% if price_eur is not none %}<div class="cv-price mono">{{ "%.2f"|format(price_eur) }} €</div>{% endif %}
   </div>
