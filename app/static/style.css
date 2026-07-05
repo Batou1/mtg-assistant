@@ -86,8 +86,10 @@ a:hover { text-decoration: underline; }
 .topbar {
   display: flex; align-items: center; flex-wrap: wrap;
   gap: 8px 20px;
-  padding: 0 22px;
-  height: 62px;
+  padding: 6px 22px;
+  /* min-height (not height): at tablet widths the nav wraps onto a second
+     row — a fixed height made it overflow on top of the page content. */
+  min-height: 62px;
   background: var(--bg2);
   border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: 10;
@@ -175,8 +177,10 @@ a:hover { text-decoration: underline; }
 .profile-switch select:focus { box-shadow: none; }
 .profile-menu summary {
   list-style: none; cursor: pointer; color: var(--muted);
-  border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px;
+  border: 1px solid var(--line); border-radius: 999px; padding: 0;
   width: 36px; height: 36px; display: grid; place-items: center; box-sizing: border-box;
+  /* line-height 1: the inherited 1.55 line box pushed the ⚙ glyph off-center */
+  line-height: 1;
   background: var(--bg3); transition: color .15s, border-color .15s;
 }
 .profile-menu summary::-webkit-details-marker { display: none; }
@@ -567,7 +571,10 @@ details.buylist > .buy-grid { padding: 14px; margin-top: 0; }
 @media (max-width: 420px) { .collection-grid { grid-template-columns: repeat(2, 1fr); } }
 [data-card-view="text"] .collection-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
 
-.col-tile { min-width: 0; }
+/* content-visibility lets the browser skip layout/paint of off-screen tiles
+   once a long scroll has accumulated thousands of them; the intrinsic size
+   approximates a tile so the scrollbar stays stable. */
+.col-tile { min-width: 0; content-visibility: auto; contain-intrinsic-size: auto 240px; }
 .collection-grid .cv-img-wrap {
   position: relative; aspect-ratio: 0.717; border-radius: 10px; overflow: hidden;
   background: var(--bg3); border: 1px solid var(--line);
@@ -623,16 +630,26 @@ details.buylist > .buy-grid { padding: 14px; margin-top: 0; }
 
 /* Full-height app shell: flush 290px sidebar + thread, input docked at the
    bottom — matches mockup 2a. The page's <main> drops the .container, the
-   footer is hidden and the body doesn't scroll: everything fits the viewport. */
-.chat-page { overflow: hidden; }
+   footer is hidden and the body doesn't scroll: everything fits the viewport.
+   The body is a viewport-height flex column (rather than a hardcoded
+   calc(100vh - topbar)) so the shell stays exact when the topbar wraps onto
+   two rows (tablet widths); dvh keeps the input above Safari's toolbar on
+   iPad/iPhone, where 100vh is taller than the visible viewport. */
+.chat-page {
+  overflow: hidden;
+  height: 100vh;
+  height: 100dvh;
+  display: flex; flex-direction: column;
+}
+.chat-page .topbar { flex-shrink: 0; }
 .chat-page .footer { display: none; }
-.chat-shell { padding: 0; max-width: none; margin: 0; }
+.chat-shell { padding: 0; max-width: none; margin: 0; flex: 1; min-height: 0; }
 .chat-layout {
   display: grid; grid-template-columns: 290px minmax(0, 1fr);
-  height: calc(100vh - 63px); min-height: 420px;
+  height: 100%;
 }
 @media (max-width: 720px) {
-  .chat-page { overflow: auto; }
+  .chat-page { overflow: auto; height: auto; display: block; }
   .chat-layout { grid-template-columns: 1fr; height: auto; }
 }
 
