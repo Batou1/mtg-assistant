@@ -13,7 +13,7 @@ class Settings:
 
     # --- Commander analysis ------------------------------------------------
     # Minimum number of EDHREC decks a commander needs to be considered.
-    min_decks: int = int(os.environ.get("MTG_MIN_DECKS", "300"))
+    min_decks: int = int(os.environ.get("MTG_MIN_DECKS", "1"))
 
     # --- Commander discovery (propose commanders you don't own) ------------
     # Also surface commanders absent from the collection but linked to cards you

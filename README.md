@@ -180,7 +180,7 @@ fresh from the API.
 | Variable             | Default                     | Meaning                              |
 | -------------------- | --------------------------- | ------------------------------------ |
 | `MTG_DB_PATH`        | `data/app.db`               | SQLite database location             |
-| `MTG_MIN_DECKS`      | `300`                       | Min EDHREC decks for a commander     |
+| `MTG_MIN_DECKS`      | `1`                         | Min EDHREC decks for a commander     |
 | `MTG_DISCOVERY`      | `1`                         | Propose commanders you don't own (`0` to disable) |
 | `MTG_DISCOVERY_CARD_LIMIT` | `40`                  | Owned cards probed for discovery     |
 | `MTG_DISCOVERY_POOL` | `20`                        | Candidate commanders resolved + filtered |
