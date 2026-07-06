@@ -26,17 +26,30 @@
   <div class="notice warn">Ta collection est vide. Importe d'abord un export ManaBox depuis l'accueil.</div>
 {% elif not data.results %}
   <div class="notice warn">
+    {% if data.finder %}
+    Aucun commandant trouvé pour ce thème
+    ({{ data.candidate_count }} candidat(s) examiné(s)).
+    Essaie des mots-clés EDHREC en anglais (aristocrats, tokens, zombies…)
+    {% if intent.colors %} ou élargis les couleurs{% endif %}.
+    {% else %}
     Aucun commandant correspondant trouvé dans ta collection
     ({{ data.candidate_count }} candidat(s) examiné(s)).
     {% if intent.colors %}Essaie d'élargir les couleurs{% endif %}
     {% if data.below_threshold %} ou de baisser le seuil de popularité (actuellement {{ data.min_decks }} decks).{% endif %}
+    {% endif %}
   </div>
 {% else %}
 
   {% for n in data.notices %}<div class="notice info">{{ n }}</div>{% endfor %}
 
-  <h2 class="section-title">{{ data.results|length }} commandant(s) suggéré(s)
-    {% if data.proposed_count %}<span class="muted small">(dont {{ data.proposed_count }} proposé(s) hors collection)</span>{% endif %}
+  {% if data.finder %}
+  <div class="notice info">🔭 Recherche par thème sur EDHREC + Scryfall, indépendante de ta
+    collection{% if data.themes %} (thèmes EDHREC : {{ data.themes|join(", ") }}){% endif %}.
+    La complétude et les listes d'achat restent calculées avec tes cartes.</div>
+  {% endif %}
+
+  <h2 class="section-title">{{ data.results|length }} commandant(s) {{ "trouvé(s)" if data.finder else "suggéré(s)" }}
+    {% if data.proposed_count %}<span class="muted small">(dont {{ data.proposed_count }} {{ "non possédé(s)" if data.finder else "proposé(s) hors collection" }})</span>{% endif %}
   </h2>
 
   {% for r in data.results %}

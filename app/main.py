@@ -191,9 +191,22 @@ def collection(request: Request):
 # --- Suggestions ---------------------------------------------------------
 
 @app.post("/suggest", response_class=HTMLResponse)
-async def suggest(request: Request, wish: str = Form("")):
+async def suggest(request: Request, wish: str = Form(""), beyond: str = Form("")):
     profile = current_profile(request)
     parsed = await run_in_threadpool(intent.parse_intent, wish)
+
+    # "Beyond the collection": theme-first commander search (EDHREC theme pages
+    # + local Scryfall pool), independent of the cards the player owns — it
+    # works even with an empty collection. 60-card formats have no commander,
+    # so the option only applies to the Commander variants.
+    beyond_collection = bool(beyond) and parsed.get("format") not in formats60.FORMATS
+    if beyond_collection:
+        data = await run_in_threadpool(analysis.find_commanders, parsed, profile["id"])
+        ctx = _base_context(
+            request, profile, wish=wish, intent=parsed, data=data, empty_collection=False
+        )
+        return _render(request, profile, "results.html", ctx)
+
     distinct, _total = db.collection_count(profile["id"])
     if distinct == 0:
         ctx = _base_context(

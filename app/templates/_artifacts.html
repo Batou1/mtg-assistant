@@ -14,8 +14,8 @@
     <span class="art-title">{{ art.data.archetype.name }}</span>
     <span class="art-meta">{% for c in art.data.archetype.colors %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %} · {{ art.data.owned_count }}/{{ art.data.valid_count }}</span>
   {%- elif art.type == "commanders" -%}
-    <span class="art-ico">👑</span>
-    <span class="art-title">Commandants proposés</span>
+    <span class="art-ico">{{ "🔭" if art.finder else "👑" }}</span>
+    <span class="art-title">{{ "Commandants trouvés (thème)" if art.finder else "Commandants proposés" }}</span>
     <span class="art-meta">{{ art.results|length }} option(s)</span>
   {%- elif art.type == "pool_deck" or art.type == "limited_deck" -%}
     <span class="art-ico">🎴</span>
@@ -25,6 +25,12 @@
 {% endmacro %}
 
 {% macro commanders(art) %}
+  <div class="commanders-art{{ ' commanders-finder' if art.finder }}">
+  {% if art.finder %}
+  <div class="notice info">🔭 Recherche par thème (EDHREC + Scryfall), indépendante de ta
+    collection. Coche les commandants à retenir puis valide : la discussion reprendra
+    avec les cartes de ta collection qui conviennent.</div>
+  {% endif %}
   {% for n in art.notices %}<div class="notice info">{{ n }}</div>{% endfor %}
   {% if art.intent %}
   <div class="intent-chips">
@@ -65,6 +71,9 @@
           <div class="bar"><span style="width: {{ r.pct }}%"></span></div>
         </div>
         <div class="card-actions">
+          {% if art.finder %}
+          <label class="pick-label"><input type="checkbox" class="pick-commander" value="{{ r.name }}"> Retenir</label>
+          {% endif %}
           <form method="post" action="/chat/message" class="generate-form">
             <input type="hidden" name="message" value="Génère la decklist complète pour {{ r.name }}{% if art.intent.budget_eur is not none %} avec un budget de {{ '%.0f'|format(art.intent.budget_eur) }} €{% endif %}{% if art.intent.max_card_price_eur is not none %}, max {{ '%.0f'|format(art.intent.max_card_price_eur) }} € par carte{% endif %}.">
             <button type="submit">Générer la decklist complète</button>
@@ -111,6 +120,17 @@
     {% endif %}
   </section>
   {% endfor %}
+  {% if art.finder and art.results %}
+  <div class="finder-validate card">
+    <span class="muted small">Un ou plusieurs commandants cochés : la construction
+      continue sur cette base, avec les cartes de ta collection.</span>
+    <form method="post" action="/chat/message" onsubmit="return mtgValidatePicks(this)">
+      <input type="hidden" name="message" value="">
+      <button type="submit">✓ Valider la sélection</button>
+    </form>
+  </div>
+  {% endif %}
+  </div>
 {% endmacro %}
 
 

@@ -8,7 +8,7 @@ import time
 
 import httpx
 
-from . import buylist, commanders, db, edhrec, scryfall
+from . import buylist, cardsearch, commanders, db, edhrec, scryfall
 from .config import settings
 
 
@@ -185,6 +185,185 @@ def _discover_unowned(owned_cards: list, owned_keys: set, intent: dict,
         reverse=True,
     )
     return discovered, stats
+
+
+# --- Theme-first commander finder (independent of the collection) ---------
+
+def _theme_slugs(intent: dict) -> list[str]:
+    """EDHREC theme/typal page slugs worth probing for this intent (bounded).
+
+    Keywords are already short English strategy words ("aristocrats",
+    "zombies"…) — EDHREC's own vocabulary. The free-text theme is only tried
+    when it's short enough to plausibly be a theme name, not a whole sentence.
+    """
+    terms = list(intent.get("keywords") or [])
+    theme = (intent.get("theme") or "").strip()
+    if theme and len(theme.split()) <= 2:
+        terms.append(theme)
+    slugs: list[str] = []
+    for term in terms:
+        slug = edhrec.slugify(term)
+        if slug and slug not in slugs:
+            slugs.append(slug)
+    return slugs[: settings.finder_theme_limit]
+
+
+def _scryfall_theme_candidates(intent: dict, fmt: str) -> list[dict]:
+    """Commander-eligible cards from the local Scryfall pool matching the theme.
+
+    Complements the EDHREC theme pages: matches the keywords against the
+    candidates' own oracle text (e.g. "sacrifice") and type line (tribal —
+    "Zombie", "Dragon"), so a wording that isn't an EDHREC theme still yields
+    real candidates, with no extra network calls.
+    """
+    keywords = intent.get("keywords") or []
+    if not keywords:
+        return []
+    terms: list[str] = []
+    for kw in keywords:
+        kw = kw.strip().lower()
+        # Try the singular too: type lines and oracle text use "Zombie", the
+        # intent keyword is usually plural ("zombies").
+        for t in (kw, kw[:-1] if kw.endswith("s") else kw):
+            if t and t not in terms:
+                terms.append(t)
+
+    common = {
+        "colors": intent.get("colors") or None,
+        "legal_in": "commander",
+        "commander_only": True,
+        "limit": settings.finder_pool,
+    }
+    by_text = cardsearch.search(text_contains=terms, **common)
+    by_type = cardsearch.search(type_contains=terms, **common)
+
+    out, seen = [], set()
+    for card in by_text + by_type:
+        key = _norm(card["name"])
+        if key in seen or not commanders.is_eligible_commander(card, fmt):
+            continue
+        seen.add(key)
+        out.append(card)
+    return out
+
+
+def find_commanders(intent: dict, profile_id: int, limit: int | None = None):
+    """Theme-first commander search, independent of the collection.
+
+    Candidates come from EDHREC's theme/typal pages (the commanders most played
+    for the requested theme) and from the local Scryfall pool (commander-eligible
+    cards whose text/type matches the theme) — NOT from the cards the player
+    owns. Each retained commander is still scored against the collection
+    (completion %, budget-constrained buylist), so once the player validates
+    one, the deck can be built around the cards they already have.
+
+    Returns the same shape as :func:`analyze` (plus ``finder``/``themes``), so
+    the results page and the chat artifact render it unchanged.
+    """
+    limit = limit or settings.finder_limit
+    notices = []
+    fmt = intent.get("format") or "commander"
+    if fmt not in commanders.FORMATS:
+        notices.append(
+            f"Le format « {fmt} » n'est pas un format Commander — "
+            "recherche effectuée pour le Commander classique."
+        )
+        fmt = "commander"
+
+    owned_keys = db.owned_name_keys(profile_id)
+    budget = intent.get("budget_eur")
+    include_low_decks = bool(intent.get("include_low_decks"))
+
+    with httpx.Client(timeout=30, headers={"User-Agent": settings.user_agent}) as client:
+        # 1. EDHREC theme/typal pages: commanders most played for the theme,
+        #    already ranked by EDHREC.
+        ranked: list[str] = []
+        seen: set[str] = set()
+        themes_found: list[str] = []
+        for slug in _theme_slugs(intent):
+            data = edhrec.fetch_theme(slug, client=client)
+            if data.get("_error") or data.get("_not_found"):
+                continue
+            themes_found.append(slug)
+            for name in edhrec.extract_top_commanders(data):
+                if _norm(name) not in seen:
+                    seen.add(_norm(name))
+                    ranked.append(name)
+
+        # 2. Local Scryfall pool: legendaries whose own text/type fits the theme.
+        for card in _scryfall_theme_candidates(intent, fmt):
+            if _norm(card["name"]) not in seen:
+                seen.add(_norm(card["name"]))
+                ranked.append(card["name"])
+
+        ranked = ranked[: settings.finder_pool]
+        resolved, _nf = (
+            scryfall.resolve_cards(ranked, client=client) if ranked else ({}, [])
+        )
+
+        results = []
+        for name in ranked:
+            if len(results) >= limit:
+                break
+            card = resolved.get(_norm(name))
+            if not card or not commanders.is_eligible_commander(card, fmt):
+                continue
+            if not _color_ok(card, intent.get("colors") or [], intent.get("max_colors")):
+                continue
+            owned = _norm(card["name"]) in owned_keys
+            price = scryfall.price_eur(card)
+            # An unowned commander can't alone exceed the total budget.
+            if not owned and budget is not None and price is not None and price > budget:
+                continue
+            data = edhrec.fetch_commander(commanders.front_name(card), client=client)
+            if data.get("_error") or data.get("_not_found"):
+                continue
+            if (edhrec.extract_num_decks(data) < settings.min_decks
+                    and not include_low_decks):
+                continue
+            results.append(
+                _build_result(card, data, owned_keys, intent, owned=owned, fmt=fmt,
+                              client=client)
+            )
+
+        # Theme fit first, then raw EDHREC popularity — mirrors analyze().
+        results.sort(key=lambda r: (r["theme_score"], r["num_decks"]), reverse=True)
+
+        # Budget-constrained buylist per commander; an unowned commander's own
+        # price is reserved from the budget and folded into the total cost.
+        for r in results:
+            sub_budget = budget
+            if not r["owned"] and budget is not None and r["price_eur"] is not None:
+                sub_budget = max(0.0, round(budget - r["price_eur"], 2))
+            r["buylist"] = buylist.build(
+                r["missing_cards"], sub_budget,
+                max_card_price=intent.get("max_card_price_eur"), client=client,
+            )
+            commander_cost = 0.0 if r["owned"] or r["price_eur"] is None else r["price_eur"]
+            r["total_cost_eur"] = round(r["buylist"]["total_eur"] + commander_cost, 2)
+
+    if not themes_found and (intent.get("keywords") or intent.get("theme")):
+        notices.append(
+            "Aucune page de thème EDHREC ne correspond à ces mots-clés — "
+            "candidats issus de la base Scryfall locale uniquement."
+        )
+
+    return {
+        "results": results,
+        "intent": intent,
+        "format": fmt,
+        "finder": True,
+        "themes": themes_found,
+        "notices": notices,
+        "candidate_count": len(ranked),
+        "below_threshold": [],
+        "not_on_edhrec": 0,
+        "skipped": [],
+        "min_decks": settings.min_decks,
+        "budget_eur": budget,
+        "discovery": {"queried_cards": 0, "candidate_count": 0},
+        "proposed_count": sum(1 for r in results if not r["owned"]),
+    }
 
 
 def analyze(intent: dict, profile_id: int, limit: int = 12):

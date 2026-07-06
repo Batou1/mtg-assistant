@@ -152,6 +152,28 @@
       all.forEach(function (d) { d.open = anyClosed; });
     }
 
+    // Commander finder: collect the "Retenir" checkboxes ticked in the same
+    // artifact and turn them into a chat message validating those commanders,
+    // so the conversation resumes with the picked commander(s).
+    function mtgValidatePicks(form) {
+      var scope = form.closest(".commanders-finder") || document;
+      var picks = Array.prototype.map.call(
+        scope.querySelectorAll(".pick-commander:checked"),
+        function (cb) { return cb.value; }
+      );
+      if (!picks.length) {
+        alert("Coche au moins un commandant à retenir.");
+        return false;
+      }
+      // " ; " between names: commander names contain commas themselves.
+      form.querySelector("input[name=message]").value =
+        (picks.length === 1
+          ? "Je retiens le commandant « " + picks[0] + " »"
+          : "Je retiens ces commandants : « " + picks.join(" » ; « ") + " »") +
+        ". On continue la construction sur cette base, avec les cartes de ma collection qui conviennent.";
+      return true;
+    }
+
     // Copies the textarea inside the same .export block as `btn`, with
     // feedback on the button itself. Works over http (dev) via the
     // execCommand fallback since navigator.clipboard needs a secure context.
