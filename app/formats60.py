@@ -25,8 +25,7 @@ FORMATS = {"standard", "modern", "pioneer", "pauper", "legacy", "vintage", "prem
 _COLOR_WORDS = {"W": "white", "U": "blue", "B": "black", "R": "red", "G": "green"}
 
 
-def _norm(name: str) -> str:
-    return name.split("//")[0].strip().lower()
+_norm = scryfall.norm_name
 
 
 def _query(fmt: str, intent: dict) -> str:

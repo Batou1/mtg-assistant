@@ -3,6 +3,7 @@ wish in French, and get Commander suggestions with gap analysis and a
 budget-constrained buylist. Profiles are lightweight — no accounts/passwords;
 the active profile is remembered in a cookie.
 """
+import logging
 import os
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -19,7 +20,32 @@ from .config import settings
 
 APP_VERSION = "1.0"
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="MTG Assistant", version=APP_VERSION)
+
+# Uploads (ManaBox CSV, decklists) are read fully into memory: cap their size
+# so a huge/accidental file can't take the single-process app down.
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+
+_ERROR_PAGE = """<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>MTG Assistant — erreur</title>
+<style>body{font-family:system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#333}
+a{color:#7c4a2d}</style></head>
+<body><h1>Oups, une erreur est survenue</h1>
+<p>Le service a rencontré un problème inattendu (souvent une source externe
+— Scryfall ou EDHREC — momentanément indisponible). Réessaie dans un instant.</p>
+<p><a href="/">← Retour à l'accueil</a></p></body></html>"""
+
+
+@app.exception_handler(Exception)
+async def _unhandled_error(request: Request, exc: Exception):
+    """Friendly 500 page instead of a bare "Internal Server Error" (details go
+    to the log). Poll endpoints get JSON so the chat page's poller stops cleanly."""
+    logger.exception("unhandled error on %s %s", request.method, request.url.path)
+    if request.url.path.startswith("/chat/status"):
+        return JSONResponse({"pending": False}, status_code=500)
+    return HTMLResponse(_ERROR_PAGE, status_code=500)
 
 BASE_DIR = os.path.dirname(__file__)
 STATIC_DIR = os.path.join(BASE_DIR, "static")
@@ -77,6 +103,23 @@ def current_profile(request: Request) -> dict:
     return profile
 
 
+def _set_cookie(resp, name: str, value) -> None:
+    """(Re)assert a long-lived app cookie (active profile / conversation)."""
+    resp.set_cookie(name, str(value), max_age=60 * 60 * 24 * 365, samesite="lax")
+
+
+async def _read_upload(file: UploadFile) -> bytes | None:
+    """Read an upload chunk by chunk, or None if it exceeds MAX_UPLOAD_BYTES."""
+    chunks: list[bytes] = []
+    size = 0
+    while chunk := await file.read(1024 * 1024):
+        size += len(chunk)
+        if size > MAX_UPLOAD_BYTES:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _base_context(request: Request, profile: dict, **extra) -> dict:
     ctx = {
         "request": request,
@@ -90,7 +133,7 @@ def _base_context(request: Request, profile: dict, **extra) -> dict:
 def _render(request: Request, profile: dict, name: str, ctx: dict) -> HTMLResponse:
     """Render a template and (re)assert the active-profile cookie."""
     resp = templates.TemplateResponse(request, name, ctx)
-    resp.set_cookie(COOKIE, str(profile["id"]), max_age=60 * 60 * 24 * 365, samesite="lax")
+    _set_cookie(resp, COOKIE, profile["id"])
     return resp
 
 
@@ -122,7 +165,7 @@ def index(request: Request):
 def switch_profile(request: Request, profile_id: str = Form(...)):
     profile = db.get_profile(profile_id) or current_profile(request)
     resp = RedirectResponse(url="/", status_code=303)
-    resp.set_cookie(COOKIE, str(profile["id"]), max_age=60 * 60 * 24 * 365, samesite="lax")
+    _set_cookie(resp, COOKIE, profile["id"])
     return resp
 
 
@@ -130,7 +173,7 @@ def switch_profile(request: Request, profile_id: str = Form(...)):
 def create_profile(request: Request, name: str = Form(...)):
     new_id = db.create_profile(name)
     resp = RedirectResponse(url="/", status_code=303)
-    resp.set_cookie(COOKIE, str(new_id), max_age=60 * 60 * 24 * 365, samesite="lax")
+    _set_cookie(resp, COOKIE, new_id)
     return resp
 
 
@@ -142,19 +185,33 @@ def delete_profile(request: Request, profile_id: str = Form(...)):
     # Land on a profile that still exists.
     active = db.ensure_default_profile()
     resp = RedirectResponse(url="/", status_code=303)
-    resp.set_cookie(COOKIE, str(active), max_age=60 * 60 * 24 * 365, samesite="lax")
+    _set_cookie(resp, COOKIE, active)
     return resp
 
 
 # --- Collection ----------------------------------------------------------
 
+def _do_import(profile_id: int, text: str, filename: str):
+    """Parse + store a ManaBox CSV. Blocking; run it in a threadpool."""
+    rows, errors = manabox.parse_manabox_csv(text)
+    db.replace_collection(profile_id, rows, source=f"ManaBox: {filename}")
+    return rows, errors
+
+
 @app.post("/import", response_class=HTMLResponse)
 async def import_collection(request: Request, file: UploadFile = File(...)):
     profile = current_profile(request)
-    content = await file.read()
+    content = await _read_upload(file)
+    if content is None:
+        return _render(
+            request, profile, "index.html",
+            _home_context(request, profile, import_failed=(
+                f"Fichier trop volumineux (limite {MAX_UPLOAD_BYTES // (1024 * 1024)} Mo) "
+                "— un export ManaBox fait normalement quelques Mo au plus."
+            )),
+        )
     text = content.decode("utf-8-sig", errors="ignore")
-    rows, errors = manabox.parse_manabox_csv(text)
-    db.replace_collection(profile["id"], rows, source=f"ManaBox: {file.filename}")
+    rows, errors = await run_in_threadpool(_do_import, profile["id"], text, file.filename)
     # Reload so collection_source / counts reflect the import.
     profile = db.get_profile(profile["id"])
 
@@ -296,13 +353,16 @@ async def build_from_list(
 
     text, filename = pool, ""
     if file is not None and file.filename:
-        content = await file.read()
-        text = content.decode("utf-8-sig", errors="ignore")
-        filename = file.filename
+        content = await _read_upload(file)
+        # File over the cap: ignore it rather than crash — the pasted text (if
+        # any) still goes through, and an empty pool yields a clear chat message.
+        if content is not None:
+            text = content.decode("utf-8-sig", errors="ignore")
+            filename = file.filename
 
     fmt = format if format in poolbuild.SPECS else poolbuild.DEFAULT_FORMAT
     pool_items = poolbuild.parse_pool(text, filename)
-    parsed = intent._coerce({
+    parsed = intent.coerce({
         "colors": colors,
         "theme": theme,
         "budget_eur": _parse_budget(budget),
@@ -314,8 +374,8 @@ async def build_from_list(
     )
 
     resp = RedirectResponse(url="/chat", status_code=303)
-    resp.set_cookie(COOKIE, str(profile["id"]), max_age=60 * 60 * 24 * 365, samesite="lax")
-    resp.set_cookie(CONV_COOKIE, str(conv_id), max_age=60 * 60 * 24 * 365, samesite="lax")
+    _set_cookie(resp, COOKIE, profile["id"])
+    _set_cookie(resp, CONV_COOKIE, conv_id)
     return resp
 
 
@@ -350,7 +410,7 @@ def chat_page(request: Request):
         llm_model=settings.anthropic_model,
     )
     resp = _render(request, profile, "chat.html", ctx)
-    resp.set_cookie(CONV_COOKIE, str(conv["id"]), max_age=60 * 60 * 24 * 365, samesite="lax")
+    _set_cookie(resp, CONV_COOKIE, conv["id"])
     return resp
 
 
@@ -370,7 +430,7 @@ async def chat_message(
         chat.start_turn(conv["id"], profile["id"], message)
 
     resp = RedirectResponse(url="/chat", status_code=303)
-    resp.set_cookie(CONV_COOKIE, str(conv["id"]), max_age=60 * 60 * 24 * 365, samesite="lax")
+    _set_cookie(resp, CONV_COOKIE, conv["id"])
     return resp
 
 
@@ -389,7 +449,7 @@ def chat_new(request: Request):
     profile = current_profile(request)
     new_id = db.create_conversation(profile["id"])
     resp = RedirectResponse(url="/chat", status_code=303)
-    resp.set_cookie(CONV_COOKIE, str(new_id), max_age=60 * 60 * 24 * 365, samesite="lax")
+    _set_cookie(resp, CONV_COOKIE, new_id)
     return resp
 
 

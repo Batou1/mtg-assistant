@@ -99,110 +99,66 @@ def _get_with_retry(client: httpx.Client, url: str, attempts: int = 5):
     return None
 
 
+def _fetch(cache_key: str, url: str, client: httpx.Client | None) -> dict:
+    """Cached GET of an EDHREC JSON page.
+
+    Sentinels: {"_not_found": True} (no such page — cached, it won't appear
+    later) or {"_error": True} (request blocked/failed after retries — NOT
+    cached, so a later run retries).
+    """
+    cached = db.get_edhrec(cache_key)
+    if cached is not None:
+        return cached
+
+    owns_client = client is None
+    if owns_client:
+        client = httpx.Client(timeout=30)
+    try:
+        result = _get_with_retry(client, url)
+    finally:
+        if owns_client:
+            client.close()
+
+    if result is None:
+        return {"_error": True}
+    if result == "_not_found":
+        result = {"_not_found": True}
+    db.set_edhrec(cache_key, result)
+    return result
+
+
 def fetch_commander(name: str, client: httpx.Client | None = None) -> dict:
-    """Return the commander's EDHREC JSON.
+    """Return the commander's EDHREC JSON (sentinels: see :func:`_fetch`).
 
     EDHREC only has pages for regular (paper) Commander — there is no separate
     Duel Commander or Pauper Commander section, so this is also the data source
     for those variants; see commanders.py / analysis.py for how the Scryfall
     legality of the commander and its recommended cards is filtered per variant
     on top of this same page.
-
-    Sentinels: {"_not_found": True} (no EDHREC page) or {"_error": True}
-    (request blocked/failed after retries — not cached, so a later run retries).
     """
     slug = slugify(name)
-    cached = db.get_edhrec(slug)
-    if cached is not None:
-        return cached
-
-    url = f"{settings.edhrec_json}/{slug}.json"
-    owns_client = client is None
-    if owns_client:
-        client = httpx.Client(timeout=30)
-    try:
-        result = _get_with_retry(client, url)
-    finally:
-        if owns_client:
-            client.close()
-
-    if result is None:
-        return {"_error": True}
-    if result == "_not_found":
-        data = {"_not_found": True}
-        db.set_edhrec(slug, data)
-        return data
-
-    db.set_edhrec(slug, result)
-    return result
+    return _fetch(slug, f"{settings.edhrec_json}/{slug}.json", client)
 
 
 def fetch_card(name: str, client: httpx.Client | None = None) -> dict:
     """Return EDHREC's per-card page JSON (lists commanders that play the card).
 
-    Same sentinels and caching as :func:`fetch_commander`, but cached under a
-    ``card:`` slug prefix so a card page never collides with the commander page
-    of a legendary creature sharing its slug.
+    Cached under a ``card:`` slug prefix so a card page never collides with the
+    commander page of a legendary creature sharing its slug.
     """
     slug = slugify(name)
-    cache_key = f"card:{slug}"
-    cached = db.get_edhrec(cache_key)
-    if cached is not None:
-        return cached
-
-    url = f"{settings.edhrec_cards_json}/{slug}.json"
-    owns_client = client is None
-    if owns_client:
-        client = httpx.Client(timeout=30)
-    try:
-        result = _get_with_retry(client, url)
-    finally:
-        if owns_client:
-            client.close()
-
-    if result is None:
-        return {"_error": True}
-    if result == "_not_found":
-        data = {"_not_found": True}
-        db.set_edhrec(cache_key, data)
-        return data
-
-    db.set_edhrec(cache_key, result)
-    return result
+    return _fetch(f"card:{slug}", f"{settings.edhrec_cards_json}/{slug}.json", client)
 
 
 def fetch_theme(slug: str, client: httpx.Client | None = None) -> dict:
     """Return an EDHREC tag page's JSON (top commanders of a theme).
 
     Both strategy themes ("aristocrats", "group-hug"…) and creature types
-    ("zombies", "dragons"…) live under the same tags section. Same sentinels
-    and caching as :func:`fetch_commander`, under a ``theme:`` slug prefix.
+    ("zombies", "dragons"…) live under the same tags section; cached under a
+    ``theme:`` slug prefix.
     """
     slug = slugify(slug)
-    cache_key = f"theme:{slug}"
-    cached = db.get_edhrec(cache_key)
-    if cached is not None:
-        return cached
-
-    url = f"{settings.edhrec_tags_json}/{slug}.json"
-    owns_client = client is None
-    if owns_client:
-        client = httpx.Client(timeout=30)
-    try:
-        result = _get_with_retry(client, url)
-    finally:
-        if owns_client:
-            client.close()
-
-    if result is None:
-        return {"_error": True}
-    if result == "_not_found":
-        data = {"_not_found": True}
-        db.set_edhrec(cache_key, data)
-        return data
-
-    db.set_edhrec(cache_key, result)
-    return result
+    return _fetch(f"theme:{slug}", f"{settings.edhrec_tags_json}/{slug}.json", client)
 
 
 def _json_dict(data: dict) -> dict:
@@ -253,11 +209,6 @@ def extract_num_decks(data: dict) -> int:
             return int(match.group(1).replace(",", ""))
 
     return 0
-
-
-def extract_recommended(data: dict) -> set[str]:
-    """All recommended card names across the commander's card lists."""
-    return set(extract_recommended_ordered(data))
 
 
 def extract_recommended_ordered(data: dict) -> list[str]:

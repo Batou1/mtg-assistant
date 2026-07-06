@@ -24,6 +24,17 @@ NON_GAME_LAYOUTS = {
 }
 
 
+def norm_name(name: str) -> str:
+    """Canonical card-name key: front-face name, lowercased.
+
+    The single normalization the whole app compares names with — collection
+    ``name_key`` rows, resolve_cards result keys, pool/deck lookups. (Cache
+    entries are also registered under the full "Front // Back" name; see
+    ``_register``.)
+    """
+    return name.split("//")[0].strip().lower()
+
+
 def _key(name: str) -> str:
     return name.strip().lower()
 

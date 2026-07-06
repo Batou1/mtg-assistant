@@ -376,7 +376,7 @@ def _cap_suffix(max_card_price) -> str:
 
 
 def _intent_from(args: dict, fmt: str | None) -> dict:
-    return intent._coerce(
+    return intent.coerce(
         {
             "format": fmt,
             "colors": args.get("colors") or [],
@@ -1087,9 +1087,16 @@ def start_turn(conversation_id: int, profile_id: int, user_text: str) -> None:
         if cid in _inflight:
             return  # a turn is already running for this conversation
         _inflight.add(cid)
-    # Persist the user message + title up front so the redirect shows it at once.
-    db.add_message(cid, "user", user_text)
-    db.touch_conversation(cid, title=user_text)
-    threading.Thread(
-        target=_worker, args=(cid, profile_id, user_text), daemon=True
-    ).start()
+    try:
+        # Persist the user message + title up front so the redirect shows it at once.
+        db.add_message(cid, "user", user_text)
+        db.touch_conversation(cid, title=user_text)
+        threading.Thread(
+            target=_worker, args=(cid, profile_id, user_text), daemon=True
+        ).start()
+    except BaseException:
+        # If the write or thread spawn fails, the worker will never run: clear
+        # the flag so the conversation isn't stuck on a spinner forever.
+        with _inflight_lock:
+            _inflight.discard(cid)
+        raise

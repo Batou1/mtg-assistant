@@ -112,8 +112,7 @@ FORMAT_ORDER = ["limited", "commander", "duelcommander", "paupercommander", "sta
 DEFAULT_FORMAT = "limited"
 
 
-def _norm(name: str) -> str:
-    return name.split("//")[0].strip().lower()
+_norm = scryfall.norm_name
 
 
 def _first_face_type(card: dict) -> str:

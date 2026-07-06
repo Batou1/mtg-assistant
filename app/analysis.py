@@ -4,7 +4,9 @@ For the cards you own, find legal commanders, score each against its EDHREC
 page (how many recommended cards you already have), and rank them by how well
 they fit the requested intent (colors + theme) and your collection.
 """
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 
@@ -12,8 +14,7 @@ from . import buylist, cardsearch, commanders, db, edhrec, scryfall
 from .config import settings
 
 
-def _norm(name: str) -> str:
-    return name.split("//")[0].strip().lower()
+_norm = scryfall.norm_name
 
 
 def _color_ok(card: dict, wanted: list[str], max_colors: int | None) -> bool:
@@ -130,12 +131,17 @@ def _discover_unowned(owned_cards: list, owned_keys: set, intent: dict,
         if c.get("name") and _norm(c["name"]) not in _BASIC_LANDS
     })[: settings.discovery_card_limit]
 
-    # 2. Aggregate the commanders those cards are most played in.
+    # 2. Aggregate the commanders those cards are most played in. The fetches
+    #    are the slow part (one EDHREC page per card), so they run in parallel;
+    #    aggregation stays sequential in probe order, keeping results
+    #    deterministic.
+    with ThreadPoolExecutor(max_workers=settings.fetch_workers) as pool:
+        pages = list(pool.map(lambda n: edhrec.fetch_card(n, client=client), probe))
+
     link_count: dict[str, int] = {}
     linked_by: dict[str, list[str]] = {}
     queried = 0
-    for name in probe:
-        data = edhrec.fetch_card(name, client=client)
+    for name, data in zip(probe, pages):
         if data.get("_error") or data.get("_not_found"):
             continue
         queried += 1
@@ -185,6 +191,25 @@ def _discover_unowned(owned_cards: list, owned_keys: set, intent: dict,
         reverse=True,
     )
     return discovered, stats
+
+
+def _attach_buylists(results: list[dict], intent: dict, client) -> None:
+    """Fill each result's budget-constrained buylist + total acquisition cost.
+
+    For a proposed (unowned) commander, its own price is reserved from the
+    budget first and folded into the deck's total cost.
+    """
+    budget = intent.get("budget_eur")
+    for r in results:
+        sub_budget = budget
+        if not r["owned"] and budget is not None and r["price_eur"] is not None:
+            sub_budget = max(0.0, round(budget - r["price_eur"], 2))
+        r["buylist"] = buylist.build(
+            r["missing_cards"], sub_budget,
+            max_card_price=intent.get("max_card_price_eur"), client=client,
+        )
+        commander_cost = 0.0 if r["owned"] or r["price_eur"] is None else r["price_eur"]
+        r["total_cost_eur"] = round(r["buylist"]["total_eur"] + commander_cost, 2)
 
 
 # --- Theme-first commander finder (independent of the collection) ---------
@@ -329,18 +354,7 @@ def find_commanders(intent: dict, profile_id: int, limit: int | None = None):
         # Theme fit first, then raw EDHREC popularity — mirrors analyze().
         results.sort(key=lambda r: (r["theme_score"], r["num_decks"]), reverse=True)
 
-        # Budget-constrained buylist per commander; an unowned commander's own
-        # price is reserved from the budget and folded into the total cost.
-        for r in results:
-            sub_budget = budget
-            if not r["owned"] and budget is not None and r["price_eur"] is not None:
-                sub_budget = max(0.0, round(budget - r["price_eur"], 2))
-            r["buylist"] = buylist.build(
-                r["missing_cards"], sub_budget,
-                max_card_price=intent.get("max_card_price_eur"), client=client,
-            )
-            commander_cost = 0.0 if r["owned"] or r["price_eur"] is None else r["price_eur"]
-            r["total_cost_eur"] = round(r["buylist"]["total_eur"] + commander_cost, 2)
+        _attach_buylists(results, intent, client)
 
     if not themes_found and (intent.get("keywords") or intent.get("theme")):
         notices.append(
@@ -408,7 +422,10 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
         results = []
         below_threshold = []
         not_on_edhrec = 0
-        errored = []
+        # Candidates are scored in parallel (the EDHREC fetch dominates); the
+        # shared accumulators are guarded by a lock, and the final sort below
+        # keeps the output deterministic regardless of completion order.
+        state_lock = threading.Lock()
 
         def process(card) -> bool:
             nonlocal not_on_edhrec
@@ -416,39 +433,47 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
             if data.get("_error"):
                 return False
             if data.get("_not_found"):
-                not_on_edhrec += 1
+                with state_lock:
+                    not_on_edhrec += 1
                 return True
 
             num_decks = edhrec.extract_num_decks(data)
             if num_decks < settings.min_decks:
-                below_threshold.append(
-                    {"name": commanders.front_name(card), "num_decks": num_decks}
-                )
+                with state_lock:
+                    below_threshold.append(
+                        {"name": commanders.front_name(card), "num_decks": num_decks}
+                    )
                 # Only surface niche commanders (under the EDHREC popularity floor)
                 # when the player explicitly asked for them.
                 if not include_low_decks:
                     return True
 
-            results.append(
-                _build_result(card, data, owned_keys, intent, owned=True, fmt=fmt, client=client)
+            result = _build_result(
+                card, data, owned_keys, intent, owned=True, fmt=fmt, client=client
             )
+            with state_lock:
+                results.append(result)
             return True
 
-        for card in candidates:
-            if not process(card):
-                errored.append(card)
+        def run_pass(cards: list) -> list:
+            """Process ``cards``; return the ones whose fetch errored."""
+            if not cards:
+                return []
+            with ThreadPoolExecutor(max_workers=settings.fetch_workers) as pool:
+                oks = list(pool.map(process, cards))
+            return [c for c, ok in zip(cards, oks) if not ok]
 
+        errored = run_pass(candidates)
         for _ in range(settings.error_retry_passes):
             if not errored:
                 break
             time.sleep(settings.error_retry_cooldown)
-            retry, errored = errored, []
-            for card in retry:
-                if not process(card):
-                    errored.append(card)
+            errored = run_pass(errored)
 
         # Rank: theme fit first (if any keywords), then how built you already are,
-        # then raw EDHREC popularity.
+        # then raw EDHREC popularity. The name pre-sort pins ties to a stable
+        # order (parallel scoring appends in completion order, not input order).
+        results.sort(key=lambda r: r["name"])
         results.sort(
             key=lambda r: (r["theme_score"], r["owned_count"], r["num_decks"]),
             reverse=True,
@@ -465,19 +490,7 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
             # Owned suggestions first (free to build), proposed ones after.
             results = results + proposed
 
-        # Build a budget-constrained buylist for each displayed commander. For a
-        # proposed commander, its own price is reserved from the budget first and
-        # folded into the deck's total acquisition cost.
-        for r in results:
-            sub_budget = budget
-            if not r["owned"] and budget is not None and r["price_eur"] is not None:
-                sub_budget = max(0.0, round(budget - r["price_eur"], 2))
-            r["buylist"] = buylist.build(
-                r["missing_cards"], sub_budget,
-                max_card_price=intent.get("max_card_price_eur"), client=client,
-            )
-            commander_cost = 0.0 if r["owned"] or r["price_eur"] is None else r["price_eur"]
-            r["total_cost_eur"] = round(r["buylist"]["total_eur"] + commander_cost, 2)
+        _attach_buylists(results, intent, client)
 
     return {
         "results": results,

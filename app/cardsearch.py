@@ -17,6 +17,24 @@ from . import commanders, db, scryfall
 _cache: list[dict] | None = None
 _cache_token: str | None = None
 
+# The in-memory pool holds ~35k cards for the process lifetime: keep only the
+# fields the filters and consumers actually read (search criteria, commander
+# eligibility, the chat's result line incl. price) — a full Scryfall card dict
+# is ~10x bigger. Anything richer is re-resolved by name via scryfall/db.
+_FIELDS = ("id", "name", "mana_cost", "type_line", "oracle_text", "keywords",
+           "color_identity", "cmc", "legalities", "prices")
+_FACE_FIELDS = ("name", "mana_cost", "type_line", "oracle_text")
+
+
+def _slim(card: dict) -> dict:
+    out = {k: card[k] for k in _FIELDS if k in card}
+    faces = card.get("card_faces")
+    if faces:
+        out["card_faces"] = [
+            {k: f[k] for k in _FACE_FIELDS if k in f} for f in faces
+        ]
+    return out
+
 
 def _all_cards() -> list[dict]:
     global _cache, _cache_token
@@ -28,7 +46,7 @@ def _all_cards() -> list[dict]:
                 continue
             cid = card.get("id")
             if cid:
-                by_id[cid] = card
+                by_id[cid] = _slim(card)
         _cache = list(by_id.values())
         _cache_token = token
     return _cache

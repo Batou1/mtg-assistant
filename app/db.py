@@ -41,6 +41,12 @@ def get_conn():
     _ensure_dir()
     conn = sqlite3.connect(settings.db_path)
     conn.row_factory = sqlite3.Row
+    # Several threads write concurrently (web requests, chat turns, the bulk-data
+    # refresh and its huge import transactions). WAL lets readers proceed during
+    # a write, and the busy timeout waits out a competing writer instead of
+    # failing immediately with "database is locked".
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=15000")
     try:
         yield conn
         conn.commit()
