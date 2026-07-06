@@ -156,3 +156,75 @@ def test_discovery_can_be_disabled(env, monkeypatch):
 
     data = analysis.analyze(_intent(), pid)
     assert data["proposed_count"] == 0
+
+
+# --- Duel Commander / Pauper Commander --------------------------------------
+
+def _wire_resolver(analysis, monkeypatch, registry):
+    """Point scryfall.resolve_cards at a custom (name -> card) registry."""
+    def fake_resolve_cards(names, client=None):
+        res, nf = {}, []
+        for n in names:
+            k = n.split("//")[0].strip().lower()
+            (res.__setitem__(k, registry[k]) if k in registry else nf.append(n))
+        return res, nf
+
+    monkeypatch.setattr(analysis.scryfall, "resolve_cards", fake_resolve_cards)
+
+
+def test_analyze_filters_recommended_cards_by_paupercommander_legality(env, monkeypatch):
+    """EDHREC has no Pauper Commander page: the regular Commander page's
+    recommended cards are reused, but only those Scryfall marks legal in Pauper
+    Commander (commons-only) count towards completion / the buylist."""
+    db, analysis = env.db, env.analysis
+    pid = db.ensure_default_profile()
+    db.replace_collection(pid, [_row("Krenko, Mob Boss"), _row("Goblin Recruiter")])
+    _wire(analysis, monkeypatch)
+    _wire_resolver(analysis, monkeypatch, {
+        **_REGISTRY,
+        "krenko, mob boss": {**_REGISTRY["krenko, mob boss"],
+                             "legalities": {"paupercommander": "legal"}},
+        "goblin recruiter": {**_REGISTRY["goblin recruiter"],
+                             "legalities": {"paupercommander": "legal"}},
+        # Rares recommended by the regular page but not legal in Pauper Commander.
+        "goblin chieftain": {"name": "Goblin Chieftain", "type_line": "Creature — Goblin",
+                             "color_identity": ["R"], "legalities": {"paupercommander": "not_legal"}},
+        "krenko's command": {"name": "Krenko's Command", "type_line": "Sorcery",
+                             "color_identity": ["R"], "legalities": {}},
+    })
+
+    data = analysis.analyze(_intent(format="paupercommander"), pid)
+    krenko = next(r for r in data["results"] if r["owned"] and r["name"] == "Krenko, Mob Boss")
+    assert krenko["total_recommended"] == 1   # only Goblin Recruiter is PDH-legal
+    assert krenko["owned_count"] == 1
+    assert krenko["pct"] == 100.0
+    assert krenko["missing_cards"] == []
+
+
+def test_analyze_excludes_commander_banned_in_duelcommander(env, monkeypatch):
+    """A card banned in Duel Commander must not surface as an owned commander,
+    even though it's a legal (structural) commander in plain Commander."""
+    db, analysis = env.db, env.analysis
+    pid = db.ensure_default_profile()
+    db.replace_collection(pid, [_row("Krenko, Mob Boss")])
+    _wire(analysis, monkeypatch)
+    _wire_resolver(analysis, monkeypatch, {
+        **_REGISTRY,
+        "krenko, mob boss": {**_REGISTRY["krenko, mob boss"], "legalities": {"duel": "banned"}},
+    })
+
+    data = analysis.analyze(_intent(format="duelcommander"), pid)
+    assert data["candidate_count"] == 0
+    assert not any(r["name"] == "Krenko, Mob Boss" for r in data["results"])
+
+
+def test_analyze_unknown_format_falls_back_to_commander(env, monkeypatch):
+    db, analysis = env.db, env.analysis
+    pid = db.ensure_default_profile()
+    db.replace_collection(pid, [_row("Krenko, Mob Boss")])
+    _wire(analysis, monkeypatch)
+
+    data = analysis.analyze(_intent(format="modern"), pid)
+    assert data["format"] == "commander"
+    assert any("modern" in n for n in data["notices"])
+    assert any(r["name"] == "Krenko, Mob Boss" for r in data["results"])

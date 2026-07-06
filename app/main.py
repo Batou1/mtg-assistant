@@ -12,8 +12,8 @@ from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
 from . import (
-    analysis, bulk_data, chat, collection as collection_mod, db, deckgen, formats60, intent, llm,
-    manabox, poolbuild, textutil,
+    analysis, bulk_data, chat, collection as collection_mod, commanders, db, deckgen, formats60,
+    intent, llm, manabox, poolbuild, textutil,
 )
 from .config import settings
 
@@ -64,6 +64,9 @@ COOKIE = "profile_id"
 CONV_COOKIE = "conversation_id"
 COLOR_NAMES = {"W": "Blanc", "U": "Bleu", "B": "Noir", "R": "Rouge", "G": "Vert"}
 templates.env.globals["COLOR_NAMES"] = COLOR_NAMES
+# French display label per format slug (e.g. "duelcommander" -> "Duel Commander"),
+# reusing poolbuild's FormatSpec labels so the two stay in sync.
+templates.env.globals["FORMAT_LABELS"] = {f: spec.label for f, spec in poolbuild.SPECS.items()}
 
 
 def current_profile(request: Request) -> dict:
@@ -230,11 +233,13 @@ async def generate(
     budget: str = Form(""),
     max_card_price: str = Form(""),
     theme: str = Form(""),
+    format: str = Form("commander"),
 ):
     profile = current_profile(request)
+    fmt = format if format in commanders.FORMATS else "commander"
     deck, _data = await run_in_threadpool(
         deckgen.generate_full_deck, commander, _parse_budget(budget), theme, profile["id"],
-        _parse_budget(max_card_price),
+        _parse_budget(max_card_price), fmt,
     )
     ctx = _base_context(
         request, profile, commander=commander, budget=_parse_budget(budget), deck=deck

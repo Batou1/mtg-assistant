@@ -18,7 +18,7 @@ one-shot intent → analyse pipeline and flags that the full chat needs a key.
 import logging
 import threading
 
-from . import analysis, cardsearch, db, deckgen, formats60, intent, llm, poolbuild, scryfall
+from . import analysis, cardsearch, commanders, db, deckgen, formats60, intent, llm, poolbuild, scryfall
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -61,9 +61,11 @@ SYSTEM_PROMPT = (
     "- Si le joueur veut un commandant qu'il NE possède PAS (« que je n'ai pas », "
     "« à acquérir », « un nouveau commandant »), appelle suggest_commanders avec "
     "unowned_only=true.\n"
-    "- Pour le Commander (EDH), appelle suggest_commanders. Pour Standard, "
-    "Modern, Pioneer, Pauper, Legacy, Vintage, Premodern (60 cartes), appelle "
-    "research_archetype.\n"
+    "- Pour le Commander (EDH), le Duel Commander (1 contre 1) ou le Pauper "
+    "Commander (cartes majoritairement communes, aussi appelé PDH), appelle "
+    "suggest_commanders avec le paramètre format adéquat (commander, "
+    "duelcommander ou paupercommander). Pour Standard, Modern, Pioneer, Pauper, "
+    "Legacy, Vintage, Premodern (60 cartes), appelle research_archetype.\n"
     "- DEPUIS UNE LISTE : le joueur peut importer une LISTE de cartes (page "
     "« Depuis une liste ») et demander le meilleur deck d'un format donné "
     "(Limité, Commander, Modern, Pauper…). Si une liste a déjà été importée (voir "
@@ -146,14 +148,29 @@ TOOLS = [
     {
         "name": "suggest_commanders",
         "description": (
-            "Pour le format COMMANDER : à partir des cartes possédées, propose des "
-            "commandants jouables qui collent aux couleurs/thème, avec le taux de "
-            "complétude EDHREC et une liste d'achat dans le budget. Inclut aussi "
-            "des commandants NON possédés mais liés à tes cartes (champ owned=false, "
-            "avec price_eur, link_count et total_cost_eur) qui respectent thème, "
-            "couleurs et budget."
+            "Pour un format COMMANDER (commander, duelcommander, paupercommander) : "
+            "à partir des cartes possédées, propose des commandants jouables qui "
+            "collent aux couleurs/thème, avec le taux de complétude EDHREC et une "
+            "liste d'achat dans le budget. Inclut aussi des commandants NON "
+            "possédés mais liés à tes cartes (champ owned=false, avec price_eur, "
+            "link_count et total_cost_eur) qui respectent thème, couleurs et budget."
         ),
-        "input_schema": {"type": "object", "properties": dict(_INTENT_PROPS)},
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "enum": sorted(commanders.FORMATS),
+                    "description": (
+                        "Variante Commander visée : \"commander\" (EDH classique, "
+                        "défaut), \"duelcommander\" (Duel Commander, 1 contre 1) ou "
+                        "\"paupercommander\" (Pauper Commander / PDH, cartes "
+                        "majoritairement communes)."
+                    ),
+                },
+                **_INTENT_PROPS,
+            },
+        },
     },
     {
         "name": "research_archetype",
@@ -186,6 +203,15 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "commander": {"type": "string", "description": "Nom exact du commandant."},
+                "format": {
+                    "type": "string",
+                    "enum": sorted(commanders.FORMATS),
+                    "description": (
+                        "Variante Commander visée (défaut \"commander\") ; reprends "
+                        "celle déjà utilisée pour ce commandant dans la conversation "
+                        "(suggest_commanders) si elle est connue."
+                    ),
+                },
                 "budget_eur": {"type": "number", "description": "Budget TOTAL d'achat en euros."},
                 "max_card_price_eur": dict(_INTENT_PROPS["max_card_price_eur"]),
                 "theme": {"type": "string", "description": "Thème pour le plan de jeu."},
@@ -340,7 +366,10 @@ def _exec_suggest_commanders(args: dict, profile_id: int, ctx: dict | None = Non
     if not distinct:
         return "La collection est vide ; impossible de proposer des commandants.", None
 
-    parsed = _intent_from(args, "commander")
+    fmt = (args.get("format") or "commander").lower()
+    if fmt not in commanders.FORMATS:
+        fmt = "commander"
+    parsed = _intent_from(args, fmt)
     data = analysis.analyze(parsed, profile_id)
     results = data.get("results") or []
     if not results:
@@ -421,9 +450,12 @@ def _exec_generate_decklist(args: dict, profile_id: int, ctx: dict | None = None
     if not commander:
         return "Aucun commandant fourni.", None
 
+    fmt = (args.get("format") or "commander").lower()
+    if fmt not in commanders.FORMATS:
+        fmt = "commander"
     deck, _data = deckgen.generate_full_deck(
         commander, args.get("budget_eur"), args.get("theme") or "", profile_id,
-        max_card_price=args.get("max_card_price_eur"),
+        max_card_price=args.get("max_card_price_eur"), fmt=fmt,
     )
     if not deck:
         return (
@@ -625,8 +657,9 @@ def _fmt_colors(colors) -> str:
 def _snapshot_decklist(art: dict) -> str:
     deck = art.get("deck") or {}
     counts = deck.get("counts") or {}
+    fmt = deck.get("format") or "commander"
     lines = [
-        f"DECK GÉNÉRÉ — commandant {art.get('commander')} "
+        f"DECK GÉNÉRÉ ({fmt.upper()}) — commandant {art.get('commander')} "
         f"({counts.get('total', 0)} cartes : {counts.get('owned', 0)} possédées, "
         f"{counts.get('to_buy', 0)} à acheter pour {deck.get('buy_total_eur', 0)} €)."
     ]
@@ -663,7 +696,8 @@ def _snapshot_decklist(art: dict) -> str:
 
 
 def _snapshot_commanders(art: dict) -> str:
-    lines = ["COMMANDANTS SUGGÉRÉS :"]
+    fmt = (art.get("intent") or {}).get("format") or "commander"
+    lines = [f"COMMANDANTS SUGGÉRÉS ({fmt.upper()}) :"]
     for r in art.get("results") or []:
         buy = r.get("buylist") or {}
         if _is_owned(r):

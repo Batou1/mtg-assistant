@@ -16,7 +16,9 @@
   <div class="commander-head">
     {{ cardview.image_or_text(deck.commander.name, deck.commander.image, extra_class="cv-commander") }}
     <div class="commander-meta">
-      <h1>{{ deck.commander.name }}</h1>
+      <h1>{{ deck.commander.name }}
+        {% if deck.format and deck.format != "commander" %}<span class="tag owned-tag">{{ FORMAT_LABELS.get(deck.format, deck.format) }}</span>{% endif %}
+      </h1>
       <p class="pips">
         {% for c in deck.commander.color_identity %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}
         {% if not deck.commander.color_identity %}<span class="pip pip-C">incolore</span>{% endif %}

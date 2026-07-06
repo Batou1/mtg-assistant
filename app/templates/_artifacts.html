@@ -28,7 +28,7 @@
   {% for n in art.notices %}<div class="notice info">{{ n }}</div>{% endfor %}
   {% if art.intent %}
   <div class="intent-chips">
-    {% if art.intent.format %}<span class="chip">Format · <strong>{{ art.intent.format|capitalize }}</strong></span>{% endif %}
+    {% if art.intent.format %}<span class="chip">Format · <strong>{{ FORMAT_LABELS.get(art.intent.format, art.intent.format) }}</strong></span>{% endif %}
     {% if art.intent.colors %}<span class="chip">Couleur{{ 's' if art.intent.colors|length > 1 }}
       {% for c in art.intent.colors %}<span class="mana-dot {{ c }}"></span>{% endfor %}</span>{% endif %}
     {% if art.intent.theme %}<span class="chip">Thème · <strong>{{ art.intent.theme }}</strong></span>{% endif %}
@@ -172,7 +172,9 @@
     <div class="commander-head">
       {{ cardview.image_or_text(deck.commander.name, deck.commander.image, extra_class="cv-commander") }}
       <div class="commander-meta">
-        <h3>{{ deck.commander.name }}</h3>
+        <h3>{{ deck.commander.name }}
+          {% if deck.format and deck.format != "commander" %}<span class="tag owned-tag">{{ FORMAT_LABELS.get(deck.format, deck.format) }}</span>{% endif %}
+        </h3>
         <ul class="chips">
           <li class="chip">{{ deck.counts.total }} cartes</li>
           <li class="chip">{{ deck.counts.owned }} possédées</li>

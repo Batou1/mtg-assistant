@@ -84,6 +84,12 @@ def _get_with_retry(client: httpx.Client, url: str, attempts: int = 5):
 def fetch_commander(name: str, client: httpx.Client | None = None) -> dict:
     """Return the commander's EDHREC JSON.
 
+    EDHREC only has pages for regular (paper) Commander — there is no separate
+    Duel Commander or Pauper Commander section, so this is also the data source
+    for those variants; see commanders.py / analysis.py for how the Scryfall
+    legality of the commander and its recommended cards is filtered per variant
+    on top of this same page.
+
     Sentinels: {"_not_found": True} (no EDHREC page) or {"_error": True}
     (request blocked/failed after retries — not cached, so a later run retries).
     """

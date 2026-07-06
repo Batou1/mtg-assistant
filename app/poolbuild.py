@@ -86,6 +86,16 @@ SPECS: dict[str, FormatSpec] = {
         add_basics=True, singleton=True, legality_format="commander",
         needs_commander=True,
     ),
+    "duelcommander": FormatSpec(
+        name="duelcommander", label="Duel Commander", deck_size=100, target_lands=37,
+        add_basics=True, singleton=True, legality_format="duel",
+        needs_commander=True,
+    ),
+    "paupercommander": FormatSpec(
+        name="paupercommander", label="Pauper Commander", deck_size=100, target_lands=37,
+        add_basics=True, singleton=True, legality_format="paupercommander",
+        needs_commander=True,
+    ),
     "standard": _constructed("standard", "Standard"),
     "pioneer": _constructed("pioneer", "Pioneer"),
     "modern": _constructed("modern", "Modern"),
@@ -96,8 +106,8 @@ SPECS: dict[str, FormatSpec] = {
 }
 
 # Stable display order for the format selector (engine ignores order).
-FORMAT_ORDER = ["limited", "commander", "standard", "pioneer", "modern",
-                "pauper", "legacy", "vintage", "premodern"]
+FORMAT_ORDER = ["limited", "commander", "duelcommander", "paupercommander", "standard",
+                "pioneer", "modern", "pauper", "legacy", "vintage", "premodern"]
 
 DEFAULT_FORMAT = "limited"
 

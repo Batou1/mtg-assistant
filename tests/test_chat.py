@@ -331,9 +331,10 @@ def test_generate_decklist_tool_passes_max_card_price(env, monkeypatch):
 
     captured = {}
 
-    def fake_generate(commander, budget, theme, profile_id, max_card_price=None):
+    def fake_generate(commander, budget, theme, profile_id, max_card_price=None, fmt="commander"):
         captured["budget"] = budget
         captured["max_card_price"] = max_card_price
+        captured["fmt"] = fmt
         return {
             "counts": {"total": 100, "owned": 0, "to_buy": 99},
             "buy_total_eur": 25.0, "max_card_price_eur": max_card_price,
@@ -347,5 +348,52 @@ def test_generate_decklist_tool_passes_max_card_price(env, monkeypatch):
     )
     assert captured["budget"] == 30
     assert captured["max_card_price"] == 5
+    assert captured["fmt"] == "commander"
     assert "max 5€/carte" in text
     assert artifact["type"] == "decklist"
+
+
+def test_generate_decklist_tool_passes_requested_format(env, monkeypatch):
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+
+    captured = {}
+
+    def fake_generate(commander, budget, theme, profile_id, max_card_price=None, fmt="commander"):
+        captured["fmt"] = fmt
+        return {"counts": {"total": 100, "owned": 0, "to_buy": 99}, "buy_total_eur": 0}, {}
+
+    monkeypatch.setattr(chat.deckgen, "generate_full_deck", fake_generate)
+
+    chat._exec_generate_decklist(
+        {"commander": "Tinybones, Trinket Thief", "format": "paupercommander"}, pid,
+    )
+    assert captured["fmt"] == "paupercommander"
+
+    # An unrecognized format falls back to plain "commander" rather than
+    # blowing up deckgen's own edhrec.fetch_commander lookup.
+    chat._exec_generate_decklist(
+        {"commander": "Krenko, Mob Boss", "format": "modern"}, pid,
+    )
+    assert captured["fmt"] == "commander"
+
+
+def test_suggest_commanders_tool_passes_requested_format(env, monkeypatch):
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+    db.replace_collection(pid, [_row("Krenko, Mob Boss")])
+
+    captured = {}
+
+    def fake_analyze(intent, profile_id):
+        captured["format"] = intent.get("format")
+        return {"results": [], "notices": [], "candidate_count": 0}
+
+    monkeypatch.setattr(chat.analysis, "analyze", fake_analyze)
+
+    chat._exec_suggest_commanders({"format": "duelcommander", "colors": ["R"]}, pid)
+    assert captured["format"] == "duelcommander"
+
+    # Unknown format value falls back to plain "commander".
+    chat._exec_suggest_commanders({"format": "bogus"}, pid)
+    assert captured["format"] == "commander"
