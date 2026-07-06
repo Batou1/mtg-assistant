@@ -9,7 +9,7 @@
   <h2>Ton envie</h2>
   <p class="wish">« {{ wish }} »</p>
   <ul class="chips">
-    {% if intent.format %}<li class="chip">Format : {{ intent.format }}</li>{% endif %}
+    {% if intent.format %}<li class="chip">Format : {{ FORMAT_LABELS.get(intent.format, intent.format) }}</li>{% endif %}
     {% if intent.colors %}
       <li class="chip">Couleurs :
         {% for c in intent.colors %}<span class="pip pip-{{ c }}">{{ COLOR_NAMES[c] }}</span>{% endfor %}
@@ -78,6 +78,7 @@
         <form method="post" action="/generate" class="generate-form">
           <input type="hidden" name="commander" value="{{ r.name }}">
           <input type="hidden" name="theme" value="{{ intent.theme }}">
+          <input type="hidden" name="format" value="{{ intent.format or 'commander' }}">
           {% if intent.budget_eur is not none %}<input type="hidden" name="budget" value="{{ intent.budget_eur }}">{% endif %}
           {% if intent.max_card_price_eur is not none %}<input type="hidden" name="max_card_price" value="{{ intent.max_card_price_eur }}">{% endif %}
           <button type="submit">⚙ Générer la decklist complète</button>

@@ -209,6 +209,55 @@ def test_commander_enforces_colour_identity(monkeypatch):
     # The commander must not also appear in the leftover sideboard.
     assert "Krenko, Mob Boss" not in {c["name"] for c in deck["sideboard"]}
 
+def test_duelcommander_spec_enforces_duel_legality(monkeypatch):
+    # Registered like "commander" but with its own (stricter) legality key.
+    spec = poolbuild.SPECS["duelcommander"]
+    assert spec.legality_format == "duel"
+    assert spec.needs_commander
+    assert spec.deck_size == 100 and spec.singleton
+
+    pool = {
+        "krenko, mob boss": _card("Krenko, Mob Boss", "Legendary Creature — Goblin",
+                                   ["R"], 4.0, legal={"duel": "legal"}),
+        "lightning bolt": _card("Lightning Bolt", "Instant", ["R"], 1.0,
+                                 legal={"duel": "legal"}),
+        # Banned in Duel Commander even though it's fine in plain Commander.
+        "sol ring": _card("Sol Ring", "Artifact", [], 1.0, legal={"duel": "banned"}),
+    }
+
+    def resolve(names, client=None):
+        return ({n.lower(): pool[n.lower()] for n in names if n.lower() in pool},
+                [n for n in names if n.lower() not in pool])
+
+    monkeypatch.setattr(scryfall, "resolve_cards", resolve)
+    monkeypatch.setattr(llm, "is_available", lambda: True)
+    monkeypatch.setattr(llm, "pool_deck", lambda spec, intent, lines: {
+        "archetype": "Krenko Goblins", "colors": ["R"], "strategy": "Go wide.",
+        "commander": "Krenko, Mob Boss",
+        "main_deck": [{"name": "Lightning Bolt", "count": 1}],
+        "basic_lands": {"Mountain": 98},
+    })
+
+    deck = poolbuild.build_from_pool(
+        [("Krenko, Mob Boss", 1), ("Lightning Bolt", 1), ("Sol Ring", 1)],
+        "duelcommander", {}, with_bonus=False,
+    )
+    assert deck["commander"]["name"] == "Krenko, Mob Boss"
+    assert "Sol Ring" in deck["invalid"]  # banned in Duel Commander -> excluded
+
+
+def test_paupercommander_spec_registered():
+    spec = poolbuild.SPECS["paupercommander"]
+    assert spec.legality_format == "paupercommander"
+    assert spec.needs_commander
+    assert spec.deck_size == 100 and spec.singleton
+
+
+def test_format_order_includes_new_commander_variants():
+    assert "duelcommander" in poolbuild.FORMAT_ORDER
+    assert "paupercommander" in poolbuild.FORMAT_ORDER
+    assert all(f in poolbuild.SPECS for f in poolbuild.FORMAT_ORDER)
+
 
 # --- Collection bonus: owned synergy + cards to buy ---------------------
 

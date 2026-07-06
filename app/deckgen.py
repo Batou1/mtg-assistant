@@ -108,7 +108,8 @@ def _basics_for(colors: list[str], count: int) -> list[tuple[str, int]]:
 def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
                budget: float | None, cards_by_name: dict,
                target_lands: int = 36, deck_size: int = 100,
-               sideboard_size: int = 18, max_card_price: float | None = None) -> dict:
+               sideboard_size: int = 18, max_card_price: float | None = None,
+               fmt: str = "commander") -> dict:
     """Assemble a decklist. See module docstring for the selection strategy.
 
     ``max_card_price`` additionally caps the price of any single bought card —
@@ -235,6 +236,7 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
 
     return {
         "commander": commander_item,
+        "format": fmt,
         "groups": groups,
         "sideboard": sideboard,
         "sideboard_buy_total_eur": sideboard_buy_total,
@@ -275,8 +277,11 @@ def _decklist_text(commander_item: dict, groups: list, sideboard: list | None = 
 
 
 def generate_full_deck(commander_name: str, budget, theme: str, profile_id: int,
-                       max_card_price=None):
+                       max_card_price=None, fmt: str = "commander"):
     """Resolve cards, build the decklist and write an LLM game plan.
+
+    ``fmt`` picks which Commander variant's EDHREC page to build from (see
+    ``commanders.FORMATS``): plain Commander, Duel Commander or Pauper Commander.
 
     Blocking (network I/O via Scryfall/EDHREC); run it in a threadpool. Shared by
     the ``/generate`` route and the chat ``generate_decklist`` tool. Returns
@@ -287,7 +292,7 @@ def generate_full_deck(commander_name: str, budget, theme: str, profile_id: int,
     from . import db, edhrec, llm
     from .config import settings
 
-    data = edhrec.fetch_commander(commander_name)
+    data = edhrec.fetch_commander(commander_name, fmt=fmt)
     if data.get("_not_found") or data.get("_error"):
         return None, data
 
@@ -305,6 +310,7 @@ def generate_full_deck(commander_name: str, budget, theme: str, profile_id: int,
         commander_card, data, owned, budget, resolved,
         target_lands=settings.deck_lands, deck_size=settings.deck_size,
         sideboard_size=settings.deck_sideboard, max_card_price=max_card_price,
+        fmt=fmt,
     )
 
     key_cards = [c["name"] for g in deck["groups"] for c in g["cards"] if not c["is_basic"]]

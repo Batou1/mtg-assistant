@@ -6,8 +6,9 @@ get Commander suggestions you can actually build — with a completeness analysi
 and a budget-constrained buylist priced in EUR.
 
 > This release: ManaBox import, French natural-language intent via **Claude
-> (Anthropic API)**, Commander suggestions with gap analysis and an EUR buylist,
-> full Commander decklist generation, **60-card format archetype research**
+> (Anthropic API)**, Commander suggestions with gap analysis and an EUR buylist
+> across **Commander, Duel Commander and Pauper Commander**, full Commander
+> decklist generation, **60-card format archetype research**
 > (Standard, Pauper, Modern, Pioneer, Legacy, Vintage, Premodern) grounded by Brave Search + validated
 > against Scryfall, and an **iterative chat** that drives the whole pipeline by
 > conversation (tool-calling).
@@ -33,6 +34,10 @@ and a budget-constrained buylist priced in EUR.
    fit the requested colours, theme and budget (the commander's own EUR price is
    counted against the budget). Proposed commanders are tagged *non possédé* with
    their price, total acquisition cost, and the owned cards that led to them.
+   Three Commander variants are supported, each against its own EDHREC data and
+   Scryfall legality: **Commander** (default), **Duel Commander** (1v1, ask for
+   *« un deck duel commander »*) and **Pauper Commander** (mostly-common decks,
+   aka PDH, ask for *« un deck pauper commander »* or *« PDH »*).
 4. **Buylist** — the missing cards are priced in EUR from
    [Scryfall](https://scryfall.com)'s Cardmarket data, and the most synergistic
    ones are picked greedily within your budget. A **total budget** and a
@@ -57,8 +62,9 @@ and a budget-constrained buylist priced in EUR.
    (paste, `.txt`, or ManaBox-style `.csv`), independent of your collection, pick
    a **format**, and it tells you which cards to keep for a legal deck:
    - **Limited** (draft/sealed): the strongest 40-card deck, basics added.
-   - **Commander**: a 100-card singleton deck with a commander chosen from the
-     list, the other 99 kept within its colour identity.
+   - **Commander / Duel Commander / Pauper Commander**: a 100-card singleton
+     deck with a commander chosen from the list, the other 99 kept within its
+     colour identity and within the variant's own Scryfall legality.
    - **Modern / Pauper / Standard / Pioneer / Legacy / Vintage / Premodern**:
      a 60-card deck with **format legality enforced** (illegal cards dropped).
 
@@ -181,6 +187,8 @@ fresh from the API.
 | -------------------- | --------------------------- | ------------------------------------ |
 | `MTG_DB_PATH`        | `data/app.db`               | SQLite database location             |
 | `MTG_MIN_DECKS`      | `1`                         | Min EDHREC decks for a commander     |
+| `MTG_EDHREC_DUEL_JSON` | `.../pages/commanders/duel` | EDHREC JSON base URL for Duel Commander |
+| `MTG_EDHREC_PAUPER_JSON` | `.../pages/commanders/pauper` | EDHREC JSON base URL for Pauper Commander |
 | `MTG_DISCOVERY`      | `1`                         | Propose commanders you don't own (`0` to disable) |
 | `MTG_DISCOVERY_CARD_LIMIT` | `40`                  | Owned cards probed for discovery     |
 | `MTG_DISCOVERY_POOL` | `20`                        | Candidate commanders resolved + filtered |

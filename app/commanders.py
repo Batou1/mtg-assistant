@@ -1,4 +1,18 @@
 """Determine whether a Scryfall card can legally be a Commander."""
+from . import scryfall
+
+# EDHREC-backed Commander variants analysis.py can suggest commanders for.
+# "commander" is the default 100-card multiplayer format; the others reuse the
+# same pipeline against their own EDHREC pages + Scryfall legality.
+FORMATS = {"commander", "duelcommander", "paupercommander"}
+
+# Scryfall legality key to enforce for a commander candidate, beyond the
+# structural is_commander() check — e.g. Duel Commander bans a handful of
+# cards legal in normal Commander, and Pauper Commander only allows a small
+# set of (mostly uncommon) legendary creatures as commander. Plain "commander"
+# has no entry: its banned list is short enough that the app doesn't enforce
+# it today (see analyze() in analysis.py).
+SCRYFALL_LEGALITY = {"duelcommander": "duel", "paupercommander": "paupercommander"}
 
 
 def _faces(card: dict):
@@ -32,6 +46,19 @@ def is_commander(card: dict) -> bool:
             return True
 
     return False
+
+
+def is_eligible_commander(card: dict, fmt: str = "commander") -> bool:
+    """True if the card can be a commander in ``fmt`` (one of FORMATS).
+
+    Combines the structural check (legendary creature / "can be your
+    commander") with the format's Scryfall legality when one is enforced
+    (Duel Commander's banned list, Pauper Commander's rarity restriction).
+    """
+    if not is_commander(card):
+        return False
+    legality_key = SCRYFALL_LEGALITY.get(fmt)
+    return legality_key is None or scryfall.legal_in(card, legality_key)
 
 
 def front_name(card: dict) -> str:

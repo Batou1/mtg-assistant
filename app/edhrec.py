@@ -81,18 +81,31 @@ def _get_with_retry(client: httpx.Client, url: str, attempts: int = 5):
     return None
 
 
-def fetch_commander(name: str, client: httpx.Client | None = None) -> dict:
-    """Return the commander's EDHREC JSON.
+# Base JSON URL per Commander variant (see analysis.py / commanders.FORMATS).
+# Plain "commander" keeps the un-prefixed cache key for backward compatibility
+# with rows already cached under the old (format-less) scheme.
+_COMMANDER_BASE_URL = {
+    "commander": lambda: settings.edhrec_json,
+    "duelcommander": lambda: settings.edhrec_duel_json,
+    "paupercommander": lambda: settings.edhrec_pauper_json,
+}
+
+
+def fetch_commander(name: str, client: httpx.Client | None = None,
+                    fmt: str = "commander") -> dict:
+    """Return the commander's EDHREC JSON for ``fmt`` (a commanders.FORMATS key).
 
     Sentinels: {"_not_found": True} (no EDHREC page) or {"_error": True}
     (request blocked/failed after retries — not cached, so a later run retries).
     """
     slug = slugify(name)
-    cached = db.get_edhrec(slug)
+    cache_key = slug if fmt == "commander" else f"{fmt}:{slug}"
+    cached = db.get_edhrec(cache_key)
     if cached is not None:
         return cached
 
-    url = f"{settings.edhrec_json}/{slug}.json"
+    base = _COMMANDER_BASE_URL.get(fmt, _COMMANDER_BASE_URL["commander"])()
+    url = f"{base}/{slug}.json"
     owns_client = client is None
     if owns_client:
         client = httpx.Client(timeout=30)
@@ -106,10 +119,10 @@ def fetch_commander(name: str, client: httpx.Client | None = None) -> dict:
         return {"_error": True}
     if result == "_not_found":
         data = {"_not_found": True}
-        db.set_edhrec(slug, data)
+        db.set_edhrec(cache_key, data)
         return data
 
-    db.set_edhrec(slug, result)
+    db.set_edhrec(cache_key, result)
     return result
 
 

@@ -60,6 +60,39 @@ def test_coerce_accepts_premodern():
     assert intent._coerce({"format": "premodern"})["format"] == "premodern"
 
 
+def test_heuristic_duel_commander_format():
+    parsed = intent._heuristic("un deck duel commander agressif en rouge")
+    assert parsed["format"] == "duelcommander"
+    assert parsed["colors"] == ["R"]
+
+
+def test_heuristic_pauper_commander_format():
+    parsed = intent._heuristic("un deck pauper commander en bleu noir")
+    assert parsed["format"] == "paupercommander"
+    assert set(parsed["colors"]) == {"U", "B"}
+
+
+def test_heuristic_pdh_abbreviation():
+    assert intent._heuristic("un deck pdh mono vert")["format"] == "paupercommander"
+
+
+def test_heuristic_duel_commander_not_confused_with_plain_commander():
+    # "commander" is a substring word of "duel commander" — the more specific
+    # multi-word entry must win, not the generic "commander" fallback.
+    assert intent._heuristic("commander duel en boros")["format"] == "duelcommander"
+
+
+def test_heuristic_pauper_commander_not_confused_with_plain_pauper():
+    # Same trap as above but for "pauper" vs "pauper commander".
+    assert intent._heuristic("deck pauper agro rouge")["format"] == "pauper"
+    assert intent._heuristic("deck pauper commander rouge")["format"] == "paupercommander"
+
+
+def test_coerce_accepts_duelcommander_and_paupercommander():
+    assert intent._coerce({"format": "duelcommander"})["format"] == "duelcommander"
+    assert intent._coerce({"format": "paupercommander"})["format"] == "paupercommander"
+
+
 def test_heuristic_shard_name_expands_to_colors():
     # "Grixis commanders" must constrain the colour filter to U/B/R, otherwise
     # off-colour commanders surface and the requested ones get buried.

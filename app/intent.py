@@ -5,8 +5,9 @@ heuristic parser so the app stays useful when no API key is set. Both produce
 the same shape:
 
     {
-      "format": "commander" | "standard" | "modern" | "pioneer" | "pauper" |
-                "legacy" | "vintage" | "premodern" | None,
+      "format": "commander" | "duelcommander" | "paupercommander" | "standard" |
+                "modern" | "pioneer" | "pauper" | "legacy" | "vintage" |
+                "premodern" | None,
       "colors": ["W","U","B","R","G"]  (subset, may be empty),
       "theme": "<short free text>",
       "keywords": ["aristocrats", "sacrifice", ...],
@@ -20,8 +21,8 @@ import re
 from . import llm
 
 VALID_COLORS = {"W", "U", "B", "R", "G"}
-VALID_FORMATS = {"commander", "standard", "modern", "pioneer", "pauper", "legacy",
-                 "vintage", "premodern"}
+VALID_FORMATS = {"commander", "duelcommander", "paupercommander", "standard", "modern",
+                 "pioneer", "pauper", "legacy", "vintage", "premodern"}
 
 # French + English color words -> WUBRG symbol.
 _COLOR_WORDS = {
@@ -52,7 +53,18 @@ _GUILD_SHARD_WORDS = {
 }
 
 _FORMAT_WORDS = {
-    "commander": "commander", "edh": "commander", "duel commander": "commander",
+    # Multi-word Commander variants must be tried before the plain "commander"/
+    # "pauper" entries below: those single words also match inside "duel
+    # commander" or "pauper commander" (the \b probe only checks word
+    # boundaries, not multi-word phrases), so the generic entry would win first
+    # and the more specific format would never be reached.
+    "duel commander": "duelcommander", "commander duel": "duelcommander",
+    "duelcommander": "duelcommander", "commander 1v1": "duelcommander",
+    "1v1 commander": "duelcommander",
+    "pauper commander": "paupercommander", "commander pauper": "paupercommander",
+    "paupercommander": "paupercommander", "pauper edh": "paupercommander",
+    "edh pauper": "paupercommander", "pdh": "paupercommander",
+    "commander": "commander", "edh": "commander",
     "standard": "standard",
     # Premodern must be tried before "modern": "pre-modern" / "premoderne"
     # otherwise the \bmodern\b probe could match the hyphenated spelling.
@@ -81,9 +93,13 @@ _SYSTEM_PROMPT = (
     "Tu es un assistant de deckbuilding Magic: the Gathering. "
     "L'utilisateur decrit en francais le deck qu'il veut construire. "
     "Reponds UNIQUEMENT avec un objet JSON valide, sans texte autour, avec ces cles:\n"
-    '- "format": un parmi "commander","standard","modern","pioneer","pauper",'
-    '"legacy","vintage","premodern", ou null si non precise. '
-    '("premodern"/"pre-modern" = le format retro 4e edition a Scourge.)\n'
+    '- "format": un parmi "commander","duelcommander","paupercommander",'
+    '"standard","modern","pioneer","pauper","legacy","vintage","premodern", '
+    'ou null si non precise. '
+    '("premodern"/"pre-modern" = le format retro 4e edition a Scourge ; '
+    '"duelcommander" = Commander en duel/1 contre 1 ; '
+    '"paupercommander" = Commander avec des cartes majoritairement communes, '
+    "aussi appele PDH.)\n"
     '- "colors": liste de symboles parmi "W","U","B","R","G" (blanc, bleu, noir, '
     "rouge, vert). Liste vide si non precise. Convertis les noms de "
     "guildes/shards/wedges en couleurs (ex: Grixis=U,B,R ; Rakdos=B,R ; "

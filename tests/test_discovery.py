@@ -73,7 +73,8 @@ def _wire(analysis, monkeypatch, *, commander_page=_COMMANDER_PAGE):
     monkeypatch.setattr(analysis.scryfall, "resolve_cards", fake_resolve_cards)
     monkeypatch.setattr(analysis.edhrec, "fetch_card", lambda name, client=None: _CARD_PAGE)
     monkeypatch.setattr(
-        analysis.edhrec, "fetch_commander", lambda name, client=None: commander_page
+        analysis.edhrec, "fetch_commander",
+        lambda name, client=None, fmt="commander": commander_page
     )
     monkeypatch.setattr(
         analysis.buylist, "build",
@@ -156,3 +157,70 @@ def test_discovery_can_be_disabled(env, monkeypatch):
 
     data = analysis.analyze(_intent(), pid)
     assert data["proposed_count"] == 0
+
+
+# --- Duel Commander / Pauper Commander --------------------------------------
+
+def _wire_resolver(analysis, monkeypatch, registry):
+    """Point scryfall.resolve_cards at a custom (name -> card) registry."""
+    def fake_resolve_cards(names, client=None):
+        res, nf = {}, []
+        for n in names:
+            k = n.split("//")[0].strip().lower()
+            (res.__setitem__(k, registry[k]) if k in registry else nf.append(n))
+        return res, nf
+
+    monkeypatch.setattr(analysis.scryfall, "resolve_cards", fake_resolve_cards)
+
+
+def test_analyze_threads_format_to_edhrec_fetch(env, monkeypatch):
+    """analyze() must fetch the requested Commander variant's EDHREC page."""
+    db, analysis = env.db, env.analysis
+    pid = db.ensure_default_profile()
+    db.replace_collection(pid, [_row("Krenko, Mob Boss")])
+    _wire(analysis, monkeypatch)
+    _wire_resolver(analysis, monkeypatch, {
+        **_REGISTRY,
+        "krenko, mob boss": {**_REGISTRY["krenko, mob boss"], "legalities": {"duel": "legal"}},
+    })
+
+    seen_fmts = []
+
+    def fake_fetch_commander(name, client=None, fmt="commander"):
+        seen_fmts.append(fmt)
+        return _COMMANDER_PAGE
+
+    monkeypatch.setattr(analysis.edhrec, "fetch_commander", fake_fetch_commander)
+
+    data = analysis.analyze(_intent(format="duelcommander"), pid)
+    assert "duelcommander" in seen_fmts
+    assert data["format"] == "duelcommander"
+
+
+def test_analyze_excludes_commander_banned_in_duelcommander(env, monkeypatch):
+    """A card banned in Duel Commander must not surface as an owned commander,
+    even though it's a legal (structural) commander in plain Commander."""
+    db, analysis = env.db, env.analysis
+    pid = db.ensure_default_profile()
+    db.replace_collection(pid, [_row("Krenko, Mob Boss")])
+    _wire(analysis, monkeypatch)
+    _wire_resolver(analysis, monkeypatch, {
+        **_REGISTRY,
+        "krenko, mob boss": {**_REGISTRY["krenko, mob boss"], "legalities": {"duel": "banned"}},
+    })
+
+    data = analysis.analyze(_intent(format="duelcommander"), pid)
+    assert data["candidate_count"] == 0
+    assert not any(r["name"] == "Krenko, Mob Boss" for r in data["results"])
+
+
+def test_analyze_unknown_format_falls_back_to_commander(env, monkeypatch):
+    db, analysis = env.db, env.analysis
+    pid = db.ensure_default_profile()
+    db.replace_collection(pid, [_row("Krenko, Mob Boss")])
+    _wire(analysis, monkeypatch)
+
+    data = analysis.analyze(_intent(format="modern"), pid)
+    assert data["format"] == "commander"
+    assert any("modern" in n for n in data["notices"])
+    assert any(r["name"] == "Krenko, Mob Boss" for r in data["results"])

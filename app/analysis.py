@@ -94,7 +94,7 @@ def _build_result(card: dict, data: dict, owned_keys: set, intent: dict,
 
 
 def _discover_unowned(owned_cards: list, owned_keys: set, intent: dict,
-                      *, existing: set, client):
+                      *, existing: set, client, fmt: str):
     """Propose commanders you don't own but that your cards point to (EDHREC).
 
     For a bounded sample of owned cards, look up the commanders that most play
@@ -140,7 +140,7 @@ def _discover_unowned(owned_cards: list, owned_keys: set, intent: dict,
         if len(discovered) >= settings.discovery_limit:
             break
         card = resolved.get(_norm(name))
-        if not card or not commanders.is_commander(card):
+        if not card or not commanders.is_eligible_commander(card, fmt):
             continue
         if not _color_ok(card, intent.get("colors") or [], intent.get("max_colors")):
             continue
@@ -148,7 +148,7 @@ def _discover_unowned(owned_cards: list, owned_keys: set, intent: dict,
         # "Match the budget": a commander you must buy can't exceed it alone.
         if budget is not None and price is not None and price > budget:
             continue
-        data = edhrec.fetch_commander(commanders.front_name(card), client=client)
+        data = edhrec.fetch_commander(commanders.front_name(card), client=client, fmt=fmt)
         if data.get("_error") or data.get("_not_found"):
             continue
         if (edhrec.extract_num_decks(data) < settings.min_decks
@@ -170,12 +170,13 @@ def _discover_unowned(owned_cards: list, owned_keys: set, intent: dict,
 def analyze(intent: dict, profile_id: int, limit: int = 12):
     """Return ranked commander suggestions for a profile's collection + intent."""
     notices = []
-    fmt = intent.get("format")
-    if fmt and fmt != "commander":
+    fmt = intent.get("format") or "commander"
+    if fmt not in commanders.FORMATS:
         notices.append(
             f"Le format « {fmt} » (60 cartes) arrive en Phase 2 — "
             "affichage des suggestions Commander en attendant."
         )
+        fmt = "commander"
 
     owned_ids = db.collection_scryfall_ids(profile_id)
     owned_keys = db.owned_name_keys(profile_id)
@@ -200,7 +201,7 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
             if cid in seen:
                 continue
             seen.add(cid)
-            if commanders.is_commander(card) and _color_ok(
+            if commanders.is_eligible_commander(card, fmt) and _color_ok(
                 card, intent.get("colors") or [], intent.get("max_colors")
             ):
                 candidates.append(card)
@@ -212,7 +213,7 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
 
         def process(card) -> bool:
             nonlocal not_on_edhrec
-            data = edhrec.fetch_commander(commanders.front_name(card), client=client)
+            data = edhrec.fetch_commander(commanders.front_name(card), client=client, fmt=fmt)
             if data.get("_error"):
                 return False
             if data.get("_not_found"):
@@ -258,7 +259,7 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
         if settings.discovery_enabled:
             proposed, discovery = _discover_unowned(
                 owned_cards, owned_keys, intent,
-                existing=owned_keys, client=client,
+                existing=owned_keys, client=client, fmt=fmt,
             )
             # Owned suggestions first (free to build), proposed ones after.
             results = results + proposed
@@ -280,6 +281,7 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
     return {
         "results": results,
         "intent": intent,
+        "format": fmt,
         "notices": notices,
         "candidate_count": len(candidates),
         "below_threshold": sorted(below_threshold, key=lambda c: c["num_decks"], reverse=True),
