@@ -378,6 +378,70 @@ def test_generate_decklist_tool_passes_requested_format(env, monkeypatch):
     assert captured["fmt"] == "commander"
 
 
+def test_find_commanders_tool_builds_finder_artifact(env, monkeypatch):
+    """The theme-first search tool works without any collection and flags its
+    artifact as `finder` so the UI shows the validation (Retenir) flow."""
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()  # no collection imported
+
+    captured = {}
+
+    def fake_find(intent, profile_id):
+        captured["format"] = intent.get("format")
+        return {
+            "results": [{
+                "name": "Krenko, Mob Boss", "image": None, "color_identity": ["R"],
+                "num_decks": 12000, "below_threshold": False, "owned": False,
+                "price_eur": 0.5, "link_count": 0, "linked_owned_cards": [],
+                "owned_count": 1, "total_recommended": 10, "pct": 10.0,
+                "owned_cards": ["Goblin Recruiter"], "missing_cards": ["Goblin Chieftain"],
+                "total_cost_eur": 2.5,
+                "buylist": {"to_buy": [], "total_eur": 2.0, "bought_count": 1,
+                            "budget_eur": None, "max_card_price_eur": None},
+            }],
+            "notices": [], "candidate_count": 3,
+        }
+
+    monkeypatch.setattr(chat.analysis, "find_commanders", fake_find)
+
+    text, artifact = chat._exec_find_commanders(
+        {"format": "commander", "colors": ["R"], "keywords": ["goblins"]}, pid
+    )
+    assert captured["format"] == "commander"
+    assert artifact["type"] == "commanders"
+    assert artifact["finder"] is True
+    assert "Krenko" in text
+    assert "retient" in text  # the model is told to ask for validation
+
+    # Unknown format value falls back to plain "commander".
+    chat._exec_find_commanders({"format": "bogus"}, pid)
+    assert captured["format"] == "commander"
+
+
+def test_find_commanders_tool_respects_unowned_only(env, monkeypatch):
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+
+    base = {
+        "image": None, "color_identity": ["R"], "num_decks": 100,
+        "below_threshold": False, "price_eur": None, "link_count": 0,
+        "linked_owned_cards": [], "owned_count": 0, "total_recommended": 10,
+        "pct": 0.0, "owned_cards": [], "missing_cards": [], "total_cost_eur": 0.0,
+        "buylist": {"to_buy": [], "total_eur": 0, "bought_count": 0,
+                    "budget_eur": None, "max_card_price_eur": None},
+    }
+    monkeypatch.setattr(chat.analysis, "find_commanders", lambda intent, pid_: {
+        "results": [
+            {**base, "name": "Owned One", "owned": True},
+            {**base, "name": "New One", "owned": False, "price_eur": 1.0},
+        ],
+        "notices": [], "candidate_count": 2,
+    })
+
+    _text, artifact = chat._exec_find_commanders({"unowned_only": True}, pid)
+    assert [r["name"] for r in artifact["results"]] == ["New One"]
+
+
 def test_suggest_commanders_tool_passes_requested_format(env, monkeypatch):
     db, chat = env.db, env.chat
     pid = db.ensure_default_profile()

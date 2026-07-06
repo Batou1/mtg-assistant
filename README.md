@@ -42,6 +42,21 @@ and a budget-constrained buylist priced in EUR.
    data, filtered through **Scryfall's legality** for the variant (Duel
    Commander's banned list, Pauper Commander's commons-only restriction) —
    applied to both the commander itself and every recommended card.
+
+   **Search beyond your collection** — tick *« Chercher des commandants
+   au-delà de ma collection »* on the home form, or ask the chat to search
+   without limiting to your cards (*« cherche sur EDHREC des commandants
+   dragons, indépendamment de ma collection »*), and the app finds candidate
+   commanders for the requested theme **independently of what you own**: from
+   EDHREC's **theme/typal pages** (the commanders most played for that theme)
+   and from the **local Scryfall pool** (commander-eligible legendaries whose
+   text or type matches the theme). It works even with an empty collection.
+   Each candidate is still compared to your collection for information
+   (completion %, budget-constrained buylist, owned or not). In the chat you
+   then **validate** the commander(s) you keep — tick *Retenir* on the cards
+   and hit *Valider la sélection*, or just say *« je retiens X et Y »* — and
+   the conversation resumes normally: the generated decklists reuse and flag
+   the cards from your collection that fit the retained commanders.
 4. **Buylist** — the missing cards are priced in EUR from
    [Scryfall](https://scryfall.com)'s Cardmarket data, and the most synergistic
    ones are picked greedily within your budget. A **total budget** and a
@@ -195,6 +210,9 @@ fresh from the API.
 | `MTG_DISCOVERY_CARD_LIMIT` | `40`                  | Owned cards probed for discovery     |
 | `MTG_DISCOVERY_POOL` | `20`                        | Candidate commanders resolved + filtered |
 | `MTG_DISCOVERY_LIMIT`| `4`                         | Proposed (unowned) commanders shown  |
+| `MTG_FINDER_THEME_LIMIT` | `4`                     | EDHREC theme pages probed per search |
+| `MTG_FINDER_POOL`    | `30`                        | Finder candidates resolved + filtered |
+| `MTG_FINDER_LIMIT`   | `8`                         | Finder commanders scored + shown     |
 | `ANTHROPIC_API_KEY`  | *(empty)*                   | Anthropic API key (read by the SDK)  |
 | `MTG_ANTHROPIC_MODEL`| `claude-sonnet-5`           | Claude model used for all LLM tasks  |
 | `MTG_CHAT_MAX_TOOL_ITERS` | `6`                    | Max tool-call rounds per chat turn   |
@@ -264,7 +282,7 @@ app/
   commanders.py legal-commander detection
   llm.py        Anthropic (Claude) client: JSON intent, archetypes, game plans
   intent.py     French wish → structured intent (LLM + heuristic fallback)
-  analysis.py   intent-aware commander ranking + gap analysis
+  analysis.py   intent-aware commander ranking + gap analysis + theme finder
   buylist.py    budget-constrained EUR shopping list
   deckgen.py    full 100-card Commander decklist builder
   research.py   Brave Search client (web research)

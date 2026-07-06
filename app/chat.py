@@ -61,6 +61,16 @@ SYSTEM_PROMPT = (
     "- Si le joueur veut un commandant qu'il NE possède PAS (« que je n'ai pas », "
     "« à acquérir », « un nouveau commandant »), appelle suggest_commanders avec "
     "unowned_only=true.\n"
+    "- RECHERCHE PAR THÈME, HORS COLLECTION : si le joueur veut découvrir les "
+    "commandants possibles pour un thème/des caractéristiques SANS se limiter à "
+    "sa collection (« cherche sur EDHREC/Scryfall », « indépendamment de ma "
+    "collection », « quels commandants existent pour ce thème ? »), appelle "
+    "find_commanders (et non suggest_commanders). Présente les candidats et "
+    "demande-lui lesquels il RETIENT — ne génère aucune decklist avant qu'il ait "
+    "validé. Quand il valide un ou plusieurs commandants (« je retiens X et Y »), "
+    "la conversation reprend normalement : propose generate_decklist pour CHAQUE "
+    "commandant retenu — les cartes de sa collection qui conviennent y sont "
+    "réutilisées et signalées comme possédées.\n"
     "- Pour le Commander (EDH), le Duel Commander (1 contre 1) ou le Pauper "
     "Commander (cartes majoritairement communes, aussi appelé PDH), appelle "
     "suggest_commanders avec le paramètre format adéquat (commander, "
@@ -166,6 +176,34 @@ TOOLS = [
                         "défaut), \"duelcommander\" (Duel Commander, 1 contre 1) ou "
                         "\"paupercommander\" (Pauper Commander / PDH, cartes "
                         "majoritairement communes)."
+                    ),
+                },
+                **_INTENT_PROPS,
+            },
+        },
+    },
+    {
+        "name": "find_commanders",
+        "description": (
+            "Cherche des commandants potentiels pour un thème/des caractéristiques "
+            "donnés, INDÉPENDAMMENT de la collection du joueur : interroge les "
+            "pages de thème EDHREC (commandants les plus joués du thème) et la "
+            "base Scryfall locale (légendaires dont le texte ou le type colle au "
+            "thème). Chaque candidat est ensuite comparé à la collection à titre "
+            "indicatif (complétude, liste d'achat, possédé ou non). Utilise-le "
+            "quand le joueur veut explorer les commandants possibles au-delà de "
+            "ses cartes, puis demande-lui lesquels il RETIENT avant de générer "
+            "des decklists."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "enum": sorted(commanders.FORMATS),
+                    "description": (
+                        "Variante Commander visée : \"commander\" (défaut), "
+                        "\"duelcommander\" ou \"paupercommander\"."
                     ),
                 },
                 **_INTENT_PROPS,
@@ -421,6 +459,52 @@ def _exec_suggest_commanders(args: dict, profile_id: int, ctx: dict | None = Non
     return "Commandants proposés :\n" + "\n".join(lines), artifact
 
 
+def _exec_find_commanders(args: dict, profile_id: int, ctx: dict | None = None):
+    fmt = (args.get("format") or "commander").lower()
+    if fmt not in commanders.FORMATS:
+        fmt = "commander"
+    parsed = _intent_from(args, fmt)
+    data = analysis.find_commanders(parsed, profile_id)
+    results = data.get("results") or []
+    if parsed.get("unowned_only"):
+        results = [r for r in results if not _is_owned(r)]
+    if not results:
+        return (
+            f"Aucun commandant trouvé pour ce thème ({data.get('candidate_count', 0)} "
+            "candidat(s) examiné(s)). Suggère de reformuler le thème avec des "
+            "mots-clés EDHREC en anglais (aristocrats, tokens, reanimator, "
+            "zombies…) ou d'élargir les couleurs.",
+            None,
+        )
+
+    for r in results:
+        r.pop("missing_cards", None)
+    artifact = {"type": "commanders", "finder": True, "intent": parsed,
+                "results": results, "notices": data.get("notices") or []}
+
+    lines = []
+    for r in results:
+        buy = r.get("buylist") or {}
+        if _is_owned(r):
+            tag = "possédé"
+        else:
+            price = r.get("price_eur")
+            tag = (f"à acquérir, {price} €" if price is not None
+                   else "à acquérir, prix indisponible")
+        lines.append(
+            f"- {r['name']} ({tag}) : {r['pct']}% complété ({r['owned_count']}/"
+            f"{r['total_recommended']}), {r['num_decks']} decks EDHREC, "
+            f"achat {buy.get('total_eur', 0)} € ({buy.get('bought_count', 0)} cartes)"
+            f"{_cap_suffix(buy.get('max_card_price_eur'))}"
+        )
+    text = (
+        "Commandants trouvés pour ce thème (recherche EDHREC + Scryfall, "
+        "indépendante de la collection) :\n" + "\n".join(lines) +
+        "\n\nDemande au joueur lesquels il retient avant de générer une decklist."
+    )
+    return text, artifact
+
+
 def _exec_research_archetype(args: dict, profile_id: int, ctx: dict | None = None):
     fmt = (args.get("format") or "").lower()
     if fmt not in formats60.FORMATS:
@@ -600,6 +684,7 @@ def _exec_build_pool_deck(args: dict, profile_id: int, ctx: dict | None = None):
 _EXECUTORS = {
     "get_collection_summary": _exec_collection_summary,
     "suggest_commanders": _exec_suggest_commanders,
+    "find_commanders": _exec_find_commanders,
     "research_archetype": _exec_research_archetype,
     "generate_decklist": _exec_generate_decklist,
     "build_pool_deck": _exec_build_pool_deck,
@@ -697,7 +782,9 @@ def _snapshot_decklist(art: dict) -> str:
 
 def _snapshot_commanders(art: dict) -> str:
     fmt = (art.get("intent") or {}).get("format") or "commander"
-    lines = [f"COMMANDANTS SUGGÉRÉS ({fmt.upper()}) :"]
+    head = ("COMMANDANTS TROUVÉS PAR THÈME, HORS COLLECTION"
+            if art.get("finder") else "COMMANDANTS SUGGÉRÉS")
+    lines = [f"{head} ({fmt.upper()}) :"]
     for r in art.get("results") or []:
         buy = r.get("buylist") or {}
         if _is_owned(r):

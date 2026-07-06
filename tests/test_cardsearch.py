@@ -116,6 +116,21 @@ def test_search_skips_non_game_layouts(fresh):
     assert len(results) == 3
 
 
+def test_search_commander_only(fresh):
+    cardsearch, db = fresh
+    _seed(db)
+    db.bulk_set_cards([("krenko, mob boss", {
+        "id": "c-krenko", "name": "Krenko, Mob Boss", "layout": "normal",
+        "cmc": 4.0, "type_line": "Legendary Creature — Goblin",
+        "oracle_text": "{T}: Create Goblin tokens.", "color_identity": ["R"],
+        "keywords": [], "legalities": {"commander": "legal"},
+    })])
+    db.set_meta("bulk_oracle_cards_synced_at", "3")
+
+    results = cardsearch.search(commander_only=True)
+    assert [c["name"] for c in results] == ["Krenko, Mob Boss"]
+
+
 def test_cache_invalidates_on_new_sync_token(fresh):
     cardsearch, db = fresh
     _seed(db)

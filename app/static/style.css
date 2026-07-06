@@ -398,6 +398,21 @@ button:disabled {
 
 /* Primary + outline action row at the bottom of a commander card */
 .card-actions { display: flex; gap: 10px; margin-top: 14px; }
+/* Commander finder: per-commander "Retenir" pick + validation bar. */
+.card-actions .pick-label {
+  display: inline-flex; align-items: center; gap: 8px; padding: 0 14px;
+  border: 1px solid var(--line-strong); border-radius: 10px; cursor: pointer;
+  font-size: .84375rem; font-weight: 600; user-select: none; white-space: nowrap;
+}
+.card-actions .pick-label:hover { background: var(--bg3); }
+.card-actions .pick-label input { accent-color: var(--accent); cursor: pointer; }
+.finder-validate {
+  display: flex; align-items: center; gap: 14px; justify-content: space-between;
+  flex-wrap: wrap; margin-top: 12px; padding: 14px 18px;
+}
+.finder-validate form { margin: 0; }
+.beyond-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+.beyond-toggle input { accent-color: var(--accent); cursor: pointer; }
 .commander-meta .card-actions { margin-top: auto; padding-top: 14px; }
 .card-actions .generate-form { flex: 1; margin: 0; }
 .card-actions .generate-form button {

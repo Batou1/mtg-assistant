@@ -46,11 +46,29 @@ def slugify(name: str) -> str:
     return name.strip("-")
 
 
+def _s3_not_found(resp: httpx.Response) -> bool:
+    """True if this 403 is S3/CloudFront's way of saying "no such page".
+
+    EDHREC's JSON lives on S3 behind CloudFront: a slug with no page surfaces
+    as a 403 "AccessDenied" XML from AmazonS3, not a 404. Detecting it lets a
+    nonexistent slug be treated (and cached) as not-found instead of being
+    retried as if Cloudflare were blocking us.
+    """
+    if resp.status_code != 403:
+        return False
+    server = resp.headers.get("server", "").lower()
+    via = resp.headers.get("via", "").lower()
+    if "amazons3" not in server and "cloudfront" not in via:
+        return False
+    return b"<Code>AccessDenied</Code>" in resp.content[:512]
+
+
 def _get_with_retry(client: httpx.Client, url: str, attempts: int = 5):
     """GET ``url`` with backoff on transient/blocking responses.
 
-    Returns the parsed JSON dict, the sentinel "_not_found" for a 404, or None
-    if every attempt failed (caller treats this as a skippable error).
+    Returns the parsed JSON dict, the sentinel "_not_found" for a missing page
+    (404, or S3's AccessDenied 403), or None if every attempt failed (caller
+    treats this as a skippable error).
     """
     delay = max(settings.request_delay, 0.25)
     for attempt in range(attempts):
@@ -61,7 +79,7 @@ def _get_with_retry(client: httpx.Client, url: str, attempts: int = 5):
             delay = min(delay * 2, 8)
             continue
 
-        if resp.status_code == 404:
+        if resp.status_code == 404 or _s3_not_found(resp):
             time.sleep(settings.request_delay)
             return "_not_found"
 
@@ -153,24 +171,64 @@ def fetch_card(name: str, client: httpx.Client | None = None) -> dict:
     return result
 
 
+def fetch_theme(slug: str, client: httpx.Client | None = None) -> dict:
+    """Return an EDHREC tag page's JSON (top commanders of a theme).
+
+    Both strategy themes ("aristocrats", "group-hug"…) and creature types
+    ("zombies", "dragons"…) live under the same tags section. Same sentinels
+    and caching as :func:`fetch_commander`, under a ``theme:`` slug prefix.
+    """
+    slug = slugify(slug)
+    cache_key = f"theme:{slug}"
+    cached = db.get_edhrec(cache_key)
+    if cached is not None:
+        return cached
+
+    url = f"{settings.edhrec_tags_json}/{slug}.json"
+    owns_client = client is None
+    if owns_client:
+        client = httpx.Client(timeout=30)
+    try:
+        result = _get_with_retry(client, url)
+    finally:
+        if owns_client:
+            client.close()
+
+    if result is None:
+        return {"_error": True}
+    if result == "_not_found":
+        data = {"_not_found": True}
+        db.set_edhrec(cache_key, data)
+        return data
+
+    db.set_edhrec(cache_key, result)
+    return result
+
+
 def _json_dict(data: dict) -> dict:
     return (data.get("container", {}) or {}).get("json_dict", {}) or {}
 
 
 def extract_top_commanders(data: dict) -> list[str]:
-    """Commander names a card page lists as most playing this card (in order).
+    """Commander names a card or theme page lists (most-associated first).
 
     EDHREC card pages carry a "Top Commanders" card list; we match it by tag or
     header so a payload-shape tweak (e.g. ``topcommanders`` vs ``commanders``)
-    keeps working. Returns names most-associated first.
+    keeps working. Theme (tag) pages also carry a small "New Commanders" list:
+    the "top…" section is processed first so the theme's actual top commanders
+    outrank the merely-new ones.
     """
-    names: list[str] = []
-    seen: set[str] = set()
+    sections = []
     for section in _json_dict(data).get("cardlists") or []:
         tag = (section.get("tag") or "").lower()
         header = (section.get("header") or "").lower()
-        if "commander" not in tag and "commander" not in header:
-            continue
+        if "commander" in tag or "commander" in header:
+            sections.append((("top" not in tag and "top" not in header), section))
+    sections.sort(key=lambda pair: pair[0])  # stable: "top…" sections first
+
+    names: list[str] = []
+    seen: set[str] = set()
+    for _, section in sections:
         for view in section.get("cardviews", []) or []:
             name = view.get("name")
             if name and name not in seen:

@@ -12,7 +12,7 @@ Built on the ``oracle_cards`` import: one canonical printing per card, cached
 in memory per process (rebuilt only when a newer oracle_cards bulk import
 lands, tracked via the same meta timestamp app/bulk_data.py writes).
 """
-from . import db, scryfall
+from . import commanders, db, scryfall
 
 _cache: list[dict] | None = None
 _cache_token: str | None = None
@@ -74,6 +74,7 @@ def search(
     min_cmc: float | None = None,
     max_cmc: float | None = None,
     exclude_names=None,
+    commander_only: bool = False,
     limit: int = 40,
 ) -> list[dict]:
     """Return up to ``limit`` cards matching every given criterion.
@@ -85,6 +86,8 @@ def search(
     (Flying, Trample, Proliferate…); ``text_contains`` substring-matches the
     oracle text — the way to search a *theme* that isn't a formal keyword
     (e.g. "sacrifice a creature", "return...from your graveyard").
+    ``commander_only`` keeps only cards that can structurally BE a commander
+    (legendary creatures / "can be your commander").
 
     Results are real cards straight from the local database: safe to name
     directly once returned here.
@@ -100,6 +103,8 @@ def search(
         if not name or name.lower() in exclude:
             continue
         if not _color_identity_ok(card, colors, exact_colors):
+            continue
+        if commander_only and not commanders.is_commander(card):
             continue
         if legal_in and not scryfall.legal_in(card, legal_in):
             continue

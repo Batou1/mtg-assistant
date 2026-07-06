@@ -15,17 +15,22 @@
   <section class="card wish-card">
     <form action="/suggest" method="post" class="stack">
       <textarea name="wish" rows="5" placeholder="Ex : un deck Commander aristocrats sacrifice en noir/rouge, budget 50€"></textarea>
+      <label class="beyond-toggle muted small" title="Recherche les commandants du thème sur les pages EDHREC et dans la base Scryfall, sans partir de tes cartes. Ta collection reste utilisée ensuite pour la complétude et la decklist.">
+        <input type="checkbox" name="beyond" value="1">
+        Chercher des commandants au-delà de ma collection (EDHREC + Scryfall)
+      </label>
       <div class="wish-footer">
         <p class="status small" style="margin: 0;">
           <span class="status-dot {{ 'on' if llm_ok else '' }}" style="display: inline-block; vertical-align: middle; margin-right: 6px;"></span>
           {% if llm_ok %}Claude connecté <span class="muted">· {{ llm_model }}</span>
           {% else %}<span class="muted">mode heuristique — ajoute ANTHROPIC_API_KEY</span>{% endif %}
         </p>
-        <button type="submit" {% if not total %}disabled title="Importe d'abord ta collection"{% endif %}>
+        <button type="submit" {% if not total %}disabled data-needs-collection title="Importe d'abord ta collection"{% endif %}>
           Lancer l'analyse
         </button>
       </div>
-      {% if not total %}<p class="muted small">Importe ta collection pour activer les suggestions.</p>{% endif %}
+      {% if not total %}<p class="muted small">Importe ta collection pour activer les suggestions —
+        ou coche la recherche au-delà de ta collection.</p>{% endif %}
     </form>
     <div class="wish-examples">
       <button type="button" onclick="mtgFillWish(this)" data-text="deck tokens vert/blanc qui fait beaucoup de jetons">deck tokens vert/blanc</button>
@@ -93,6 +98,15 @@
     var form = btn.closest(".card").querySelector("textarea[name=wish]");
     if (form) { form.value = btn.getAttribute("data-text"); form.focus(); }
   }
+
+  // The theme-first commander search doesn't need a collection: checking the
+  // "beyond my collection" box re-enables the submit button on an empty profile.
+  (function () {
+    var box = document.querySelector("input[name=beyond]");
+    var btn = document.querySelector("button[data-needs-collection]");
+    if (!box || !btn) return;
+    box.addEventListener("change", function () { btn.disabled = !box.checked; });
+  })();
 </script>
 
 {% endblock %}

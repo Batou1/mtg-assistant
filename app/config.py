@@ -28,6 +28,17 @@ class Settings:
     # How many proposed (unowned) commanders to fully score + display.
     discovery_limit: int = int(os.environ.get("MTG_DISCOVERY_LIMIT", "4"))
 
+    # --- Commander finder (theme-first, collection-independent) -------------
+    # Search commanders for a requested theme on EDHREC's theme/typal pages and
+    # in the local Scryfall pool, without deriving candidates from the
+    # collection (see analysis.find_commanders).
+    # How many theme-page slugs to probe per request (bounds I/O).
+    finder_theme_limit: int = int(os.environ.get("MTG_FINDER_THEME_LIMIT", "4"))
+    # How many candidate commanders to resolve + colour/legality-filter.
+    finder_pool: int = int(os.environ.get("MTG_FINDER_POOL", "30"))
+    # How many found commanders to fully score + display.
+    finder_limit: int = int(os.environ.get("MTG_FINDER_LIMIT", "8"))
+
     # --- External services -------------------------------------------------
     scryfall_api: str = os.environ.get("MTG_SCRYFALL_API", "https://api.scryfall.com")
     # Card data comes from Scryfall's bulk-data exports (see app/bulk_data.py),
@@ -43,6 +54,13 @@ class Settings:
     # source for discovering commanders you don't own but that fit your cards.
     edhrec_cards_json: str = os.environ.get(
         "MTG_EDHREC_CARDS_JSON", "https://json.edhrec.com/pages/cards"
+    )
+    # EDHREC tag pages list the commanders most played for a theme — both
+    # strategy themes ("aristocrats", "group-hug"…) and creature types
+    # ("zombies", "dragons"…) live under pages/tags. The source for the
+    # collection-independent commander finder.
+    edhrec_tags_json: str = os.environ.get(
+        "MTG_EDHREC_TAGS_JSON", "https://json.edhrec.com/pages/tags"
     )
     request_delay: float = float(os.environ.get("MTG_REQUEST_DELAY", "0.1"))
     error_retry_cooldown: float = float(os.environ.get("MTG_ERROR_RETRY_COOLDOWN", "6"))
