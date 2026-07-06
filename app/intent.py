@@ -122,8 +122,12 @@ _SYSTEM_PROMPT = (
 )
 
 
-def _coerce(data: dict) -> dict:
-    """Validate/normalize an LLM (or heuristic) intent into the canonical shape."""
+def coerce(data: dict) -> dict:
+    """Validate/normalize an LLM (or heuristic) intent into the canonical shape.
+
+    Public: also used by main.py (build form) and chat.py (tool arguments) to
+    funnel externally-shaped dicts into the one canonical intent shape.
+    """
     fmt = data.get("format")
     fmt = fmt.lower() if isinstance(fmt, str) and fmt.lower() in VALID_FORMATS else None
 
@@ -244,7 +248,7 @@ def _heuristic(text: str) -> dict:
     if m:
         budget = float(m.group(1).replace(",", "."))
 
-    return _coerce(
+    return coerce(
         {
             "format": fmt,
             "colors": colors,
@@ -264,11 +268,11 @@ def parse_intent(text: str) -> dict:
     """Parse ``text`` into a structured intent, LLM-first with heuristic fallback."""
     text = (text or "").strip()
     if not text:
-        return _coerce({"theme": "", "source": "heuristic"})
+        return coerce({"theme": "", "source": "heuristic"})
 
     data = llm.chat_json(_SYSTEM_PROMPT, text)
     if data is not None:
-        intent = _coerce({**data, "source": "llm"})
+        intent = coerce({**data, "source": "llm"})
         heur = _heuristic(text)
         # If the model returned an empty theme, keep the user's text as theme.
         if not intent["theme"]:

@@ -80,6 +80,9 @@
           {% if import_error_count %}<br>{{ import_error_count }} ligne(s) ignorée(s).{% endif %}
         </div>
       {% endif %}
+      {% if import_failed %}
+        <div class="notice warn">Import refusé : {{ import_failed }}</div>
+      {% endif %}
 
       <form action="/import" method="post" enctype="multipart/form-data" class="stack">
         <label class="dropzone">

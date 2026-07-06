@@ -63,6 +63,10 @@ class Settings:
         "MTG_EDHREC_TAGS_JSON", "https://json.edhrec.com/pages/tags"
     )
     request_delay: float = float(os.environ.get("MTG_REQUEST_DELAY", "0.1"))
+    # Parallel workers for the per-candidate EDHREC/Scryfall fetches during a
+    # Commander analysis. Kept small on purpose: each worker still honours
+    # request_delay after every call, and EDHREC's backoff handles 429s.
+    fetch_workers: int = int(os.environ.get("MTG_FETCH_WORKERS", "4"))
     error_retry_cooldown: float = float(os.environ.get("MTG_ERROR_RETRY_COOLDOWN", "6"))
     error_retry_passes: int = int(os.environ.get("MTG_ERROR_RETRY_PASSES", "2"))
     user_agent: str = os.environ.get(

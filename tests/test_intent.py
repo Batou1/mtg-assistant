@@ -20,7 +20,7 @@ def test_heuristic_english_and_euros_word():
 
 
 def test_coerce_filters_invalid_values():
-    out = intent._coerce(
+    out = intent.coerce(
         {"format": "pauperish", "colors": ["W", "X", "u"], "budget_eur": "nope"}
     )
     assert out["format"] is None
@@ -57,7 +57,7 @@ def test_heuristic_premodern_hyphen_not_confused_with_modern():
 
 
 def test_coerce_accepts_premodern():
-    assert intent._coerce({"format": "premodern"})["format"] == "premodern"
+    assert intent.coerce({"format": "premodern"})["format"] == "premodern"
 
 
 def test_heuristic_duel_commander_format():
@@ -89,8 +89,8 @@ def test_heuristic_pauper_commander_not_confused_with_plain_pauper():
 
 
 def test_coerce_accepts_duelcommander_and_paupercommander():
-    assert intent._coerce({"format": "duelcommander"})["format"] == "duelcommander"
-    assert intent._coerce({"format": "paupercommander"})["format"] == "paupercommander"
+    assert intent.coerce({"format": "duelcommander"})["format"] == "duelcommander"
+    assert intent.coerce({"format": "paupercommander"})["format"] == "paupercommander"
 
 
 def test_heuristic_shard_name_expands_to_colors():
@@ -117,9 +117,9 @@ def test_heuristic_euro_symbol_budget_without_keyword():
 
 
 def test_coerce_max_colors():
-    assert intent._coerce({"max_colors": 2})["max_colors"] == 2
-    assert intent._coerce({"max_colors": 0})["max_colors"] is None  # < 1 -> none
-    assert intent._coerce({"max_colors": "x"})["max_colors"] is None
+    assert intent.coerce({"max_colors": 2})["max_colors"] == 2
+    assert intent.coerce({"max_colors": 0})["max_colors"] is None  # < 1 -> none
+    assert intent.coerce({"max_colors": "x"})["max_colors"] is None
 
 
 def test_heuristic_per_card_price_cap_with_total_budget():
@@ -148,8 +148,8 @@ def test_heuristic_no_per_card_cap_when_not_mentioned():
 
 
 def test_coerce_max_card_price_eur():
-    assert intent._coerce({"max_card_price_eur": "5"})["max_card_price_eur"] == 5.0
-    assert intent._coerce({"max_card_price_eur": 0})["max_card_price_eur"] is None
-    assert intent._coerce({"max_card_price_eur": "x"})["max_card_price_eur"] is None
-    assert intent._coerce({})["max_card_price_eur"] is None
-    assert intent._coerce({})["max_colors"] is None
+    assert intent.coerce({"max_card_price_eur": "5"})["max_card_price_eur"] == 5.0
+    assert intent.coerce({"max_card_price_eur": 0})["max_card_price_eur"] is None
+    assert intent.coerce({"max_card_price_eur": "x"})["max_card_price_eur"] is None
+    assert intent.coerce({})["max_card_price_eur"] is None
+    assert intent.coerce({})["max_colors"] is None

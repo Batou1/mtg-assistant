@@ -42,8 +42,7 @@ _BASICS = {"W": "Plains", "U": "Island", "B": "Swamp", "R": "Mountain", "G": "Fo
 BASIC_NAMES = list(_BASICS.values()) + ["Wastes"]
 
 
-def _norm(name: str) -> str:
-    return name.split("//")[0].strip().lower()
+_norm = scryfall.norm_name
 
 
 def _pool(data: dict, commander_name: str) -> dict:
