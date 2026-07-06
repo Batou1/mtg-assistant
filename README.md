@@ -34,10 +34,14 @@ and a budget-constrained buylist priced in EUR.
    fit the requested colours, theme and budget (the commander's own EUR price is
    counted against the budget). Proposed commanders are tagged *non possédé* with
    their price, total acquisition cost, and the owned cards that led to them.
-   Three Commander variants are supported, each against its own EDHREC data and
-   Scryfall legality: **Commander** (default), **Duel Commander** (1v1, ask for
-   *« un deck duel commander »*) and **Pauper Commander** (mostly-common decks,
-   aka PDH, ask for *« un deck pauper commander »* or *« PDH »*).
+   Three Commander variants are supported: **Commander** (default), **Duel
+   Commander** (1v1, ask for *« un deck duel commander »*) and **Pauper
+   Commander** (mostly-common decks, aka PDH, ask for *« un deck pauper
+   commander »* or *« PDH »*). EDHREC has no dedicated section for the latter
+   two, so they reuse the regular Commander page's popularity/recommended-card
+   data, filtered through **Scryfall's legality** for the variant (Duel
+   Commander's banned list, Pauper Commander's commons-only restriction) —
+   applied to both the commander itself and every recommended card.
 4. **Buylist** — the missing cards are priced in EUR from
    [Scryfall](https://scryfall.com)'s Cardmarket data, and the most synergistic
    ones are picked greedily within your budget. A **total budget** and a
@@ -187,8 +191,6 @@ fresh from the API.
 | -------------------- | --------------------------- | ------------------------------------ |
 | `MTG_DB_PATH`        | `data/app.db`               | SQLite database location             |
 | `MTG_MIN_DECKS`      | `1`                         | Min EDHREC decks for a commander     |
-| `MTG_EDHREC_DUEL_JSON` | `.../pages/commanders/duel` | EDHREC JSON base URL for Duel Commander |
-| `MTG_EDHREC_PAUPER_JSON` | `.../pages/commanders/pauper` | EDHREC JSON base URL for Pauper Commander |
 | `MTG_DISCOVERY`      | `1`                         | Propose commanders you don't own (`0` to disable) |
 | `MTG_DISCOVERY_CARD_LIMIT` | `40`                  | Owned cards probed for discovery     |
 | `MTG_DISCOVERY_POOL` | `20`                        | Candidate commanders resolved + filtered |

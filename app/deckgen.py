@@ -11,7 +11,7 @@ The function takes ``cards_by_name`` (a name->Scryfall-card map the caller has
 already resolved) instead of doing network I/O itself, which keeps it unit
 testable and lets the caller batch/caches Scryfall calls.
 """
-from . import scryfall
+from . import commanders, scryfall
 
 # EDHREC section tags grouped by role.
 _LAND_TAGS = {"lands", "utilitylands"}
@@ -115,8 +115,20 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
     ``max_card_price`` additionally caps the price of any single bought card —
     e.g. a 30€ total budget with a 5€ per-card cap never adds a 10€ card even
     though it would otherwise fit the remaining total.
+
+    ``fmt``'s EDHREC page is always the regular (paper) Commander one — EDHREC
+    has no separate Duel/Pauper Commander section — so for those variants the
+    pool is additionally filtered here to cards Scryfall marks legal in ``fmt``
+    (Duel Commander's banned list, Pauper Commander's commons-only restriction).
     """
     pool = _pool(data, commander_card["name"])
+    legality_key = commanders.SCRYFALL_LEGALITY.get(fmt)
+    if legality_key:
+        pool = {
+            key: entry for key, entry in pool.items()
+            if (card := cards_by_name.get(key)) is not None
+            and scryfall.legal_in(card, legality_key)
+        }
 
     def owned(name: str) -> bool:
         return _norm(name) in owned_keys
@@ -280,8 +292,9 @@ def generate_full_deck(commander_name: str, budget, theme: str, profile_id: int,
                        max_card_price=None, fmt: str = "commander"):
     """Resolve cards, build the decklist and write an LLM game plan.
 
-    ``fmt`` picks which Commander variant's EDHREC page to build from (see
-    ``commanders.FORMATS``): plain Commander, Duel Commander or Pauper Commander.
+    ``fmt`` (see ``commanders.FORMATS``) picks the Commander variant to build
+    for: the EDHREC page is always the regular Commander one, but ``build_deck``
+    filters it down to cards legal in ``fmt`` for Duel/Pauper Commander.
 
     Blocking (network I/O via Scryfall/EDHREC); run it in a threadpool. Shared by
     the ``/generate`` route and the chat ``generate_decklist`` tool. Returns
@@ -292,7 +305,7 @@ def generate_full_deck(commander_name: str, budget, theme: str, profile_id: int,
     from . import db, edhrec, llm
     from .config import settings
 
-    data = edhrec.fetch_commander(commander_name, fmt=fmt)
+    data = edhrec.fetch_commander(commander_name)
     if data.get("_not_found") or data.get("_error"):
         return None, data
 

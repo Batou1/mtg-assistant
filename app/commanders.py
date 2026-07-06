@@ -2,8 +2,10 @@
 from . import scryfall
 
 # EDHREC-backed Commander variants analysis.py can suggest commanders for.
-# "commander" is the default 100-card multiplayer format; the others reuse the
-# same pipeline against their own EDHREC pages + Scryfall legality.
+# "commander" is the default 100-card multiplayer format; EDHREC has no
+# dedicated section for the other two, so they reuse plain Commander's own
+# EDHREC page, filtered down to what's actually legal in the variant via
+# SCRYFALL_LEGALITY below (see analysis.py / deckgen.py).
 FORMATS = {"commander", "duelcommander", "paupercommander"}
 
 # Scryfall legality key to enforce for a commander candidate, beyond the

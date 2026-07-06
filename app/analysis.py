@@ -59,8 +59,27 @@ def _theme_score(intent: dict, recommended: list[str], tags: list[str]) -> int:
 _BASIC_LANDS = {"plains", "island", "swamp", "mountain", "forest", "wastes"}
 
 
+def _legal_recommended(names: list[str], fmt: str, client) -> list[str]:
+    """Recommended-card names filtered to those legal in ``fmt``.
+
+    EDHREC only has pages for regular (paper) Commander, so a Duel Commander or
+    Pauper Commander suggestion is built from that same recommended-card list —
+    filtered here against Scryfall's legality for the variant (Duel Commander's
+    banned list, Pauper Commander's commons-only restriction) so completion %
+    and the buylist never count/offer a card that isn't actually legal there.
+    """
+    legality_key = commanders.SCRYFALL_LEGALITY.get(fmt)
+    if not legality_key or not names:
+        return names
+    resolved, _nf = scryfall.resolve_cards(names, client=client)
+    return [
+        n for n in names
+        if _norm(n) in resolved and scryfall.legal_in(resolved[_norm(n)], legality_key)
+    ]
+
+
 def _build_result(card: dict, data: dict, owned_keys: set, intent: dict,
-                  *, owned: bool) -> dict:
+                  *, owned: bool, fmt: str = "commander", client=None) -> dict:
     """Score a commander against the collection + intent (shared owned/unowned).
 
     ``owned`` flags whether the commander is in the collection; for a proposed
@@ -68,6 +87,7 @@ def _build_result(card: dict, data: dict, owned_keys: set, intent: dict,
     """
     ordered = edhrec.extract_recommended_ordered(data)
     ordered = [r for r in ordered if _norm(r) != _norm(card["name"])]
+    ordered = _legal_recommended(ordered, fmt, client)
     owned_cards_list = [r for r in ordered if _norm(r) in owned_keys]
     missing_cards = [r for r in ordered if _norm(r) not in owned_keys]
     total = len(ordered)
@@ -148,13 +168,13 @@ def _discover_unowned(owned_cards: list, owned_keys: set, intent: dict,
         # "Match the budget": a commander you must buy can't exceed it alone.
         if budget is not None and price is not None and price > budget:
             continue
-        data = edhrec.fetch_commander(commanders.front_name(card), client=client, fmt=fmt)
+        data = edhrec.fetch_commander(commanders.front_name(card), client=client)
         if data.get("_error") or data.get("_not_found"):
             continue
         if (edhrec.extract_num_decks(data) < settings.min_decks
                 and not intent.get("include_low_decks")):
             continue
-        result = _build_result(card, data, owned_keys, intent, owned=False)
+        result = _build_result(card, data, owned_keys, intent, owned=False, fmt=fmt, client=client)
         result["link_count"] = link_count[name]
         result["linked_owned_cards"] = linked_by[name][:8]
         discovered.append(result)
@@ -213,7 +233,7 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
 
         def process(card) -> bool:
             nonlocal not_on_edhrec
-            data = edhrec.fetch_commander(commanders.front_name(card), client=client, fmt=fmt)
+            data = edhrec.fetch_commander(commanders.front_name(card), client=client)
             if data.get("_error"):
                 return False
             if data.get("_not_found"):
@@ -230,7 +250,9 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
                 if not include_low_decks:
                     return True
 
-            results.append(_build_result(card, data, owned_keys, intent, owned=True))
+            results.append(
+                _build_result(card, data, owned_keys, intent, owned=True, fmt=fmt, client=client)
+            )
             return True
 
         for card in candidates:

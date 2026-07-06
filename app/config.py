@@ -39,14 +39,6 @@ class Settings:
     edhrec_json: str = os.environ.get(
         "MTG_EDHREC_JSON", "https://json.edhrec.com/pages/commanders"
     )
-    # Duel Commander (1v1) and Pauper Commander (mostly-common decks) have their
-    # own EDHREC sections, each with their own popularity/recommended-card data.
-    edhrec_duel_json: str = os.environ.get(
-        "MTG_EDHREC_DUEL_JSON", "https://json.edhrec.com/pages/commanders/duel"
-    )
-    edhrec_pauper_json: str = os.environ.get(
-        "MTG_EDHREC_PAUPER_JSON", "https://json.edhrec.com/pages/commanders/pauper"
-    )
     # EDHREC per-card pages list the commanders that most play a card — the
     # source for discovering commanders you don't own but that fit your cards.
     edhrec_cards_json: str = os.environ.get(

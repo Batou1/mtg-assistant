@@ -120,3 +120,33 @@ def test_sideboard_empty_when_pool_fully_used():
 def test_commander_excluded_from_candidates():
     nonland, lands = deckgen.candidate_names(DATA, "Krenko, Mob Boss")
     assert "Krenko, Mob Boss" not in nonland + lands
+
+
+def test_build_deck_filters_pool_by_duelcommander_legality():
+    # EDHREC has no Duel Commander page: the regular Commander page's pool is
+    # reused, but a card banned there must be excluded from both the main deck
+    # and the sideboard.
+    cards = {
+        **CARDS,
+        "goblin a": {**CARDS["goblin a"], "legalities": {"duel": "legal"}},
+        "goblin b": {**CARDS["goblin b"], "legalities": {"duel": "legal"}},
+        "cool land": {**CARDS["cool land"], "legalities": {"duel": "legal"}},
+        "expensive bomb": {**CARDS["expensive bomb"], "legalities": {"duel": "banned"}},
+    }
+    deck = deckgen.build_deck(
+        COMMANDER, DATA, {"goblin a"}, None, cards, target_lands=4, deck_size=10,
+        fmt="duelcommander",
+    )
+    names = {c["name"] for g in deck["groups"] for c in g["cards"]}
+    assert "Expensive Bomb" not in names
+    assert "Expensive Bomb" not in {c["name"] for c in deck["sideboard"]}
+    assert deck["format"] == "duelcommander"
+
+
+def test_build_deck_plain_commander_keeps_all_cards_regardless_of_legality():
+    # No legality filter applies to plain "commander" (unchanged behaviour):
+    # a card with no legality data at all is still usable.
+    deck = _build(budget=None)
+    names = {c["name"] for g in deck["groups"] for c in g["cards"]}
+    assert "Expensive Bomb" in names
+    assert deck["format"] == "commander"
