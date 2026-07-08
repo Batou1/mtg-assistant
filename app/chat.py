@@ -214,8 +214,10 @@ TOOLS = [
         "name": "research_archetype",
         "description": (
             "Pour un format 60 cartes (standard, modern, pioneer, pauper, legacy, "
-            "vintage, premodern) : recherche un archétype compétitif, valide chaque "
-            "carte via Scryfall, analyse l'écart avec la collection et chiffre l'achat."
+            "vintage, premodern) : recherche un archétype compétitif et construit un "
+            "deck complet de 60 cartes (plusieurs exemplaires par carte, manabase "
+            "incluse), valide chaque carte via Scryfall, analyse l'écart avec la "
+            "collection (par exemplaire) et chiffre l'achat."
         ),
         "input_schema": {
             "type": "object",
@@ -517,12 +519,14 @@ def _exec_research_archetype(args: dict, profile_id: int, ctx: dict | None = Non
 
     arch = data.get("archetype") or {}
     buy = data.get("buylist") or {}
+    counts = (data.get("deck") or {}).get("counts") or {}
     artifact = {"type": "archetype", "intent": parsed, "data": data}
     text = (
-        f"Archétype {fmt} : {arch.get('name')} "
+        f"Deck {fmt} : {arch.get('name')} "
         f"({'/'.join(arch.get('colors') or []) or 'incolore'}). "
-        f"{data.get('owned_count', 0)}/{data.get('valid_count', 0)} cartes maîtresses "
-        f"possédées ; achat {buy.get('total_eur', 0)} € "
+        f"{counts.get('total', 0)} cartes dont {counts.get('lands', 0)} terrains ; "
+        f"{counts.get('owned', 0)} possédées, {counts.get('to_buy', 0)} manquantes ; "
+        f"achat {buy.get('total_eur', 0)} € "
         f"({buy.get('bought_count', 0)} cartes)"
         f"{_cap_suffix(buy.get('max_card_price_eur'))}."
     )
@@ -807,6 +811,35 @@ def _snapshot_archetype(art: dict) -> str:
     data = art.get("data") or {}
     arch = data.get("archetype") or {}
     buy = data.get("buylist") or {}
+    deck = data.get("deck") or {}
+
+    if deck:  # current shape: a full 60-card deck with manabase
+        counts = deck.get("counts") or {}
+        lines = [
+            f"DECK {(data.get('format') or '').upper()} — {arch.get('name')} "
+            f"({_fmt_colors(arch.get('colors'))}) : {counts.get('total', 0)} cartes "
+            f"({counts.get('lands', 0)} terrains), {counts.get('owned', 0)} possédées, "
+            f"{counts.get('to_buy', 0)} manquantes."
+        ]
+        if arch.get("strategy"):
+            lines.append(f"Stratégie : {arch['strategy']}")
+        for group in deck.get("groups") or []:
+            names = [f"{c['qty']}x {c['name']}" for c in group.get("cards") or []]
+            if names:
+                lines.append(f"{group.get('label')} : " + ", ".join(names))
+        lands = deck.get("lands") or {}
+        land_bits = [f"{c['qty']}x {c['name']}" for c in lands.get("nonbasic") or []]
+        land_bits += [f"{c['qty']}x {c['name']}" for c in lands.get("basics") or []]
+        if land_bits:
+            lines.append("Terrains : " + ", ".join(land_bits))
+        to_buy = [f"{c.get('qty', 1)}x {c['name']} ({c.get('price_eur')} €/u)"
+                  for c in buy.get("to_buy") or []]
+        if to_buy:
+            lines.append(f"À acheter ({buy.get('total_eur', 0)} €) : " + ", ".join(to_buy))
+        return "\n".join(lines)
+
+    # Legacy shape (artifacts persisted before the full-deck pipeline):
+    # a flat list of singleton key cards, no manabase.
     lines = [
         f"ARCHÉTYPE {(data.get('format') or '').upper()} — {arch.get('name')} "
         f"({_fmt_colors(arch.get('colors'))})."

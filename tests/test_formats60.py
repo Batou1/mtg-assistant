@@ -1,9 +1,10 @@
-from app import formats60, scryfall, db, llm, research, buylist
+from app import formats60, scryfall, db, llm, research
 
 
-def _card(name, legal=True, eur=None):
+def _card(name, legal=True, eur=None, type_line="Creature — Test"):
     c = {
         "name": name,
+        "type_line": type_line,
         "legalities": {"pauper": "legal" if legal else "not_legal"},
         "image_uris": {"normal": f"http://img/{name}"},
     }
@@ -17,6 +18,7 @@ RESOLVED = {
     "card b": _card("Card B", legal=True, eur=1.0),
     "card c": _card("Card C", legal=False, eur=2.0),
     # "Card D" intentionally absent -> nonexistent card
+    "dual land": _card("Dual Land", legal=True, eur=0.5, type_line="Land"),
 }
 
 
@@ -26,34 +28,95 @@ def _fake_resolve(names, client=None):
     return found, missing
 
 
+ARCHETYPE = {
+    "archetype": "Mono Red Aggro", "colors": ["R"], "strategy": "Tape vite.",
+    "main_deck": [
+        {"name": "Card A", "count": 6},      # clamped to the 4-of rule
+        {"name": "Card B", "count": 4},
+        {"name": "Card C", "count": 4},      # illegal in pauper -> dropped
+        {"name": "Card D", "count": 4},      # nonexistent -> dropped
+        {"name": "Dual Land", "count": 4},
+        {"name": "Mountain", "count": 2},    # basic in main_deck -> basic pile
+    ],
+    "basic_lands": {"Mountain": 18},
+}
+
+
+def _analyze(monkeypatch, archetype=ARCHETYPE, owned=(), budget=5.0):
+    monkeypatch.setattr(research, "brave_search", lambda q, count=8: [])
+    monkeypatch.setattr(llm, "archetype_research", lambda fmt, intent, context: archetype)
+    monkeypatch.setattr(scryfall, "resolve_cards", _fake_resolve)
+    monkeypatch.setattr(db, "collection_names",
+                        lambda pid: [(raw, raw.lower(), qty) for raw, qty in owned])
+    intent = {"format": "pauper", "keywords": ["aggro"], "colors": ["R"],
+              "budget_eur": budget}
+    return formats60.analyze(intent, profile_id=1)
+
+
 def test_query_includes_format_keywords_colors():
     q = formats60._query("pauper", {"keywords": ["aggro"], "colors": ["R"]})
     assert "pauper" in q and "aggro" in q and "red" in q
 
 
-def test_validation_drops_illegal_and_nonexistent(monkeypatch):
-    monkeypatch.setattr(research, "brave_search", lambda q, count=8: [])
-    monkeypatch.setattr(
-        llm, "archetype_research",
-        lambda fmt, intent, context: {
-            "archetype": "Mono Red Aggro", "colors": ["R"], "strategy": "Tape vite.",
-            "key_cards": ["Card A", "Card B", "Card C", "Card D"],
-        },
-    )
-    monkeypatch.setattr(scryfall, "resolve_cards", _fake_resolve)
-    monkeypatch.setattr(db, "owned_name_keys", lambda pid: {"card a"})
+def test_full_deck_with_copies_and_manabase(monkeypatch):
+    data = _analyze(monkeypatch, owned=[("Card A", 2)])
 
-    intent = {"format": "pauper", "keywords": ["aggro"], "colors": ["R"], "budget_eur": 5.0}
-    data = formats60.analyze(intent, profile_id=1)
+    deck = data["deck"]
+    assert deck["counts"]["total"] == 60          # always topped up to 60
+    assert set(data["dropped"]) == {"Card C", "Card D"}
 
-    assert data["valid_count"] == 2          # A and B (legal + existing)
-    assert data["owned_count"] == 1          # A owned
-    assert data["missing_count"] == 1        # B missing
-    assert set(data["dropped"]) == {"Card C", "Card D"}  # illegal + nonexistent
-    assert data["archetype"]["name"] == "Mono Red Aggro"
-    # Buylist prices the missing legal card within budget.
-    bought = {i["name"] for i in data["buylist"]["to_buy"]}
-    assert "Card B" in bought
+    cards = {c["name"]: c for g in deck["groups"] for c in g["cards"]}
+    assert cards["Card A"]["qty"] == 4            # 6 clamped to 4
+    assert cards["Card B"]["qty"] == 4
+
+    # Manabase: the 4 dual lands plus basics filling up to 60 total.
+    nonbasic = {c["name"]: c for c in deck["lands"]["nonbasic"]}
+    assert nonbasic["Dual Land"]["qty"] == 4
+    basics = {c["name"]: c for c in deck["lands"]["basics"]}
+    assert basics["Mountain"]["qty"] == 60 - 4 - 4 - 4  # spells + duals
+    assert deck["counts"]["lands"] == 4 + 48
+    assert deck["counts"]["total"] == deck["counts"]["spells"] + deck["counts"]["lands"]
+
+
+def test_ownership_is_counted_per_copy(monkeypatch):
+    data = _analyze(monkeypatch, owned=[("Card A", 2)])
+
+    deck = data["deck"]
+    cards = {c["name"]: c for g in deck["groups"] for c in g["cards"]}
+    assert cards["Card A"]["owned_qty"] == 2
+    assert cards["Card A"]["missing_qty"] == 2
+    assert cards["Card A"]["owned"] is False
+    # 2 Card A owned + all basics; missing: 2 Card A + 4 Card B + 4 Dual Land.
+    assert deck["counts"]["owned"] == 2 + 48
+    assert deck["counts"]["to_buy"] == 10
+    assert data["owned_count"] == deck["counts"]["owned"]
+    assert data["valid_count"] == 60
+
+    by_name = {i["name"]: i for i in data["buylist"]["to_buy"]}
+    assert by_name["Card A"]["qty"] == 2          # only the missing copies
+    assert by_name["Card B"]["qty"] == 4
+    assert by_name["Card B"]["line_eur"] == 4.0
+
+
+def test_decklist_text_is_exportable(monkeypatch):
+    data = _analyze(monkeypatch)
+    text = data["deck"]["decklist_text"]
+    lines = text.splitlines()
+    assert "4 Card A" in lines
+    assert "4 Dual Land" in lines
+    assert "48 Mountain" in lines
+    # A full 60-card export: quantities across all lines sum to the deck size.
+    assert sum(int(ln.split(" ", 1)[0]) for ln in lines if ln) == 60
+
+
+def test_legacy_key_cards_output_still_builds_a_deck(monkeypatch):
+    legacy = {"archetype": "Mono Red", "colors": ["R"], "strategy": "",
+              "key_cards": ["Card A", "Card B"]}
+    data = _analyze(monkeypatch, archetype=legacy)
+    deck = data["deck"]
+    assert deck["counts"]["total"] == 60
+    cards = {c["name"]: c for g in deck["groups"] for c in g["cards"]}
+    assert cards["Card A"]["qty"] == 1            # bare names = one copy each
 
 
 def test_llm_unavailable_is_reported(monkeypatch):

@@ -95,25 +95,36 @@ def chat_text(system: str, user: str) -> str | None:
 
 
 def archetype_research(fmt: str, intent: dict, context: str) -> dict | None:
-    """Propose a structured archetype for a 60-card format.
+    """Propose a complete 60-card decklist for a non-singleton format.
 
     Given the format, the player's wish and recent web-search context, return a
-    JSON archetype. Every card name is validated against Scryfall downstream, so
-    a few hallucinated names are filtered out rather than trusted.
+    JSON archetype with a full main deck (multiple copies allowed, 4-of rule)
+    and a basic-land manabase. Every card name is validated against Scryfall
+    downstream and copy counts are re-clamped, so a few hallucinated names are
+    filtered out rather than trusted.
     """
     system = (
         f"Tu es un expert Magic: the Gathering, format {fmt}. À partir de l'envie "
-        "du joueur et d'extraits web récents sur le métagame, propose UN archétype "
-        "compétitif et réaliste, FIDÈLE aux couleurs et à la stratégie demandées. "
-        "Réponds UNIQUEMENT en JSON avec ces clés :\n"
+        "du joueur et d'extraits web récents sur le métagame, propose UN deck "
+        "compétitif et réaliste de 60 cartes EXACTEMENT, FIDÈLE aux couleurs et à "
+        "la stratégie demandées. Réponds UNIQUEMENT en JSON avec ces clés :\n"
         '- "archetype": nom court de l\'archétype.\n'
         '- "colors": liste de symboles parmi "W","U","B","R","G".\n'
         '- "strategy": 2-3 phrases en français décrivant le plan de jeu, en texte brut (pas de Markdown).\n'
-        '- "key_cards": liste de 30 à 40 noms de cartes RÉELLES, en anglais, avec '
-        f"l'orthographe EXACTE (telle que sur la carte), toutes légales en {fmt} : "
-        "les cartes les plus jouées de cet archétype (sorts ET terrains non-basiques). "
-        "N'invente AUCUNE carte ; si tu n'es pas certain qu'une carte existe et est "
-        f"légale en {fmt}, ne la mets pas. Privilégie les staples reconnus."
+        '- "main_deck": liste d\'objets {"name","count"} — TOUS les sorts ET les '
+        "terrains non-basiques du deck, avec leur nombre d'exemplaires (count "
+        "entre 1 et 4, règle des 4 exemplaires maximum). Reprends les proportions "
+        "typiques de l'archétype : 4 exemplaires des cartes clés, moins pour les "
+        "cartes situationnelles.\n"
+        '- "basic_lands": objet {"Plains":n,"Island":n,"Swamp":n,"Mountain":n,'
+        '"Forest":n} — les terrains de base qui complètent la manabase (omets les '
+        "couleurs non jouées).\n"
+        "Le deck complet (main_deck + basic_lands) fait EXACTEMENT 60 cartes, avec "
+        "une manabase complète de 20 à 26 terrains adaptée à la courbe de mana. "
+        "Noms de cartes RÉELS, en anglais, avec l'orthographe EXACTE (telle que "
+        f"sur la carte), tous légaux en {fmt}. N'invente AUCUNE carte ; si tu "
+        f"n'es pas certain qu'une carte existe et est légale en {fmt}, ne la mets "
+        "pas. Privilégie les staples reconnus."
     )
     parts = [f"Format : {fmt}"]
     if intent.get("theme"):

@@ -50,9 +50,13 @@ wish (texte FR) → intent.parse_intent (LLM + fallback heuristique, backfill cr
   |                        + discovery des non-possédés via pages carte EDHREC)
   |    « hors collection » → analysis.find_commanders (pages thème EDHREC + pool
   |                          Scryfall local, marche avec collection vide)
-  → format 60 cartes ?  → formats60.analyze (Brave Search → LLM propose un archétype
-                           → CHAQUE carte validée Scryfall existence + légalité)
-Résultats → buylist.build (glouton, ordre EDHREC, budget + plafond/carte en EUR)
+  → format 60 cartes ?  → formats60.analyze (Brave Search → LLM propose un deck
+                           complet 60 cartes {name,count} + manabase → CHAQUE carte
+                           validée Scryfall existence + légalité, copies clampées à 4,
+                           complété à 60 avec des bases ; possession comptée PAR
+                           exemplaire ; decklist_text exportable)
+Résultats → buylist.build (glouton, ordre EDHREC, budget + plafond/carte en EUR ;
+                           accepte nom seul ou (nom, qté))
 ```
 
 ### Modules (`app/`)
@@ -70,7 +74,7 @@ Résultats → buylist.build (glouton, ordre EDHREC, budget + plafond/carte en E
 | `cardsearch.py` | Recherche dans le pool Scryfall local en mémoire (type/keyword/texte oracle). |
 | `deckgen.py` | Decklist Commander 100 cartes depuis la page EDHREC (déterministe). |
 | `poolbuild.py` | Meilleur deck depuis une liste fournie (`FormatSpec` par format ; LLM + fallback). |
-| `formats60.py` | Pipeline archétype 60 cartes (Brave → LLM → validation Scryfall). |
+| `formats60.py` | Deck 60 cartes complet par archétype (Brave → LLM → validation Scryfall, 4-of, manabase). |
 | `chat.py` | Boucle agent (tools Anthropic sur les modules ci-dessus), tours en thread. |
 | `buylist.py` | Liste d'achat gloutonne sous budget, prix EUR Cardmarket. |
 | `collection.py` | Enrichissement de la collection depuis le cache local uniquement. |
@@ -145,6 +149,9 @@ Résultats → buylist.build (glouton, ordre EDHREC, budget + plafond/carte en E
 - Le schéma SQLite se migre en place au démarrage (`db.init_db` +
   `_migrate_collection`) : pas d'outil de migration, ajouter les colonnes/tables
   avec `IF NOT EXISTS` ou une migration idempotente du même style.
+- **Incrémenter `APP_VERSION`** (`app/main.py`, affiché dans le footer via
+  `base.html`) à CHAQUE nouvelle PR, même pour un correctif mineur (+0.1 ;
+  passage majeur seulement pour une refonte significative).
 
 ## Déploiement (perso)
 

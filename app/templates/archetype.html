@@ -29,6 +29,7 @@
   </ul>
   {% endif %}
 {% else %}
+  {% set deck = data.deck %}
 
   <section class="card">
     <h2>{{ data.archetype.name }}
@@ -36,33 +37,78 @@
     </h2>
     {% for p in data.archetype.strategy|paragraphs %}<p>{{ p }}</p>{% endfor %}
 
+    <ul class="chips">
+      <li class="chip">{{ deck.counts.total }} cartes</li>
+      <li class="chip">{{ deck.counts.lands }} terrains</li>
+      <li class="chip">{{ deck.counts.owned }} possédées</li>
+      <li class="chip">{{ deck.counts.to_buy }} à acheter</li>
+      <li class="chip">Achat : <strong>{{ "%.2f"|format(data.buylist.total_eur) }} €</strong>
+        {% if data.buylist.budget_eur is not none %} / {{ "%.0f"|format(data.buylist.budget_eur) }} € budget{% endif %}
+      </li>
+    </ul>
+
     <div class="completion">
-      <div class="bar"><span style="width: {{ (100 * data.owned_count / data.valid_count) if data.valid_count else 0 }}%"></span></div>
-      <p><strong>{{ data.owned_count }}</strong> / {{ data.valid_count }} cartes maîtresses possédées</p>
+      <div class="bar"><span style="width: {{ (100 * deck.counts.owned / deck.counts.total) if deck.counts.total else 0 }}%"></span></div>
+      <p><strong>{{ deck.counts.owned }}</strong> / {{ deck.counts.total }} cartes du deck possédées</p>
     </div>
 
     <p class="notice info small">
-      Cartes maîtresses de l'archétype, validées via Scryfall (légalité {{ data.format }}).
-      Ce n'est pas une liste de tournoi exacte mais une base à compléter.
-      {% if data.dropped %}<br>{{ data.dropped|length }} suggestion(s) écartée(s) (carte inexistante ou illégale).{% endif %}
+      Deck complet généré par recherche d'archétype, chaque carte validée via
+      Scryfall (existence + légalité {{ data.format }}), manabase incluse.
+      Ce n'est pas une liste de tournoi exacte mais une base solide à ajuster.
+      {% if data.dropped %}<br>{{ data.dropped|length }} suggestion(s) écartée(s) (carte inexistante ou illégale), remplacée(s) par des terrains de base.{% endif %}
     </p>
   </section>
 
   <div class="grid-2">
     <section class="card">
-      <h2>Tu possèdes déjà <span class="muted small">({{ data.owned_count }})</span></h2>
-      {% if data.owned_cards %}
-        <div class="buy-grid">
-          {% for c in data.owned_cards %}
-          <div class="buy-item">
-            {{ cardview.image_or_text(c.name, c.image, extra_class="cv-buyitem") }}
-            <span class="buy-name">{{ c.name }}</span>
-          </div>
+      <h2>Decklist <span class="muted small">({{ deck.counts.total }} cartes)</span></h2>
+      {% for group in deck.groups %}
+      <div class="deck-group">
+        <h4>{{ group.label }} <span class="muted small">({{ group.cards|sum(attribute='qty') }})</span></h4>
+        <ul class="decklist">
+          {% for c in group.cards %}
+          <li class="{{ 'to-buy' if not c.owned else 'owned' }}">
+            <span class="qty">{{ c.qty }}</span>
+            <span class="dname">{{ c.name }}</span>
+            {% if c.owned %}
+              <span class="tag owned-tag">possédée{{ 's' if c.qty > 1 }}</span>
+            {% elif c.owned_qty %}
+              <span class="tag buy-tag">manque {{ c.missing_qty }}{% if c.price_eur is not none %} · {{ "%.2f"|format(c.price_eur * c.missing_qty) }} €{% endif %}</span>
+            {% else %}
+              <span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur * c.qty) }} €{% else %}à acheter{% endif %}</span>
+            {% endif %}
+          </li>
           {% endfor %}
-        </div>
-      {% else %}
-        <p class="muted">Aucune carte maîtresse de cet archétype dans ta collection.</p>
-      {% endif %}
+        </ul>
+      </div>
+      {% endfor %}
+
+      <div class="deck-group">
+        <h4>Terrains <span class="muted small">({{ deck.lands.total }})</span></h4>
+        <ul class="decklist">
+          {% for c in deck.lands.nonbasic %}
+          <li class="{{ 'to-buy' if not c.owned else 'owned' }}">
+            <span class="qty">{{ c.qty }}</span>
+            <span class="dname">{{ c.name }}</span>
+            {% if c.owned %}
+              <span class="tag owned-tag">possédée{{ 's' if c.qty > 1 }}</span>
+            {% elif c.owned_qty %}
+              <span class="tag buy-tag">manque {{ c.missing_qty }}{% if c.price_eur is not none %} · {{ "%.2f"|format(c.price_eur * c.missing_qty) }} €{% endif %}</span>
+            {% else %}
+              <span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur * c.qty) }} €{% else %}à acheter{% endif %}</span>
+            {% endif %}
+          </li>
+          {% endfor %}
+          {% for c in deck.lands.basics %}
+          <li class="owned">
+            <span class="qty">{{ c.qty }}</span>
+            <span class="dname">{{ c.name }}</span>
+            <span class="tag owned-tag">terrain</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
     </section>
 
     <section class="card">
@@ -81,14 +127,22 @@
           {% for item in data.buylist.to_buy %}
           <div class="buy-item">
             {{ cardview.image_or_text(item.name, item.image, extra_class="cv-buyitem") }}
-            <span class="buy-name">{{ item.name }}</span>
-            <span class="buy-price">{{ "%.2f"|format(item.price_eur) }} €</span>
+            <span class="buy-name">{% if item.qty and item.qty > 1 %}{{ item.qty }} × {% endif %}{{ item.name }}</span>
+            <span class="buy-price">{{ "%.2f"|format(item.line_eur if item.line_eur is defined else item.price_eur) }} €</span>
           </div>
           {% endfor %}
         </div>
-      {% else %}
+      {% elif deck.counts.to_buy %}
         <p class="muted">Rien à acheter dans ce budget (ou prix indisponibles).</p>
+      {% else %}
+        <p class="muted">Rien à acheter : ce deck est entièrement dans ta collection 🎉</p>
       {% endif %}
+
+      <details class="export">
+        <summary>Exporter la decklist (texte — Moxfield, Archidekt, ManaBox…)</summary>
+        <textarea readonly rows="12" onclick="this.select()">{{ deck.decklist_text }}</textarea>
+        <button type="button" class="copy-btn" onclick="mtgCopyDecklist(this)">📋 Copier dans le presse-papier</button>
+      </details>
     </section>
   </div>
 
