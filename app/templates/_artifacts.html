@@ -12,7 +12,7 @@
   {%- elif art.type == "archetype" -%}
     <span class="art-ico">🃏</span>
     <span class="art-title">{{ art.data.archetype.name }}</span>
-    <span class="art-meta">{% for c in art.data.archetype.colors %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %} · {{ art.data.owned_count }}/{{ art.data.valid_count }}</span>
+    <span class="art-meta">{% for c in art.data.archetype.colors %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %} · {{ art.data.owned_count }}/{{ art.data.valid_count }}{% if art.data.deck %} · {{ art.data.deck.counts.total }} cartes{% endif %}</span>
   {%- elif art.type == "commanders" -%}
     <span class="art-ico">{{ "🔭" if art.finder else "👑" }}</span>
     <span class="art-title">{{ "Commandants trouvés (thème)" if art.finder else "Commandants proposés" }}</span>
@@ -140,10 +140,62 @@
       <span class="pips">{% for c in data.archetype.colors %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}</span>
     </h3>
     {% for p in data.archetype.strategy|paragraphs %}<p>{{ p }}</p>{% endfor %}
+    {% if data.deck %}{# current shape: full 60-card deck with manabase #}
+    {% set deck = data.deck %}
+    <ul class="chips">
+      <li class="chip">{{ deck.counts.total }} cartes</li>
+      <li class="chip">{{ deck.counts.lands }} terrains</li>
+      <li class="chip">{{ deck.counts.owned }} possédées</li>
+      <li class="chip">{{ deck.counts.to_buy }} à acheter</li>
+      {% if data.buylist %}
+      <li class="chip">Achat : <strong>{{ "%.2f"|format(data.buylist.total_eur) }} €</strong>
+        {% if data.buylist.budget_eur is not none %} / {{ "%.0f"|format(data.buylist.budget_eur) }} € budget{% endif %}</li>
+      {% endif %}
+    </ul>
+    <div class="completion">
+      <div class="bar"><span style="width: {{ (100 * deck.counts.owned / deck.counts.total) if deck.counts.total else 0 }}%"></span></div>
+      <p><strong>{{ deck.counts.owned }}</strong> / {{ deck.counts.total }} cartes du deck possédées</p>
+    </div>
+    <details class="owned-list">
+      <summary>Voir la decklist ({{ deck.counts.total }} cartes)</summary>
+      {% for group in deck.groups %}
+      <div class="deck-group">
+        <h4>{{ group.label }} <span class="muted small">({{ group.cards|sum(attribute='qty') }})</span></h4>
+        <ul class="decklist">
+          {% for c in group.cards %}
+          <li class="{{ 'to-buy' if not c.owned else 'owned' }}">
+            <span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span>
+            {% if c.owned %}<span class="tag owned-tag">possédée{{ 's' if c.qty > 1 }}</span>
+            {% elif c.owned_qty %}<span class="tag buy-tag">manque {{ c.missing_qty }}{% if c.price_eur is not none %} · {{ "%.2f"|format(c.price_eur * c.missing_qty) }} €{% endif %}</span>
+            {% else %}<span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur * c.qty) }} €{% else %}à acheter{% endif %}</span>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+      <div class="deck-group">
+        <h4>Terrains <span class="muted small">({{ deck.lands.total }})</span></h4>
+        <ul class="decklist">
+          {% for c in deck.lands.nonbasic %}
+          <li class="{{ 'to-buy' if not c.owned else 'owned' }}">
+            <span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span>
+            {% if c.owned %}<span class="tag owned-tag">possédée{{ 's' if c.qty > 1 }}</span>
+            {% elif c.owned_qty %}<span class="tag buy-tag">manque {{ c.missing_qty }}{% if c.price_eur is not none %} · {{ "%.2f"|format(c.price_eur * c.missing_qty) }} €{% endif %}</span>
+            {% else %}<span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur * c.qty) }} €{% else %}à acheter{% endif %}</span>{% endif %}
+          </li>
+          {% endfor %}
+          {% for c in deck.lands.basics %}
+          <li class="owned"><span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span><span class="tag owned-tag">terrain</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </details>
+    {% else %}{# legacy artifacts persisted before the full-deck pipeline #}
     <div class="completion">
       <div class="bar"><span style="width: {{ (100 * data.owned_count / data.valid_count) if data.valid_count else 0 }}%"></span></div>
       <p><strong>{{ data.owned_count }}</strong> / {{ data.valid_count }} cartes maîtresses possédées</p>
     </div>
+    {% endif %}
     {% if data.owned_cards %}
     <details class="owned-list" open>
       <summary>Tu possèdes déjà <span class="muted small">({{ data.owned_count }})</span></summary>
@@ -172,15 +224,22 @@
         {% for item in data.buylist.to_buy %}
         <div class="buy-item">
           {{ cardview.image_or_text(item.name, item.image, extra_class="cv-buyitem") }}
-          <span class="buy-name">{{ item.name }}</span>
-          <span class="buy-price">{{ "%.2f"|format(item.price_eur) }} €</span>
+          <span class="buy-name">{% if item.qty and item.qty > 1 %}{{ item.qty }} × {% endif %}{{ item.name }}</span>
+          <span class="buy-price">{{ "%.2f"|format(item.line_eur if item.line_eur is defined else item.price_eur) }} €</span>
         </div>
         {% endfor %}
       </div>
     </details>
     {% endif %}
-    <p class="notice info small">Cartes validées via Scryfall (légalité {{ data.format }}).
-      Base d'archétype à compléter, pas une liste de tournoi exacte.
+    {% if data.deck and data.deck.decklist_text %}
+    <details class="export">
+      <summary>Exporter la decklist (texte — Moxfield, Archidekt, ManaBox…)</summary>
+      <textarea readonly rows="12" onclick="this.select()">{{ data.deck.decklist_text }}</textarea>
+      <button type="button" class="copy-btn" onclick="mtgCopyDecklist(this)">📋 Copier dans le presse-papier</button>
+    </details>
+    {% endif %}
+    <p class="notice info small">Cartes validées via Scryfall (légalité {{ data.format }}){% if data.deck %}, manabase incluse{% endif %}.
+      Base d'archétype à ajuster, pas une liste de tournoi exacte.
       {% if data.dropped %}<br>{{ data.dropped|length }} suggestion(s) écartée(s).{% endif %}</p>
   </section>
 {% endmacro %}
