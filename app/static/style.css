@@ -506,6 +506,7 @@ details.buylist > .buy-grid { padding: 14px; margin-top: 0; }
 .buy-tag { background: color-mix(in oklch, var(--warn) 16%, transparent); color: var(--warn); }
 .niche-tag { background: color-mix(in oklch, var(--accent) 18%, transparent); color: var(--accent); }
 .deck-tag { background: color-mix(in oklch, var(--accent) 14%, transparent); color: var(--accent); }
+.forced-tag { background: color-mix(in oklch, var(--accent) 22%, transparent); color: var(--accent); }
 
 /* Clickable decklist rows: click a card to reveal its image/text below. */
 .decklist li.deck-line { flex-direction: column; align-items: stretch; gap: 0; padding: 0; }

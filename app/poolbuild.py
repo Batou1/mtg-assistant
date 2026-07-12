@@ -115,6 +115,14 @@ DEFAULT_FORMAT = "limited"
 _norm = scryfall.norm_name
 
 
+def _by_name(item: dict) -> str:
+    """Sort key: cards are displayed alphabetically within each type group.
+
+    Shared with formats60 so every decklist screen orders groups the same way.
+    """
+    return item["name"].lower()
+
+
 def _first_face_type(card: dict) -> str:
     return (card.get("type_line") or "").split("//")[0]
 
@@ -405,18 +413,19 @@ def build_from_pool(pool_items, fmt: str, intent: dict, client: httpx.Client | N
 
     basics_total = sum(q for _, q in basics)
 
-    # Group spells by category for display.
+    # Group spells by category for display (alphabetical within each group).
     by_cat: dict[str, list] = {}
     for c in spells:
         by_cat.setdefault(_category(c["entry"]["card"]), []).append(
             _item(c["entry"], c["count"])
         )
     groups = [
-        {"label": CATEGORY_LABELS[cat], "cards": by_cat[cat]}
+        {"label": CATEGORY_LABELS[cat], "cards": sorted(by_cat[cat], key=_by_name)}
         for cat in CATEGORY_ORDER if by_cat.get(cat)
     ]
 
-    nonbasic_land_items = [_item(c["entry"], c["count"]) for c in nonbasic_lands]
+    nonbasic_land_items = sorted((_item(c["entry"], c["count"]) for c in nonbasic_lands),
+                                 key=_by_name)
     basic_items = [{"name": n, "qty": q, "is_basic": True} for n, q in basics]
 
     # Sideboard = whatever of the pool isn't in the maindeck.

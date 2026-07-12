@@ -97,6 +97,10 @@ class Settings:
     # --- Deck generation ---------------------------------------------------
     deck_size: int = int(os.environ.get("MTG_DECK_SIZE", "100"))
     deck_lands: int = int(os.environ.get("MTG_DECK_LANDS", "36"))
+    # Minimum basic lands in a generated Commander manabase. EDHREC land
+    # sections list far more nonbasics than a casual deck should run, so
+    # without a floor the generator fills every land slot with nonbasics.
+    deck_min_basics: int = int(os.environ.get("MTG_DECK_MIN_BASICS", "18"))
     # Relevant alternatives proposed alongside the deck (next-best EDHREC cards
     # not in the main list). Target 15-20.
     deck_sideboard: int = int(os.environ.get("MTG_DECK_SIDEBOARD", "18"))

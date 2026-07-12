@@ -133,6 +133,20 @@ def archetype_research(fmt: str, intent: dict, context: str) -> dict | None:
         parts.append(f"Mots-clés : {', '.join(intent['keywords'])}")
     if intent.get("colors"):
         parts.append(f"Couleurs souhaitées : {', '.join(intent['colors'])}")
+    # Player-forced cards: the caller (formats60.analyze) still validates and
+    # force-adds any the model leaves out, but asking here yields sensible
+    # copy counts and a deck built AROUND them rather than a bolt-on.
+    if intent.get("include_cards"):
+        parts.append(
+            "Cartes IMPOSÉES par le joueur — le deck DOIT les contenir, avec un "
+            "nombre d'exemplaires adapté à leur rôle, et être construit autour : "
+            + ", ".join(intent["include_cards"])
+        )
+    if intent.get("exclude_cards"):
+        parts.append(
+            "Cartes INTERDITES — ne les inclus PAS dans le deck : "
+            + ", ".join(intent["exclude_cards"])
+        )
     if context:
         parts.append(f"\nExtraits web récents (métagame) :\n{context}")
     return chat_json(system, "\n".join(parts))

@@ -331,7 +331,8 @@ def test_generate_decklist_tool_passes_max_card_price(env, monkeypatch):
 
     captured = {}
 
-    def fake_generate(commander, budget, theme, profile_id, max_card_price=None, fmt="commander"):
+    def fake_generate(commander, budget, theme, profile_id, max_card_price=None,
+                      fmt="commander", include_cards=None, exclude_cards=None):
         captured["budget"] = budget
         captured["max_card_price"] = max_card_price
         captured["fmt"] = fmt
@@ -359,7 +360,8 @@ def test_generate_decklist_tool_passes_requested_format(env, monkeypatch):
 
     captured = {}
 
-    def fake_generate(commander, budget, theme, profile_id, max_card_price=None, fmt="commander"):
+    def fake_generate(commander, budget, theme, profile_id, max_card_price=None,
+                      fmt="commander", include_cards=None, exclude_cards=None):
         captured["fmt"] = fmt
         return {"counts": {"total": 100, "owned": 0, "to_buy": 99}, "buy_total_eur": 0}, {}
 
@@ -376,6 +378,49 @@ def test_generate_decklist_tool_passes_requested_format(env, monkeypatch):
         {"commander": "Krenko, Mob Boss", "format": "modern"}, pid,
     )
     assert captured["fmt"] == "commander"
+
+
+def test_generate_decklist_tool_forwards_includes_and_reports_them(env, monkeypatch):
+    """include/exclude_cards reach deckgen, and the tool result explicitly
+    lists integrated vs rejected cards so the model can't misreport them."""
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+
+    captured = {}
+
+    def fake_generate(commander, budget, theme, profile_id, max_card_price=None,
+                      fmt="commander", include_cards=None, exclude_cards=None):
+        captured["include"] = include_cards
+        captured["exclude"] = exclude_cards
+        return {
+            "counts": {"total": 100, "owned": 0, "to_buy": 99},
+            "buy_total_eur": 12.0,
+            "forced_cards": ["Lightning Bolt"],
+            "rejected_includes": [
+                {"name": "Counterspell",
+                 "reason": "hors identité couleur du commandant"},
+            ],
+            "excluded_cards": ["Sol Ring"],
+        }, {}
+
+    monkeypatch.setattr(chat.deckgen, "generate_full_deck", fake_generate)
+
+    text, artifact = chat._exec_generate_decklist(
+        {"commander": "Krenko, Mob Boss",
+         "include_cards": ["Lightning Bolt", "Counterspell"],
+         "exclude_cards": ["Sol Ring"]},
+        pid,
+    )
+    assert captured["include"] == ["Lightning Bolt", "Counterspell"]
+    assert captured["exclude"] == ["Sol Ring"]
+    assert "INTÉGRÉES : Lightning Bolt" in text
+    assert "REFUSÉE : Counterspell (hors identité couleur du commandant)" in text
+    assert "Cartes exclues : Sol Ring" in text
+    # The snapshot rebuilt for the next turn carries the forced cards, so a
+    # later regeneration can re-pass them via include_cards.
+    snapshot = chat._snapshot_decklist(artifact)
+    assert "Cartes imposées par le joueur" in snapshot
+    assert "Lightning Bolt" in snapshot
 
 
 def test_find_commanders_tool_builds_finder_artifact(env, monkeypatch):

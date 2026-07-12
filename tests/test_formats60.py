@@ -18,6 +18,7 @@ RESOLVED = {
     "card b": _card("Card B", legal=True, eur=1.0),
     "card c": _card("Card C", legal=False, eur=2.0),
     # "Card D" intentionally absent -> nonexistent card
+    "card e": _card("Card E", legal=True, eur=0.3),  # not in the LLM's deck
     "dual land": _card("Dual Land", legal=True, eur=0.5, type_line="Land"),
 }
 
@@ -42,7 +43,7 @@ ARCHETYPE = {
 }
 
 
-def _analyze(monkeypatch, archetype=ARCHETYPE, owned=(), budget=5.0):
+def _analyze(monkeypatch, archetype=ARCHETYPE, owned=(), budget=5.0, extra=None):
     """``owned`` entries: (name, qty) or (name, qty, deck_qty)."""
     monkeypatch.setattr(research, "brave_search", lambda q, count=8: [])
     monkeypatch.setattr(llm, "archetype_research", lambda fmt, intent, context: archetype)
@@ -51,7 +52,7 @@ def _analyze(monkeypatch, archetype=ARCHETYPE, owned=(), budget=5.0):
                         lambda pid: {e[0].lower(): (e[1], e[2] if len(e) > 2 else 0)
                                      for e in owned})
     intent = {"format": "pauper", "keywords": ["aggro"], "colors": ["R"],
-              "budget_eur": budget}
+              "budget_eur": budget, **(extra or {})}
     return formats60.analyze(intent, profile_id=1)
 
 
@@ -147,3 +148,50 @@ def test_llm_unavailable_is_reported(monkeypatch):
 def test_formats_set_excludes_commander():
     assert "commander" not in formats60.FORMATS
     assert {"standard", "pauper"} <= formats60.FORMATS
+
+
+def test_include_cards_forced_in_and_rejects_reported(monkeypatch):
+    # The LLM's proposed deck ignored "Card E": it must still be force-added
+    # (1 copy, flagged forced). Invalid requests are rejected with a reason
+    # instead of being silently dropped, and exclusions leave the deck.
+    data = _analyze(monkeypatch, extra={
+        "include_cards": ["Card E", "Card C", "Card D"],
+        "exclude_cards": ["Card B"],
+    })
+    deck = data["deck"]
+    cards = {c["name"]: c for g in deck["groups"] for c in g["cards"]}
+    assert cards["Card E"]["qty"] == 1
+    assert cards["Card E"]["forced"] is True
+    assert "Card B" not in cards
+    assert data["forced_cards"] == ["Card E"]
+    reasons = {r["name"]: r["reason"] for r in data["rejected_includes"]}
+    assert "légale" in reasons["Card C"]
+    assert "introuvable" in reasons["Card D"]
+    assert data["excluded_cards"] == ["Card B"]
+    assert deck["counts"]["total"] == 60  # basics re-top-up after changes
+
+
+def test_include_cards_already_in_deck_keep_their_count(monkeypatch):
+    # Requesting a card the LLM already put in the deck must not reset its
+    # count to 1 — it just gets the forced flag.
+    data = _analyze(monkeypatch, extra={"include_cards": ["Card A"]})
+    cards = {c["name"]: c for g in data["deck"]["groups"] for c in g["cards"]}
+    assert cards["Card A"]["qty"] == 4
+    assert cards["Card A"]["forced"] is True
+    assert data["forced_cards"] == ["Card A"]
+
+
+def test_groups_are_sorted_alphabetically(monkeypatch):
+    # The LLM proposes Card B before Card A; the displayed group (and the
+    # exported decklist text, which follows group order) must be alphabetical.
+    arch = {
+        "archetype": "Aggro", "colors": ["R"], "strategy": "",
+        "main_deck": [
+            {"name": "Card B", "count": 4},
+            {"name": "Card A", "count": 4},
+        ],
+        "basic_lands": {"Mountain": 20},
+    }
+    data = _analyze(monkeypatch, archetype=arch)
+    creatures = data["deck"]["groups"][0]["cards"]
+    assert [c["name"] for c in creatures] == ["Card A", "Card B"]

@@ -118,8 +118,14 @@ def analyze(intent: dict, profile_id: int) -> dict:
     in_deck_qty = {k: deck_qty for k, (_qty, deck_qty) in quantities.items()}
     budget = intent.get("budget_eur")
 
+    include_cards = [n.strip() for n in (intent.get("include_cards") or [])
+                     if isinstance(n, str) and n.strip()]
+    exclude_cards = [n.strip() for n in (intent.get("exclude_cards") or [])
+                     if isinstance(n, str) and n.strip()]
+    excluded = {_norm(n) for n in exclude_cards}
+
     with httpx.Client(timeout=30, headers={"User-Agent": settings.user_agent}) as client:
-        names = [n for n, _ in entries]
+        names = [n for n, _ in entries] + include_cards
         resolved, _nf = scryfall.resolve_cards(names, client=client) if names else ({}, [])
 
         # Validate + merge duplicates, clamping to the 4-of rule.
@@ -132,6 +138,8 @@ def analyze(intent: dict, profile_id: int) -> dict:
                 dropped.append(name)
                 continue
             key = _norm(card["name"])
+            if key in excluded:
+                continue
             if key in merged:
                 merged[key]["count"] = min(_MAX_COPIES, merged[key]["count"] + count)
             else:
@@ -139,16 +147,41 @@ def analyze(intent: dict, profile_id: int) -> dict:
                                "count": min(_MAX_COPIES, count)}
                 order.append(key)
 
+        # Player-requested cards must end up in the deck even if the LLM
+        # ignored the prompt instruction: validate them (existence + format
+        # legality) and force-add any missing one with a single copy. Rejects
+        # carry a French reason relayed verbatim to the player.
+        rejected_includes: list[dict] = []
+        for name in include_cards:
+            card = resolved.get(_norm(name))
+            if not card:
+                rejected_includes.append(
+                    {"name": name, "reason": "introuvable sur Scryfall"})
+                continue
+            if not scryfall.legal_in(card, fmt):
+                rejected_includes.append(
+                    {"name": card["name"], "reason": f"non légale en {fmt}"})
+                continue
+            key = _norm(card["name"])
+            if key in excluded:
+                continue
+            if key not in merged:
+                merged[key] = {"name": card["name"], "card": card, "count": 1}
+                order.append(key)
+            merged[key]["forced"] = True
+
         chosen = [merged[k] for k in order]
         spells = [c for c in chosen if not poolbuild._is_land(c["card"])]
         nonbasic_lands = [c for c in chosen if poolbuild._is_land(c["card"])]
 
         # Top up to exactly DECK_SIZE with basic lands (dropping invalid cards
         # must not leave a short deck); trim low-priority spells if the model
-        # overshot despite the prompt.
+        # overshot despite the prompt. _trim eats from the end, so forced
+        # (player-requested) cards are moved to the front to survive it.
         nonbasic_total = sum(c["count"] for c in spells) + sum(c["count"] for c in nonbasic_lands)
         need = DECK_SIZE - nonbasic_total
         if need < 0:
+            spells.sort(key=lambda c: not c.get("forced"))
             spells = poolbuild._trim(spells, -need)
             need = 0
         basics = poolbuild._distribute_basics(colors, need, basic_weights or None)
@@ -169,16 +202,19 @@ def analyze(intent: dict, profile_id: int) -> dict:
                 "owned": owned >= count,
                 "price_eur": scryfall.price_eur(card),
                 "cmc": card.get("cmc"),
+                "forced": bool(entry.get("forced")),
             }
 
         by_cat: dict[str, list] = {}
         for c in spells:
             by_cat.setdefault(poolbuild._category(c["card"]), []).append(deck_item(c))
         groups = [
-            {"label": CATEGORY_LABELS[cat], "cards": by_cat[cat]}
+            {"label": CATEGORY_LABELS[cat],
+             "cards": sorted(by_cat[cat], key=poolbuild._by_name)}
             for cat in CATEGORY_ORDER if by_cat.get(cat)
         ]
-        nonbasic_items = [deck_item(c) for c in nonbasic_lands]
+        nonbasic_items = sorted((deck_item(c) for c in nonbasic_lands),
+                                key=poolbuild._by_name)
         # Basic lands are treated as freely available (same convention as the
         # Commander generator): they cost pennies and everyone has piles.
         basic_items = [
@@ -228,6 +264,9 @@ def analyze(intent: dict, profile_id: int) -> dict:
         "valid_count": total,
         "owned_count": owned_copies,
         "missing_count": deck["counts"]["to_buy"],
+        "forced_cards": [c["name"] for c in all_items if c.get("forced")],
+        "rejected_includes": rejected_includes,
+        "excluded_cards": exclude_cards,
         "dropped": dropped,
         "sources": results[:6],
         "budget_eur": budget,
