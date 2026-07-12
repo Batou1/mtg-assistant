@@ -78,6 +78,7 @@
             {% else %}
               <span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur * c.qty) }} €{% else %}à acheter{% endif %}</span>
             {% endif %}
+            {% if c.in_deck_qty %}<span class="tag deck-tag">{{ c.in_deck_qty }} dans tes decks</span>{% endif %}
           </li>
           {% endfor %}
         </ul>
@@ -98,6 +99,7 @@
             {% else %}
               <span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur * c.qty) }} €{% else %}à acheter{% endif %}</span>
             {% endif %}
+            {% if c.in_deck_qty %}<span class="tag deck-tag">{{ c.in_deck_qty }} dans tes decks</span>{% endif %}
           </li>
           {% endfor %}
           {% for c in deck.lands.basics %}

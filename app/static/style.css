@@ -505,6 +505,7 @@ details.buylist > .buy-grid { padding: 14px; margin-top: 0; }
 .owned-tag { background: color-mix(in oklch, var(--mg) 16%, transparent); color: var(--mg); }
 .buy-tag { background: color-mix(in oklch, var(--warn) 16%, transparent); color: var(--warn); }
 .niche-tag { background: color-mix(in oklch, var(--accent) 18%, transparent); color: var(--accent); }
+.deck-tag { background: color-mix(in oklch, var(--accent) 14%, transparent); color: var(--accent); }
 
 .export { margin-top: 16px; }
 .export summary { cursor: pointer; color: var(--muted); }

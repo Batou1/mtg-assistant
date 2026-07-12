@@ -110,7 +110,12 @@ def analyze(intent: dict, profile_id: int) -> dict:
 
     entries, basic_weights = _deck_entries(archetype)
     colors = [c for c in (archetype.get("colors") or []) if c in _COLOR_WORDS]
-    owned_qty = {key: qty for _raw, key, qty in db.collection_names(profile_id)}
+    # Only copies not already sleeved in another of the user's decks count as
+    # available; the rest is surfaced separately (in_deck_qty) so the user
+    # knows buying replaces borrowing.
+    quantities = db.owned_quantities(profile_id)
+    owned_qty = {k: max(0, qty - deck_qty) for k, (qty, deck_qty) in quantities.items()}
+    in_deck_qty = {k: deck_qty for k, (_qty, deck_qty) in quantities.items()}
     budget = intent.get("budget_eur")
 
     with httpx.Client(timeout=30, headers={"User-Agent": settings.user_agent}) as client:
@@ -150,7 +155,8 @@ def analyze(intent: dict, profile_id: int) -> dict:
 
         def deck_item(entry: dict) -> dict:
             card, count = entry["card"], entry["count"]
-            have = owned_qty.get(_norm(entry["name"]), 0)
+            key = _norm(entry["name"])
+            have = owned_qty.get(key, 0)
             owned = min(count, have)
             return {
                 "name": entry["name"],
@@ -158,6 +164,8 @@ def analyze(intent: dict, profile_id: int) -> dict:
                 "qty": count,
                 "owned_qty": owned,
                 "missing_qty": count - owned,
+                # Missing copies the user does own — but locked in other decks.
+                "in_deck_qty": min(count - owned, in_deck_qty.get(key, 0)),
                 "owned": owned >= count,
                 "price_eur": scryfall.price_eur(card),
                 "cmc": card.get("cmc"),

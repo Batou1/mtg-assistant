@@ -38,6 +38,14 @@ class Settings:
     finder_pool: int = int(os.environ.get("MTG_FINDER_POOL", "30"))
     # How many found commanders to fully score + display.
     finder_limit: int = int(os.environ.get("MTG_FINDER_LIMIT", "8"))
+    # How many viable candidates to score before ranking + cutting to
+    # finder_limit. Scanning deeper than the display limit is what lets an
+    # older, better-fitting commander outrank the newest hyped ones that top
+    # EDHREC's lists.
+    finder_scan: int = int(os.environ.get("MTG_FINDER_SCAN", "16"))
+    # A non-reprint card younger than this is "recent" (new-set hype):
+    # suggestion rankings demote it below equally-fitting older commanders.
+    recent_set_months: float = float(os.environ.get("MTG_RECENT_SET_MONTHS", "18"))
 
     # --- External services -------------------------------------------------
     scryfall_api: str = os.environ.get("MTG_SCRYFALL_API", "https://api.scryfall.com")

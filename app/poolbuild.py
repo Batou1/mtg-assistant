@@ -521,9 +521,13 @@ def _compute_bonus(deck: dict, spec: FormatSpec, intent: dict, profile_id: int,
         return set(scryfall.color_identity(card)) <= identity if identity else \
             not scryfall.color_identity(card)
 
-    # Owned cards not already in the submitted pool.
+    # Owned cards not already in the submitted pool. Cards whose every copy
+    # already sits in another of the user's decks are skipped: suggesting them
+    # as free additions would mean dismantling an existing deck.
+    quantities = db.owned_quantities(profile_id)
+    free_keys = {k for k, (qty, deck_qty) in quantities.items() if qty - deck_qty > 0}
     owned = [(raw, key) for raw, key, _qty in db.collection_names(profile_id)
-             if key not in pool_keys]
+             if key not in pool_keys and key in free_keys]
     cand_names = [raw for raw, _key in owned][:settings.bonus_owned_scan]
     resolved, _nf = scryfall.resolve_cards(cand_names, client=client) if cand_names else ({}, [])
     eligible = [resolved[_norm(n)]["name"] for n in cand_names

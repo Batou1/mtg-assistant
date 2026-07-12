@@ -136,6 +136,15 @@ Résultats → buylist.build (glouton, ordre EDHREC, budget + plafond/carte en E
     dédié, backoff avec jitter sur EDHREC (qui est derrière Cloudflare et bloque
     les clients non-navigateur — les en-têtes `_EDHREC_HEADERS` sont nécessaires).
 
+11. **Copies déjà en deck ≠ copies disponibles.** La colonne ManaBox
+    « Binder Type » alimente `collection.deck_qty` ; `db.owned_quantities`
+    renvoie `{name_key: (total, deck_qty)}`. La génération de decks minimise le
+    recours aux copies en deck : `deckgen` les prend en dernier recours (flag
+    `from_deck`, compteur `counts.from_decks`), `formats60` ne compte comme
+    possédées que les copies libres (`in_deck_qty` pour l'affichage), et le
+    bonus de `poolbuild` les exclut. Toute nouvelle consommation de la
+    collection pour construire un deck doit suivre cette convention.
+
 ## Conventions
 
 - **UI et prompts LLM en français ; code, docstrings et commentaires en anglais.**

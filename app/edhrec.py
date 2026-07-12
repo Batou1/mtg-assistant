@@ -171,13 +171,16 @@ def extract_top_commanders(data: dict) -> list[str]:
     EDHREC card pages carry a "Top Commanders" card list; we match it by tag or
     header so a payload-shape tweak (e.g. ``topcommanders`` vs ``commanders``)
     keeps working. Theme (tag) pages also carry a small "New Commanders" list:
-    the "top…" section is processed first so the theme's actual top commanders
-    outrank the merely-new ones.
+    it is skipped entirely — freshly printed commanders shouldn't surface just
+    for being new (the user asks for a theme, not novelty), and a genuinely
+    popular new commander appears in the "top…" list anyway.
     """
     sections = []
     for section in _json_dict(data).get("cardlists") or []:
         tag = (section.get("tag") or "").lower()
         header = (section.get("header") or "").lower()
+        if "new" in tag or "new" in header:
+            continue
         if "commander" in tag or "commander" in header:
             sections.append((("top" not in tag and "top" not in header), section))
     sections.sort(key=lambda pair: pair[0])  # stable: "top…" sections first

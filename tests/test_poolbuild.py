@@ -269,6 +269,8 @@ def test_bonus_recommends_owned_and_buy(monkeypatch):
                                legal={"modern": "legal"}),       # owned, eligible
         "llanowar elves": _card("Llanowar Elves", "Creature — Elf", ["G"], 1.0,
                                  legal={"modern": "legal"}),     # owned, off-colour
+        "monastery swiftspear": _card("Monastery Swiftspear", "Creature — Monk",
+                                       ["R"], 1.0, legal={"modern": "legal"}),
         "fireblast": _card("Fireblast", "Instant", ["R"], 4.0,
                             legal={"modern": "legal"}, eur=2.5),  # buy suggestion
     }
@@ -286,9 +288,16 @@ def test_bonus_recommends_owned_and_buy(monkeypatch):
     monkeypatch.setattr(db, "collection_names", lambda pid: [
         ("Goblin Guide", "goblin guide", 1),
         ("Llanowar Elves", "llanowar elves", 1),
+        ("Monastery Swiftspear", "monastery swiftspear", 2),
     ])
+    monkeypatch.setattr(db, "owned_quantities", lambda pid: {
+        "goblin guide": (1, 0),
+        "llanowar elves": (1, 0),
+        "monastery swiftspear": (2, 2),  # every copy already in another deck
+    })
     monkeypatch.setattr(llm, "pool_bonus", lambda spec, arch, cards, colors, owned: {
-        "owned_bonus": ["Goblin Guide", "Llanowar Elves"],  # Elves filtered (off-colour)
+        # Elves filtered (off-colour), Swiftspear filtered (locked in a deck).
+        "owned_bonus": ["Goblin Guide", "Llanowar Elves", "Monastery Swiftspear"],
         "buy_bonus": ["Fireblast"],
     })
 
@@ -298,7 +307,9 @@ def test_bonus_recommends_owned_and_buy(monkeypatch):
     bonus = deck["bonus"]
     assert bonus is not None
     owned_names = {c["name"] for c in bonus["owned"]}
-    assert owned_names == {"Goblin Guide"}              # green Elves excluded as off-colour
+    # Green Elves excluded as off-colour; Swiftspear excluded because all its
+    # copies already sit in another deck.
+    assert owned_names == {"Goblin Guide"}
     buy_names = {c["name"] for c in bonus["buy"]}
     assert "Fireblast" in buy_names
     assert bonus["buy_total_eur"] == 2.5
