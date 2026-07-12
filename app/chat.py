@@ -554,9 +554,12 @@ def _exec_generate_decklist(args: dict, profile_id: int, ctx: dict | None = None
 
     c = deck["counts"]
     artifact = {"type": "decklist", "commander": commander, "deck": deck}
+    from_decks = (
+        f", dont {c['from_decks']} à sortir d'autres decks" if c.get("from_decks") else ""
+    )
     text = (
-        f"Decklist {commander} générée : {c['total']} cartes, {c['owned']} possédées, "
-        f"{c['to_buy']} à acheter pour {deck['buy_total_eur']} €"
+        f"Decklist {commander} générée : {c['total']} cartes, {c['owned']} possédées"
+        f"{from_decks}, {c['to_buy']} à acheter pour {deck['buy_total_eur']} €"
         f"{_cap_suffix(deck.get('max_card_price_eur'))}."
     )
     return text, artifact

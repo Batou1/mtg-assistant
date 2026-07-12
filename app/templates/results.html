@@ -61,6 +61,7 @@
           {% if r.owned is defined and not r.owned %}<span class="tag buy-tag">proposé · non possédé</span>
           {% else %}<span class="tag owned-tag">possédé</span>{% endif %}
           {% if r.below_threshold %}<span class="tag niche-tag">peu joué</span>{% endif %}
+          {% if r.recent %}<span class="tag niche-tag">set récent</span>{% endif %}
         </h3>
         <p class="pips">
           {% for c in r.color_identity %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}

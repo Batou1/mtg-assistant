@@ -1,11 +1,14 @@
 """Build a full 100-card Commander decklist from an EDHREC commander page.
 
 Deterministic: the deck is assembled from EDHREC's most-included cards for the
-commander. Cards you own are always free and added first. Missing cards are
+commander. Freely available owned cards are added first. Missing cards are
 bought within budget — ranked by popularity-per-euro so the deck fills out with
 cheap staples first and stays *complete* (without a budget, missing cards are
-ranked by raw popularity instead). Lands are topped up with basic lands matching
-the colour identity.
+ranked by raw popularity instead). Owned cards whose every copy already sits in
+another of the user's decks (ManaBox "Binder Type" = deck) are a last resort:
+they are only used to fill slots the budget couldn't, and flagged so the user
+knows the card must be pulled from an existing deck. Lands are topped up with
+basic lands matching the colour identity.
 
 The function takes ``cards_by_name`` (a name->Scryfall-card map the caller has
 already resolved) instead of doing network I/O itself, which keeps it unit
@@ -108,12 +111,17 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
                budget: float | None, cards_by_name: dict,
                target_lands: int = 36, deck_size: int = 100,
                sideboard_size: int = 18, max_card_price: float | None = None,
-               fmt: str = "commander") -> dict:
+               fmt: str = "commander",
+               in_deck_keys: set[str] = frozenset()) -> dict:
     """Assemble a decklist. See module docstring for the selection strategy.
 
     ``max_card_price`` additionally caps the price of any single bought card —
     e.g. a 30€ total budget with a 5€ per-card cap never adds a 10€ card even
     though it would otherwise fit the remaining total.
+
+    ``in_deck_keys`` marks owned cards with no free copy (every copy already
+    sits in another of the user's decks): they are used last, and flagged
+    ``from_deck`` so the UI can show they'd be borrowed from an existing deck.
 
     ``fmt``'s EDHREC page is always the regular (paper) Commander one — EDHREC
     has no separate Duel/Pauper Commander section — so for those variants the
@@ -132,6 +140,9 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
     def owned(name: str) -> bool:
         return _norm(name) in owned_keys
 
+    def from_deck(name: str) -> bool:
+        return _norm(name) in in_deck_keys and _norm(name) in owned_keys
+
     def card_of(name: str):
         return cards_by_name.get(_norm(name))
 
@@ -144,6 +155,7 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
             "name": name,
             "image": scryfall.image(card) if card else None,
             "owned": is_owned,
+            "from_deck": not is_basic and from_deck(name),
             "price_eur": round(price, 2) if price is not None else None,
             "category": entry.get("category") or "autres",
             "is_basic": is_basic,
@@ -184,17 +196,27 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
 
     def fill(entries: list, target: int) -> list:
         items: list[dict] = []
-        # Owned cards first — they're free and they're yours (popularity order).
+        # Freely available owned cards first (popularity order) — copies locked
+        # in the user's other decks are deliberately skipped here.
         for entry in sorted(entries, key=lambda e: e["inclusion"], reverse=True):
             if len(items) >= target:
                 break
-            if owned(entry["name"]):
+            if owned(entry["name"]) and not from_deck(entry["name"]):
                 items.append(make_item(entry))
         # Then buy the best value missing cards within budget.
         for entry in _unowned_order([e for e in entries if not owned(e["name"])]):
             if len(items) >= target:
                 break
             take_unowned(entry, items)
+        # Last resort: borrow cards already sleeved in another deck rather than
+        # leaving slots unfilled (flagged from_deck for the UI).
+        for entry in sorted(
+            [e for e in entries if from_deck(e["name"])],
+            key=lambda e: e["inclusion"], reverse=True,
+        ):
+            if len(items) >= target:
+                break
+            items.append(make_item(entry))
         return items
 
     # --- Spells (non-land) + non-basic lands ------------------------------
@@ -238,12 +260,15 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
         "name": commander_card["name"],
         "image": scryfall.image(commander_card),
         "owned": owned(commander_card["name"]),
+        "from_deck": from_deck(commander_card["name"]),
         "color_identity": colors,
     }
 
     lands_total = len(nonbasic_lands) + basics_total
     total = 1 + len(spells) + lands_total
     to_buy = [c for c in spells + nonbasic_lands if not c["owned"]]
+    from_decks = (1 * commander_item["from_deck"]
+                  + sum(1 for c in spells + nonbasic_lands if c["from_deck"]))
 
     return {
         "commander": commander_item,
@@ -260,6 +285,7 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
             "owned": 1 * commander_item["owned"]
             + sum(1 for c in spells if c["owned"])
             + sum(1 for c in nonbasic_lands if c["owned"]) + basics_total,
+            "from_decks": from_decks,
             "to_buy": len(to_buy),
             "lands": lands_total,
             "spells": len(spells),
@@ -317,12 +343,15 @@ def generate_full_deck(commander_name: str, budget, theme: str, profile_id: int,
     if not commander_card:
         return None, {"_error": True}
 
-    owned = db.owned_name_keys(profile_id)
+    quantities = db.owned_quantities(profile_id)
+    owned = set(quantities)
+    # Cards whose every owned copy already sits in another deck: use them last.
+    in_deck = {k for k, (qty, deck_qty) in quantities.items() if qty - deck_qty <= 0}
     deck = build_deck(
         commander_card, data, owned, budget, resolved,
         target_lands=settings.deck_lands, deck_size=settings.deck_size,
         sideboard_size=settings.deck_sideboard, max_card_price=max_card_price,
-        fmt=fmt,
+        fmt=fmt, in_deck_keys=in_deck,
     )
 
     key_cards = [c["name"] for g in deck["groups"] for c in g["cards"] if not c["is_basic"]]

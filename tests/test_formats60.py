@@ -43,11 +43,13 @@ ARCHETYPE = {
 
 
 def _analyze(monkeypatch, archetype=ARCHETYPE, owned=(), budget=5.0):
+    """``owned`` entries: (name, qty) or (name, qty, deck_qty)."""
     monkeypatch.setattr(research, "brave_search", lambda q, count=8: [])
     monkeypatch.setattr(llm, "archetype_research", lambda fmt, intent, context: archetype)
     monkeypatch.setattr(scryfall, "resolve_cards", _fake_resolve)
-    monkeypatch.setattr(db, "collection_names",
-                        lambda pid: [(raw, raw.lower(), qty) for raw, qty in owned])
+    monkeypatch.setattr(db, "owned_quantities",
+                        lambda pid: {e[0].lower(): (e[1], e[2] if len(e) > 2 else 0)
+                                     for e in owned})
     intent = {"format": "pauper", "keywords": ["aggro"], "colors": ["R"],
               "budget_eur": budget}
     return formats60.analyze(intent, profile_id=1)
@@ -96,6 +98,22 @@ def test_ownership_is_counted_per_copy(monkeypatch):
     assert by_name["Card A"]["qty"] == 2          # only the missing copies
     assert by_name["Card B"]["qty"] == 4
     assert by_name["Card B"]["line_eur"] == 4.0
+
+
+def test_copies_in_other_decks_do_not_count_as_available(monkeypatch):
+    # 4 copies owned but 3 already sleeved in other decks: only the free copy
+    # counts, the 3 missing ones go to the buylist and are flagged in_deck_qty.
+    data = _analyze(monkeypatch, owned=[("Card A", 4, 3)])
+
+    deck = data["deck"]
+    cards = {c["name"]: c for g in deck["groups"] for c in g["cards"]}
+    assert cards["Card A"]["owned_qty"] == 1
+    assert cards["Card A"]["missing_qty"] == 3
+    assert cards["Card A"]["in_deck_qty"] == 3
+    assert cards["Card A"]["owned"] is False
+
+    by_name = {i["name"]: i for i in data["buylist"]["to_buy"]}
+    assert by_name["Card A"]["qty"] == 3
 
 
 def test_decklist_text_is_exportable(monkeypatch):

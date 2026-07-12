@@ -117,6 +117,43 @@ def test_sideboard_empty_when_pool_fully_used():
     assert deck["counts"]["sideboard"] == 0
 
 
+def test_cards_locked_in_other_decks_are_used_last_and_flagged():
+    # Goblin A is owned but every copy sits in another deck: the generator
+    # prefers buying Goblin B / Expensive Bomb, then falls back to Goblin A
+    # only to fill the remaining slot — flagged from_deck.
+    deck = deckgen.build_deck(
+        COMMANDER, DATA, {"goblin a"}, None, CARDS, target_lands=4, deck_size=10,
+        in_deck_keys={"goblin a"},
+    )
+    items = {c["name"]: c for g in deck["groups"] for c in g["cards"]}
+    assert items["Goblin A"]["owned"] is True
+    assert items["Goblin A"]["from_deck"] is True
+    assert items["Goblin B"]["from_deck"] is False
+    # Goblin A is free (owned), not in the buy list.
+    assert "Goblin A" not in {c["name"] for c in deck["buy_list"]}
+    assert deck["counts"]["from_decks"] == 1
+
+
+def test_budget_exhausted_falls_back_to_deck_locked_cards():
+    # With no money to buy anything, a card locked in another deck still fills
+    # the deck rather than leaving the slot empty.
+    deck = deckgen.build_deck(
+        COMMANDER, DATA, {"goblin a"}, 0.0, CARDS, target_lands=4, deck_size=10,
+        in_deck_keys={"goblin a"},
+    )
+    names = {c["name"] for g in deck["groups"] for c in g["cards"]}
+    assert "Goblin A" in names
+    assert deck["buy_total_eur"] == 0.0
+
+
+def test_free_owned_cards_are_not_flagged_from_deck():
+    deck = _build(budget=5.0)
+    items = {c["name"]: c for g in deck["groups"] for c in g["cards"]}
+    assert items["Goblin A"]["from_deck"] is False
+    assert deck["counts"]["from_decks"] == 0
+    assert deck["commander"]["from_deck"] is False
+
+
 def test_commander_excluded_from_candidates():
     nonland, lands = deckgen.candidate_names(DATA, "Krenko, Mob Boss")
     assert "Krenko, Mob Boss" not in nonland + lands

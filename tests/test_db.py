@@ -16,11 +16,12 @@ def fresh_db(tmp_path, monkeypatch):
     return db
 
 
-def _row(name, set_code="ABC", scryfall_id="", qty=1):
+def _row(name, set_code="ABC", scryfall_id="", qty=1, binder_type=""):
     key = name.split("//")[0].strip().lower()
     return {
         "scryfall_id": scryfall_id, "name_key": key, "raw_name": name,
         "set_code": set_code, "foil": 0, "condition": "near_mint", "quantity": qty,
+        "binder_type": binder_type,
     }
 
 
@@ -40,6 +41,54 @@ def test_identical_printing_sums_quantity(fresh_db):
     fresh_db.replace_collection(pid, [_row("Sol Ring", qty=1), _row("Sol Ring", qty=2)])
     distinct, total = fresh_db.collection_count(pid)
     assert distinct == 1 and total == 3
+
+
+def test_deck_binder_copies_are_tracked_separately(fresh_db):
+    # Same printing split between a binder and a deck: quantities are summed
+    # but the deck copies stay visible via owned_quantities.
+    pid = fresh_db.ensure_default_profile()
+    fresh_db.replace_collection(pid, [
+        _row("Sol Ring", qty=2, binder_type="binder"),
+        _row("Sol Ring", qty=1, binder_type="deck"),
+        _row("Goblin Matron", qty=1, binder_type="deck"),
+        _row("Llanowar Elves", qty=1),  # no binder info (older export)
+    ])
+    assert fresh_db.owned_quantities(pid) == {
+        "sol ring": (3, 1),
+        "goblin matron": (1, 1),
+        "llanowar elves": (1, 0),
+    }
+    # Totals are unchanged: deck copies are still owned copies.
+    assert fresh_db.collection_count(pid) == (3, 5)
+
+
+def test_deck_qty_column_added_to_existing_profile_schema(tmp_path, monkeypatch):
+    """A DB created before deck_qty existed gets the column in place."""
+    db_path = tmp_path / "noqty.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE collection (
+            profile_id INTEGER NOT NULL, scryfall_id TEXT, name_key TEXT NOT NULL,
+            raw_name TEXT NOT NULL, set_code TEXT, foil INTEGER NOT NULL DEFAULT 0,
+            condition TEXT, quantity INTEGER NOT NULL,
+            PRIMARY KEY (profile_id, name_key, set_code, foil, condition)
+        );
+        INSERT INTO collection VALUES (1, '', 'sol ring', 'Sol Ring', 'LTC', 0, 'nm', 2);
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setenv("MTG_DB_PATH", str(db_path))
+    import app.config as config
+    importlib.reload(config)
+    import app.db as db
+    importlib.reload(db)
+    db.init_db()
+
+    # Legacy rows count as fully available (deck_qty 0).
+    assert db.owned_quantities(1) == {"sol ring": (2, 0)}
 
 
 def test_collections_are_isolated_per_profile(fresh_db):

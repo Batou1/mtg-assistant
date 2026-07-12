@@ -25,6 +25,7 @@ CREATE TABLE collection (
     foil        INTEGER NOT NULL DEFAULT 0,
     condition   TEXT,
     quantity    INTEGER NOT NULL,
+    deck_qty    INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (profile_id, name_key, set_code, foil, condition)
 )
 """
@@ -119,6 +120,12 @@ def _migrate_collection(conn) -> None:
         conn.execute(_CREATE_COLLECTION_SQL)
         return
     if "profile_id" in cols:
+        # deck_qty (copies sitting in the user's ManaBox decks) arrived later:
+        # add it in place, existing rows default to 0 (all copies available).
+        if "deck_qty" not in cols:
+            conn.execute(
+                "ALTER TABLE collection ADD COLUMN deck_qty INTEGER NOT NULL DEFAULT 0"
+            )
         return
 
     # Old single-collection schema: move its rows under a default profile.
@@ -328,11 +335,16 @@ def replace_collection(profile_id: int, rows, source: str | None = None) -> None
     """Replace ``profile_id``'s collection with ``rows``.
 
     Each row: scryfall_id, name_key, raw_name, set_code, foil, condition,
-    quantity. Identical (name_key, set_code, foil, condition) rows are summed.
+    quantity, and optionally binder_type (ManaBox: "binder", "deck", "list").
+    Identical (name_key, set_code, foil, condition) rows are summed; copies
+    whose binder_type is "deck" also accumulate into deck_qty so deck
+    generation can avoid cards already sleeved in the user's decks.
     """
     pid = int(profile_id)
     merged: dict[tuple, dict] = {}
     for r in rows:
+        qty = int(r["quantity"])
+        deck_qty = qty if (r.get("binder_type") or "") == "deck" else 0
         key = (
             r["name_key"],
             r.get("set_code") or "",
@@ -340,7 +352,8 @@ def replace_collection(profile_id: int, rows, source: str | None = None) -> None
             r.get("condition") or "",
         )
         if key in merged:
-            merged[key]["quantity"] += int(r["quantity"])
+            merged[key]["quantity"] += qty
+            merged[key]["deck_qty"] += deck_qty
             if not merged[key]["scryfall_id"] and r.get("scryfall_id"):
                 merged[key]["scryfall_id"] = r["scryfall_id"]
         else:
@@ -352,7 +365,8 @@ def replace_collection(profile_id: int, rows, source: str | None = None) -> None
                 "set_code": r.get("set_code") or "",
                 "foil": int(bool(r.get("foil"))),
                 "condition": r.get("condition") or "",
-                "quantity": int(r["quantity"]),
+                "quantity": qty,
+                "deck_qty": deck_qty,
             }
     with get_conn() as conn:
         conn.execute("DELETE FROM collection WHERE profile_id=?", (pid,))
@@ -361,8 +375,8 @@ def replace_collection(profile_id: int, rows, source: str | None = None) -> None
         for r in merged.values():
             conn.execute(
                 """INSERT OR REPLACE INTO collection
-                   (profile_id, scryfall_id, name_key, raw_name, set_code, foil, condition, quantity)
-                   VALUES (:profile_id, :scryfall_id, :name_key, :raw_name, :set_code, :foil, :condition, :quantity)""",
+                   (profile_id, scryfall_id, name_key, raw_name, set_code, foil, condition, quantity, deck_qty)
+                   VALUES (:profile_id, :scryfall_id, :name_key, :raw_name, :set_code, :foil, :condition, :quantity, :deck_qty)""",
                 r,
             )
         if source is not None:
@@ -411,6 +425,23 @@ def owned_name_keys(profile_id: int) -> set[str]:
             (int(profile_id),),
         ).fetchall()
     return {r["name_key"] for r in rows}
+
+
+def owned_quantities(profile_id: int) -> dict[str, tuple[int, int]]:
+    """{name_key: (total_qty, deck_qty)} for a profile.
+
+    ``deck_qty`` counts copies the ManaBox export flags as living in one of
+    the user's decks ("Binder Type" = deck); ``total_qty - deck_qty`` is what
+    is actually free to build with. Rows imported before the binder-type
+    column existed have deck_qty 0, i.e. everything counts as free.
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT name_key, SUM(quantity) AS qty, SUM(deck_qty) AS deck_qty
+               FROM collection WHERE profile_id=? GROUP BY name_key""",
+            (int(profile_id),),
+        ).fetchall()
+    return {r["name_key"]: (r["qty"], r["deck_qty"]) for r in rows}
 
 
 def get_meta(key: str):

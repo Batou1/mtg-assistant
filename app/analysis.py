@@ -36,6 +36,25 @@ def _color_ok(card: dict, wanted: list[str], max_colors: int | None) -> bool:
     return True
 
 
+def _is_recent(card: dict) -> bool:
+    """True for a card that only exists in a freshly released set.
+
+    ``released_at`` alone is misleading: Scryfall's canonical printing of an
+    old commander is often a recent reprint, so only non-reprints count. Used
+    to demote new-set hype in suggestion rankings — EDHREC's deck counts and
+    list ordering spike for whatever was just printed, while the user asks for
+    a theme fit, not novelty.
+    """
+    if card.get("reprint"):
+        return False
+    released = (card.get("released_at") or "").strip()
+    try:
+        released_ts = time.mktime(time.strptime(released, "%Y-%m-%d"))
+    except ValueError:
+        return False
+    return (time.time() - released_ts) < settings.recent_set_months * 30.44 * 86400
+
+
 def _theme_score(intent: dict, recommended: list[str], tags: list[str]) -> int:
     """Heuristic fit between the intent and a commander's deck.
 
@@ -106,6 +125,7 @@ def _build_result(card: dict, data: dict, owned_keys: set, intent: dict,
         "owned_cards": owned_cards_list,
         "missing_cards": missing_cards,
         "theme_score": _theme_score(intent, ordered, edhrec.extract_tags(data)),
+        "recent": _is_recent(card),
         "owned": owned,
         "price_eur": None if owned else scryfall.price_eur(card),
         "link_count": 0,            # owned cards pointing here (discovery only)
@@ -185,9 +205,11 @@ def _discover_unowned(owned_cards: list, owned_keys: set, intent: dict,
         result["linked_owned_cards"] = linked_by[name][:8]
         discovered.append(result)
 
-    # Strongest collection link first, then theme fit and popularity.
+    # Strongest collection link first, then theme fit; new-set commanders are
+    # demoted at equal fit (see _is_recent) before popularity breaks ties.
     discovered.sort(
-        key=lambda r: (r["link_count"], r["theme_score"], r["owned_count"], r["num_decks"]),
+        key=lambda r: (r["link_count"], r["theme_score"], not r["recent"],
+                       r["owned_count"], r["num_decks"]),
         reverse=True,
     )
     return discovered, stats
@@ -326,9 +348,14 @@ def find_commanders(intent: dict, profile_id: int, limit: int | None = None):
             scryfall.resolve_cards(ranked, client=client) if ranked else ({}, [])
         )
 
+        # Score more viable candidates than we'll display: EDHREC orders its
+        # lists with the newest hyped commanders high, so cutting at ``limit``
+        # here would lock the selection to them before the ranking below can
+        # prefer older, equally-fitting ones.
+        scan = max(limit, settings.finder_scan)
         results = []
         for name in ranked:
-            if len(results) >= limit:
+            if len(results) >= scan:
                 break
             card = resolved.get(_norm(name))
             if not card or not commanders.is_eligible_commander(card, fmt):
@@ -351,8 +378,14 @@ def find_commanders(intent: dict, profile_id: int, limit: int | None = None):
                               client=client)
             )
 
-        # Theme fit first, then raw EDHREC popularity — mirrors analyze().
-        results.sort(key=lambda r: (r["theme_score"], r["num_decks"]), reverse=True)
+        # Theme fit first; at equal fit, commanders that only exist in a
+        # recent set rank below established ones (novelty is not a criterion);
+        # raw EDHREC popularity only breaks the remaining ties.
+        results.sort(
+            key=lambda r: (r["theme_score"], not r["recent"], r["num_decks"]),
+            reverse=True,
+        )
+        results = results[:limit]
 
         _attach_buylists(results, intent, client)
 

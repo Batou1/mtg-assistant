@@ -70,6 +70,17 @@ def test_extract_top_commanders_dedupes_and_ignores_other_sections():
     assert edhrec.extract_top_commanders(data) == ["A", "B"]
 
 
+def test_extract_top_commanders_skips_new_commanders_sections():
+    # "New Commanders" only lists the latest sets' commanders: novelty is not
+    # a suggestion criterion, so the section is ignored entirely.
+    data = _page([
+        {"tag": "newcommanders", "header": "New Commanders",
+         "cardviews": [{"name": "Fresh Hype"}]},
+        {"tag": "topcommanders", "cardviews": [{"name": "Old Reliable"}]},
+    ])
+    assert edhrec.extract_top_commanders(data) == ["Old Reliable"]
+
+
 def test_extract_top_commanders_empty_when_no_commander_section():
     data = _page([{"tag": "creatures", "cardviews": [{"name": "Goblin Chieftain"}]}])
     assert edhrec.extract_top_commanders(data) == []

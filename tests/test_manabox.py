@@ -35,6 +35,26 @@ def test_name_with_comma_is_preserved():
     assert atraxa["raw_name"].startswith("Atraxa")
 
 
+def test_binder_type_defaults_to_empty_without_column():
+    rows, _ = manabox.parse_manabox_csv(SAMPLE)
+    assert all(r["binder_type"] == "" for r in rows)
+
+
+def test_binder_type_is_parsed_and_lowercased():
+    csv_text = (
+        "Binder Name,Binder Type,Name,Set code,Quantity,Scryfall ID\n"
+        "Mon classeur,binder,Sol Ring,LTC,2,abc-123\n"
+        "Deck Krenko,Deck,Goblin Matron,DMR,1,def-456\n"
+        "Wishlist,list,Lightning Bolt,2X2,1,ghi-789\n"
+    )
+    rows, errors = manabox.parse_manabox_csv(csv_text)
+    assert errors == []
+    by_key = {r["name_key"]: r for r in rows}
+    assert by_key["sol ring"]["binder_type"] == "binder"
+    assert by_key["goblin matron"]["binder_type"] == "deck"
+    assert by_key["lightning bolt"]["binder_type"] == "list"
+
+
 def test_empty_and_header_only():
     assert manabox.parse_manabox_csv("") == ([], [])
     header_only = SAMPLE.splitlines()[0] + "\n"

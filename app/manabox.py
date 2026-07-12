@@ -2,13 +2,17 @@
 
 ManaBox exports one row per printing/finish with a header like:
 
-    Name,Set code,Set name,Collector number,Foil,Rarity,Quantity,
-    ManaBox ID,Scryfall ID,Purchase price,Misprint,Altered,Condition,
-    Language,Purchase price currency
+    Binder Name,Binder Type,Name,Set code,Set name,Collector number,Foil,
+    Rarity,Quantity,ManaBox ID,Scryfall ID,Purchase price,Misprint,Altered,
+    Condition,Language,Purchase price currency
 
 We read it tolerantly: column lookups are case-insensitive with fallbacks, so
 small header changes between ManaBox versions don't break the import. The
 Scryfall ID, when present, lets us resolve the exact card later.
+
+"Binder Type" tells us where the copies live in ManaBox: "binder" (and "list")
+means spare cards, "deck" means the copies are already sleeved in one of the
+user's decks — deck generation should avoid leaning on those.
 """
 import csv
 import io
@@ -32,7 +36,7 @@ def parse_manabox_csv(text: str):
     """Return (rows, errors).
 
     rows: list of dicts ready for db.replace_collection — keys scryfall_id,
-    name_key, raw_name, set_code, foil, condition, quantity.
+    name_key, raw_name, set_code, foil, condition, quantity, binder_type.
     errors: list of raw lines that had no usable card name.
     """
     rows = []
@@ -70,6 +74,7 @@ def parse_manabox_csv(text: str):
                 "foil": foil,
                 "condition": _pick(raw, "Condition") or "near_mint",
                 "quantity": quantity,
+                "binder_type": _pick(raw, "Binder Type", "Binder type").lower(),
             }
         )
 

@@ -4,6 +4,7 @@ from the owned cards. Network-touching functions are mocked; the real
 extraction + filtering + scoring logic runs."""
 import importlib
 import types
+from datetime import date, timedelta
 
 import pytest
 
@@ -47,6 +48,13 @@ _REGISTRY = {
     "goblin recruiter": {
         "name": "Goblin Recruiter", "type_line": "Creature — Goblin",
         "color_identity": ["R"], "prices": {"eur": "0.50"},
+    },
+    # A commander that only exists in a set released two months ago.
+    "shiny, brand-new boss": {
+        "name": "Shiny, Brand-New Boss", "type_line": "Legendary Creature — Goblin",
+        "color_identity": ["R"], "prices": {"eur": "2.00"},
+        "released_at": (date.today() - timedelta(days=60)).isoformat(),
+        "reprint": False,
     },
 }
 
@@ -180,6 +188,70 @@ def test_non_commander_format_falls_back_to_commander(env, monkeypatch):
     data = analysis.find_commanders(_intent(format="modern"), pid)
     assert data["format"] == "commander"
     assert any("modern" in n for n in data["notices"])
+
+
+def test_recent_set_commander_is_demoted_not_excluded(env, monkeypatch):
+    """EDHREC lists the newest hyped commander first; at equal theme fit it
+    must rank BELOW established ones — being from a fresh set is not a
+    criterion — while still appearing in the results."""
+    db, analysis = env.db, env.analysis
+    pid = db.ensure_default_profile()
+    hyped_first = {
+        "container": {"json_dict": {"cardlists": [
+            {"tag": "topcommanders", "cardviews": [
+                {"name": "Shiny, Brand-New Boss"},   # EDHREC hype order
+                {"name": "Krenko, Mob Boss"},
+                {"name": "Muxus, Goblin Grandee"},
+            ]},
+        ]}},
+    }
+    _wire(analysis, monkeypatch, theme_page=hyped_first)
+
+    data = analysis.find_commanders(_intent(), pid)
+    names = [r["name"] for r in data["results"]]
+    assert names[-1] == "Shiny, Brand-New Boss"      # demoted, not dropped
+    assert names[0] == "Krenko, Mob Boss"
+    shiny = next(r for r in data["results"] if r["name"] == "Shiny, Brand-New Boss")
+    assert shiny["recent"] is True
+    assert all(r["recent"] is False for r in data["results"] if r["name"] != shiny["name"])
+
+
+def test_recent_reprint_of_an_old_commander_is_not_demoted(env, monkeypatch):
+    # The cached canonical printing of an old commander is often a recent
+    # reprint: reprint=True must shield it from the novelty demotion.
+    db, analysis = env.db, env.analysis
+    pid = db.ensure_default_profile()
+    reprinted = dict(
+        _REGISTRY["krenko, mob boss"],
+        released_at=(date.today() - timedelta(days=30)).isoformat(),
+        reprint=True,
+    )
+    monkeypatch.setitem(_REGISTRY, "krenko, mob boss", reprinted)
+    _wire(analysis, monkeypatch)
+
+    data = analysis.find_commanders(_intent(), pid)
+    krenko = next(r for r in data["results"] if r["name"] == "Krenko, Mob Boss")
+    assert krenko["recent"] is False
+
+
+def test_scan_depth_lets_older_commander_win_the_display_cut(env, monkeypatch):
+    """With limit=1 the finder must still score candidates beyond the first
+    viable one: the hyped new commander tops EDHREC's list but the established
+    one wins the single display slot."""
+    db, analysis = env.db, env.analysis
+    pid = db.ensure_default_profile()
+    hyped_first = {
+        "container": {"json_dict": {"cardlists": [
+            {"tag": "topcommanders", "cardviews": [
+                {"name": "Shiny, Brand-New Boss"},
+                {"name": "Krenko, Mob Boss"},
+            ]},
+        ]}},
+    }
+    _wire(analysis, monkeypatch, theme_page=hyped_first)
+
+    data = analysis.find_commanders(_intent(), pid, limit=1)
+    assert [r["name"] for r in data["results"]] == ["Krenko, Mob Boss"]
 
 
 def test_theme_slugs_bounded_and_skip_long_free_text(env):
