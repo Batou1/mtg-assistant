@@ -154,6 +154,73 @@ def test_free_owned_cards_are_not_flagged_from_deck():
     assert deck["commander"]["from_deck"] is False
 
 
+def test_min_basics_reserves_land_slots_for_basics():
+    # Three nonbasic candidates could fill all 4 land slots; a min_basics floor
+    # of 2 caps them at 2 (best inclusion first) and tops up with basics.
+    data = {"container": {"json_dict": {"cardlists": [
+        {"tag": "creatures", "cardviews": [{"name": "Goblin A", "inclusion": 90}]},
+        {"tag": "lands", "cardviews": [
+            {"name": "Cool Land", "inclusion": 50},
+            {"name": "Nice Land", "inclusion": 40},
+            {"name": "Meh Land", "inclusion": 30},
+        ]},
+    ]}}}
+    cards = {
+        **CARDS,
+        "nice land": card("Nice Land", eur=1.0),
+        "meh land": card("Meh Land", eur=1.0),
+    }
+    deck = deckgen.build_deck(
+        COMMANDER, data, {"goblin a"}, None, cards, target_lands=4, deck_size=10,
+        min_basics=2,
+    )
+    lands = next(g for g in deck["groups"] if g["label"] == "Terrains")
+    by_name = {c["name"]: c for c in lands["cards"]}
+    assert set(by_name) == {"Cool Land", "Nice Land", "Mountain"}
+    assert "Meh Land" not in by_name          # capped by the basics floor
+    assert by_name["Mountain"]["qty"] == 2    # the reserved basic slots
+    assert deck["counts"]["lands"] == 4
+
+
+def test_untyped_edhrec_section_falls_back_to_scryfall_type():
+    # A card seen only in an untyped EDHREC section (High Synergy / Top Cards)
+    # has no category tag: its Scryfall type line must place it in the right
+    # group instead of "Autres".
+    data = {"container": {"json_dict": {"cardlists": [
+        {"tag": "highsynergycards", "cardviews": [
+            {"name": "Synergy Trick", "inclusion": 95},
+            {"name": "Mystery Blob", "inclusion": 60},
+        ]},
+        {"tag": "creatures", "cardviews": [{"name": "Goblin A", "inclusion": 90}]},
+    ]}}}
+    cards = {
+        "krenko, mob boss": COMMANDER,
+        "goblin a": card("Goblin A", eur=0.2, colors=["R"]),
+        "synergy trick": {**card("Synergy Trick", eur=0.5, colors=["R"]),
+                          "type_line": "Instant"},
+        "mystery blob": card("Mystery Blob", eur=0.5, colors=["R"]),  # no type line
+        "mountain": card("Mountain"),
+    }
+    deck = deckgen.build_deck(
+        COMMANDER, data, {"goblin a"}, None, cards, target_lands=4, deck_size=10
+    )
+    by_label = {g["label"]: [c["name"] for c in g["cards"]] for g in deck["groups"]}
+    assert "Synergy Trick" in by_label["Éphémères"]
+    # Without any type information the card still falls back to "Autres".
+    assert "Mystery Blob" in by_label["Autres"]
+
+
+def test_groups_are_sorted_alphabetically():
+    # Fill order is popularity/price driven (Goblin A owned, then Expensive
+    # Bomb by inclusion, then Goblin B) but display must be alphabetical.
+    deck = _build(budget=None)
+    creatures = next(g for g in deck["groups"] if g["label"] == "Créatures")
+    assert [c["name"] for c in creatures["cards"]] == \
+        ["Expensive Bomb", "Goblin A", "Goblin B"]
+    lands = next(g for g in deck["groups"] if g["label"] == "Terrains")
+    assert [c["name"] for c in lands["cards"]] == ["Cool Land", "Mountain"]
+
+
 def test_commander_excluded_from_candidates():
     nonland, lands = deckgen.candidate_names(DATA, "Krenko, Mob Boss")
     assert "Krenko, Mob Boss" not in nonland + lands
@@ -178,6 +245,66 @@ def test_build_deck_filters_pool_by_duelcommander_legality():
     assert "Expensive Bomb" not in names
     assert "Expensive Bomb" not in {c["name"] for c in deck["sideboard"]}
     assert deck["format"] == "duelcommander"
+
+
+def test_include_cards_are_forced_in_even_past_budget():
+    # The player explicitly asked for Expensive Bomb: it takes a slot before
+    # any budget logic, its price still counts in (and here exhausts) the
+    # total, and it is flagged forced for the UI/snapshot.
+    deck = deckgen.build_deck(
+        COMMANDER, DATA, {"goblin a"}, 5.0, CARDS, target_lands=4, deck_size=10,
+        include_cards=["Expensive Bomb"],
+    )
+    items = {c["name"]: c for g in deck["groups"] for c in g["cards"]}
+    assert "Expensive Bomb" in items
+    assert items["Expensive Bomb"]["forced"] is True
+    assert items["Goblin A"]["forced"] is False
+    assert deck["forced_cards"] == ["Expensive Bomb"]
+    # The forced purchase consumed the whole budget: nothing else is bought.
+    assert deck["buy_total_eur"] == 100.0
+    assert "Goblin B" not in items and "Cool Land" not in items
+
+
+def test_include_cards_outside_edhrec_pool_are_injected():
+    cards = {**CARDS, "off pool card": card("Off Pool Card", eur=0.5, colors=["R"])}
+    deck = deckgen.build_deck(
+        COMMANDER, DATA, set(), None, cards, target_lands=4, deck_size=10,
+        include_cards=["Off Pool Card"],
+    )
+    items = {c["name"]: c for g in deck["groups"] for c in g["cards"]}
+    assert items["Off Pool Card"]["forced"] is True
+    assert "Off Pool Card" in deck["forced_cards"]
+
+
+def test_exclude_cards_removed_from_deck_and_sideboard():
+    deck = deckgen.build_deck(
+        COMMANDER, DATA, {"goblin a"}, 5.0, CARDS, target_lands=4, deck_size=10,
+        exclude_cards=["Goblin B", "Expensive Bomb"],
+    )
+    names = {c["name"] for g in deck["groups"] for c in g["cards"]}
+    assert "Goblin B" not in names
+    # Expensive Bomb used to land in the sideboard under this budget: an
+    # explicit player exclusion must remove it from there too.
+    assert "Expensive Bomb" not in {c["name"] for c in deck["sideboard"]}
+
+
+def test_validate_includes_rejects_unknown_offcolor_and_illegal():
+    resolved = {
+        "goblin a": card("Goblin A", colors=["R"]),
+        "blue guy": card("Blue Guy", colors=["U"]),
+        "banned card": {**card("Banned Card", colors=["R"]),
+                        "legalities": {"commander": "banned"}},
+        "krenko, mob boss": COMMANDER,
+    }
+    valid, rejected = deckgen.validate_includes(
+        ["Goblin A", "Blue Guy", "Banned Card", "Ghost Card", "Krenko, Mob Boss"],
+        resolved, COMMANDER, "commander",
+    )
+    assert valid == ["Goblin A"]  # the commander itself is silently skipped
+    reasons = {r["name"]: r["reason"] for r in rejected}
+    assert "couleur" in reasons["Blue Guy"]
+    assert "légale" in reasons["Banned Card"]
+    assert "introuvable" in reasons["Ghost Card"]
 
 
 def test_build_deck_plain_commander_keeps_all_cards_regardless_of_legality():

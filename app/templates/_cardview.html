@@ -13,6 +13,7 @@
    "dans un deck" (every copy already sleeved in another deck — from_deck),
    so the user knows building this list means dismantling something. #}
 {% macro owned_tags(c) %}
+  {%- if c.forced %}<span class="tag forced-tag">demandée</span>{% endif %}
   {%- if c.owned and c.from_deck %}<span class="tag deck-tag">possédée · dans un deck</span>
   {%- elif c.owned %}<span class="tag owned-tag">{{ 'terrain' if c.is_basic else 'possédée · libre' }}</span>
   {%- else %}<span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur) }} €{% else %}à acheter{% endif %}</span>
@@ -23,6 +24,7 @@
    missing_qty/in_deck_qty). Same libre ⇄ dans un deck nuance, but per copy:
    free copies, then copies to buy, then copies locked in other decks. #}
 {% macro owned_tags_counted(c) %}
+  {%- if c.forced %}<span class="tag forced-tag">demandée</span>{% endif %}
   {%- if c.owned %}<span class="tag owned-tag">{{ 'terrain' if c.is_basic else ('possédées · libres' if c.qty > 1 else 'possédée · libre') }}</span>
   {%- elif c.owned_qty %}<span class="tag owned-tag">{{ c.owned_qty }} libre{{ 's' if c.owned_qty > 1 }}</span><span class="tag buy-tag">manque {{ c.missing_qty }}{% if c.price_eur is not none %} · {{ "%.2f"|format(c.price_eur * c.missing_qty) }} €{% endif %}</span>
   {%- else %}<span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur * c.qty) }} €{% else %}à acheter{% endif %}</span>

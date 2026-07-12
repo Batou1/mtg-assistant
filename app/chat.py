@@ -42,7 +42,17 @@ SYSTEM_PROMPT = (
     "mana, rôle d'une carte, prix, remplacements, synergies…) À PARTIR DE CE "
     "CONTEXTE, sans rappeler l'outil de génération. Ne régénère QUE si le joueur "
     "change explicitement sa demande (autre commandant, autre budget, autres "
-    "couleurs, autre format).\n"
+    "couleurs, autre format) OU demande de MODIFIER le deck (voir ci-dessous).\n"
+    "- MODIFICATION D'UN DECK : si le joueur demande d'ajouter, d'intégrer ou "
+    "de retirer des cartes précises d'un deck déjà généré (ou valide des cartes "
+    "que tu as proposées), rappelle l'outil de génération — generate_decklist "
+    "(Commander) ou research_archetype (60 cartes) — avec include_cards (cartes "
+    "à intégrer) et/ou exclude_cards (cartes à retirer), en REPRENANT les "
+    "« Cartes imposées par le joueur » et « Cartes exclues par le joueur » des "
+    "tours précédents (CONTEXTE ACTUEL) sauf contre-ordre. Ne réponds JAMAIS "
+    "qu'une carte a été intégrée ou refusée sans avoir relancé l'outil : le "
+    "résultat de l'outil liste explicitement les cartes INTÉGRÉES et REFUSÉES "
+    "(avec la raison) — appuie-toi dessus.\n"
     "- Utilise les outils pour OBTENIR des cartes ou des decks : ne cite jamais "
     "une carte que tu n'as pas obtenue via un outil ou qui ne figure pas déjà "
     "dans le CONTEXTE ACTUEL. N'invente AUCUN nom de carte. Pour vérifier le prix "
@@ -217,7 +227,9 @@ TOOLS = [
             "vintage, premodern) : recherche un archétype compétitif et construit un "
             "deck complet de 60 cartes (plusieurs exemplaires par carte, manabase "
             "incluse), valide chaque carte via Scryfall, analyse l'écart avec la "
-            "collection (par exemplaire) et chiffre l'achat."
+            "collection (par exemplaire) et chiffre l'achat. Pour modifier un deck "
+            "déjà généré (ajouter/retirer des cartes précises), rappelle cet outil "
+            "avec include_cards / exclude_cards."
         ),
         "input_schema": {
             "type": "object",
@@ -228,6 +240,27 @@ TOOLS = [
                     "description": "Format 60 cartes visé.",
                 },
                 **_INTENT_PROPS,
+                "include_cards": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Cartes à intégrer OBLIGATOIREMENT dans le deck (noms "
+                        "anglais exacts). À passer dès que le joueur demande "
+                        "d'ajouter/intégrer des cartes précises ou valide des "
+                        "cartes que tu as proposées. Lors d'une régénération, "
+                        "reprends aussi les cartes déjà imposées au tour "
+                        "précédent (CONTEXTE ACTUEL). Chaque carte est "
+                        "re-validée (existence Scryfall, légalité du format)."
+                    ),
+                },
+                "exclude_cards": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Cartes à EXCLURE du deck (noms anglais exacts) — quand "
+                        "le joueur demande de retirer ou remplacer des cartes."
+                    ),
+                },
             },
             "required": ["format"],
         },
@@ -235,9 +268,11 @@ TOOLS = [
     {
         "name": "generate_decklist",
         "description": (
-            "Génère une decklist Commander complète (100 cartes) pour un commandant "
-            "choisi : cartes possédées réutilisées, manquantes achetées dans le "
-            "budget, terrains complétés."
+            "Génère (ou RÉGÉNÈRE) une decklist Commander complète (100 cartes) "
+            "pour un commandant choisi : cartes possédées réutilisées, manquantes "
+            "achetées dans le budget, terrains complétés. Pour modifier un deck "
+            "déjà généré (ajouter/retirer des cartes précises), rappelle cet outil "
+            "avec include_cards / exclude_cards."
         ),
         "input_schema": {
             "type": "object",
@@ -255,6 +290,29 @@ TOOLS = [
                 "budget_eur": {"type": "number", "description": "Budget TOTAL d'achat en euros."},
                 "max_card_price_eur": dict(_INTENT_PROPS["max_card_price_eur"]),
                 "theme": {"type": "string", "description": "Thème pour le plan de jeu."},
+                "include_cards": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Cartes à intégrer OBLIGATOIREMENT dans le deck (noms "
+                        "anglais exacts). À passer dès que le joueur demande "
+                        "d'ajouter/intégrer des cartes précises ou valide des "
+                        "cartes que tu as proposées. Lors d'une régénération, "
+                        "REPRENDS AUSSI les cartes déjà imposées au tour "
+                        "précédent (« Cartes imposées » du CONTEXTE ACTUEL) que "
+                        "le joueur veut garder. Chaque carte est re-validée "
+                        "(existence Scryfall, identité couleur, légalité) ; les "
+                        "refus te sont signalés avec leur raison."
+                    ),
+                },
+                "exclude_cards": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Cartes à EXCLURE du deck (noms anglais exacts) — quand "
+                        "le joueur demande de retirer ou remplacer des cartes."
+                    ),
+                },
             },
             "required": ["commander"],
         },
@@ -513,6 +571,12 @@ def _exec_research_archetype(args: dict, profile_id: int, ctx: dict | None = Non
         return f"Format « {fmt} » non géré par la recherche 60 cartes.", None
 
     parsed = _intent_from(args, fmt)
+    # Set after coerce (which only keeps the canonical intent keys): forced
+    # inclusions/exclusions ride along inside the intent down to formats60.
+    if args.get("include_cards"):
+        parsed["include_cards"] = list(args["include_cards"])
+    if args.get("exclude_cards"):
+        parsed["exclude_cards"] = list(args["exclude_cards"])
     data = formats60.analyze(parsed, profile_id)
     if data.get("llm_unavailable"):
         return "Le LLM est requis pour la recherche d'archétype et n'est pas disponible.", None
@@ -530,6 +594,14 @@ def _exec_research_archetype(args: dict, profile_id: int, ctx: dict | None = Non
         f"({buy.get('bought_count', 0)} cartes)"
         f"{_cap_suffix(buy.get('max_card_price_eur'))}."
     )
+    # Explicitly confirm/deny each requested card so the model never claims a
+    # card was "not kept" when it actually made the deck (or vice versa).
+    if data.get("forced_cards"):
+        text += " Cartes demandées INTÉGRÉES : " + ", ".join(data["forced_cards"]) + "."
+    for rej in data.get("rejected_includes") or []:
+        text += f" Carte demandée REFUSÉE : {rej['name']} ({rej['reason']})."
+    if data.get("excluded_cards"):
+        text += " Cartes exclues : " + ", ".join(data["excluded_cards"]) + "."
     return text, artifact
 
 
@@ -544,6 +616,8 @@ def _exec_generate_decklist(args: dict, profile_id: int, ctx: dict | None = None
     deck, _data = deckgen.generate_full_deck(
         commander, args.get("budget_eur"), args.get("theme") or "", profile_id,
         max_card_price=args.get("max_card_price_eur"), fmt=fmt,
+        include_cards=args.get("include_cards"),
+        exclude_cards=args.get("exclude_cards"),
     )
     if not deck:
         return (
@@ -562,6 +636,14 @@ def _exec_generate_decklist(args: dict, profile_id: int, ctx: dict | None = None
         f"{from_decks}, {c['to_buy']} à acheter pour {deck['buy_total_eur']} €"
         f"{_cap_suffix(deck.get('max_card_price_eur'))}."
     )
+    # Explicitly confirm/deny each requested card so the model never claims a
+    # card was "not kept" when it actually made the deck (or vice versa).
+    if deck.get("forced_cards"):
+        text += " Cartes demandées INTÉGRÉES : " + ", ".join(deck["forced_cards"]) + "."
+    for rej in deck.get("rejected_includes") or []:
+        text += f" Carte demandée REFUSÉE : {rej['name']} ({rej['reason']})."
+    if deck.get("excluded_cards"):
+        text += " Cartes exclues : " + ", ".join(deck["excluded_cards"]) + "."
     return text, artifact
 
 
@@ -757,6 +839,18 @@ def _snapshot_decklist(art: dict) -> str:
     ]
     if deck.get("gameplan"):
         lines.append(f"Plan de jeu : {deck['gameplan']}")
+    # Player-forced inclusions/exclusions must survive turns: on the next
+    # regeneration the model re-passes them via include_cards/exclude_cards.
+    if deck.get("forced_cards"):
+        lines.append(
+            "Cartes imposées par le joueur (à REPASSER dans include_cards si le "
+            "deck est régénéré) : " + ", ".join(deck["forced_cards"])
+        )
+    if deck.get("excluded_cards"):
+        lines.append(
+            "Cartes exclues par le joueur (à repasser dans exclude_cards si le "
+            "deck est régénéré) : " + ", ".join(deck["excluded_cards"])
+        )
     lines.append("Cartes du deck :")
     for group in deck.get("groups") or []:
         names = []
@@ -826,6 +920,18 @@ def _snapshot_archetype(art: dict) -> str:
         ]
         if arch.get("strategy"):
             lines.append(f"Stratégie : {arch['strategy']}")
+        # Player-forced inclusions/exclusions must survive turns: on the next
+        # regeneration the model re-passes them via include_cards/exclude_cards.
+        if data.get("forced_cards"):
+            lines.append(
+                "Cartes imposées par le joueur (à REPASSER dans include_cards "
+                "si le deck est régénéré) : " + ", ".join(data["forced_cards"])
+            )
+        if data.get("excluded_cards"):
+            lines.append(
+                "Cartes exclues par le joueur (à repasser dans exclude_cards "
+                "si le deck est régénéré) : " + ", ".join(data["excluded_cards"])
+            )
         for group in deck.get("groups") or []:
             names = [f"{c['qty']}x {c['name']}" for c in group.get("cards") or []]
             if names:
