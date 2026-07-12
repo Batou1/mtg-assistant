@@ -18,7 +18,7 @@ from . import (
 )
 from .config import settings
 
-APP_VERSION = "1.2"
+APP_VERSION = "1.5"
 
 logger = logging.getLogger(__name__)
 
@@ -429,7 +429,12 @@ async def chat_message(
         # request open. The page polls /chat/status and shows a spinner.
         chat.start_turn(conv["id"], profile["id"], message)
 
-    resp = RedirectResponse(url="/chat", status_code=303)
+    # Fetch-based submits (the chat page's JS) get JSON so the thread can be
+    # updated in place; plain form posts keep the redirect as a no-JS fallback.
+    if request.headers.get("x-requested-with") == "fetch":
+        resp = JSONResponse({"ok": True, "conversation_id": conv["id"]})
+    else:
+        resp = RedirectResponse(url="/chat", status_code=303)
     _set_cookie(resp, CONV_COOKIE, conv["id"])
     return resp
 

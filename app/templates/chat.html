@@ -145,38 +145,105 @@
 
 <script>
   (function () {
+    var convId = {{ conversation.id }};
+
     // Keep the latest message in view on load.
     var thread = document.querySelector('.chat-thread');
     if (thread) thread.scrollTop = thread.scrollHeight;
 
-    // While a turn runs in the background, show the user's message immediately
-    // on submit (optimistic bubble), then poll until the reply is stored.
     var form = document.getElementById('chat-input');
-    if (form) {
-      form.addEventListener('submit', function () {
-        var ta = form.querySelector('textarea');
-        var text = (ta && ta.value || '').trim();
-        if (!text || !thread) return;
-        var bubble = document.createElement('div');
-        bubble.className = 'msg msg-user';
-        bubble.innerHTML = '<div class="bubble"></div>';
-        bubble.querySelector('.bubble').textContent = text;
-        thread.appendChild(bubble);
-        thread.scrollTop = thread.scrollHeight;
-      });
+    var ta = form && form.querySelector('textarea');
+    var sendBtn = form && form.querySelector('.send-btn');
+
+    function setBusy(busy) {
+      if (ta) ta.disabled = busy;
+      if (sendBtn) sendBtn.disabled = busy;
+      if (!busy && ta) ta.focus();
     }
 
-    {% if pending %}
-    var convId = {{ conversation.id }};
-    var poll = function () {
+    function appendUserBubble(text) {
+      if (!thread) return;
+      var bubble = document.createElement('div');
+      bubble.className = 'msg msg-user';
+      bubble.innerHTML = '<div class="bubble"></div>';
+      bubble.querySelector('.bubble').textContent = text;
+      thread.appendChild(bubble);
+      thread.scrollTop = thread.scrollHeight;
+    }
+
+    function appendPendingBubble() {
+      if (!thread || document.getElementById('pending-bubble')) return;
+      var el = document.createElement('div');
+      el.className = 'msg msg-assistant';
+      el.id = 'pending-bubble';
+      el.innerHTML = '<span class="msg-avatar">✦</span>'
+        + '<div class="bubble typing">'
+        + '<span class="typing-dots"><span></span><span></span><span></span></span>'
+        + '<span class="muted small">L\'assistant réfléchit… (recherche EDHREC, prix, génération)</span>'
+        + '</div>';
+      thread.appendChild(el);
+      thread.scrollTop = thread.scrollHeight;
+    }
+
+    // Once the background turn is done, re-fetch the page and swap only the
+    // thread + sidebar (superseded artifacts and conversation titles are
+    // recomputed server-side) — no full page reload.
+    function refreshThread() {
+      fetch('/chat', { cache: 'no-store' })
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+          var doc = new DOMParser().parseFromString(html, 'text/html');
+          var newThread = doc.querySelector('.chat-thread');
+          var newSidebar = doc.querySelector('.chat-sidebar');
+          if (newThread && thread) thread.innerHTML = newThread.innerHTML;
+          var sidebar = document.querySelector('.chat-sidebar');
+          if (newSidebar && sidebar) sidebar.innerHTML = newSidebar.innerHTML;
+          if (thread) thread.scrollTop = thread.scrollHeight;
+          setBusy(false);
+        })
+        .catch(function () { window.location.reload(); });
+    }
+
+    function poll() {
       fetch('/chat/status?conversation_id=' + convId, { cache: 'no-store' })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (d && d.pending) { setTimeout(poll, 1500); }
-          else { window.location.reload(); }
+          else { refreshThread(); }
         })
         .catch(function () { setTimeout(poll, 3000); });
-    };
+    }
+
+    // Send via fetch: the user's bubble appears instantly, the reply is
+    // appended in place when ready — the page itself never reloads.
+    if (form) {
+      form.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var text = (ta && ta.value || '').trim();
+        if (!text || (ta && ta.disabled)) return;
+        appendUserBubble(text);
+        appendPendingBubble();
+        var data = new FormData(form);
+        if (ta) ta.value = '';
+        setBusy(true);
+        fetch('/chat/message', {
+          method: 'POST',
+          body: data,
+          headers: { 'X-Requested-With': 'fetch' },
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            // The server may have re-attached us to another conversation
+            // (stale cookie / deleted conversation): re-sync with a reload.
+            if (!d || d.conversation_id !== convId) { window.location.reload(); return; }
+            setTimeout(poll, 1500);
+          })
+          .catch(function () { window.location.reload(); });
+      });
+    }
+
+    {% if pending %}
+    setBusy(true);
     setTimeout(poll, 1500);
     {% endif %}
   })();

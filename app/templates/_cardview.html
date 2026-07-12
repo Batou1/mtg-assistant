@@ -8,6 +8,53 @@
    The collection grid does NOT use this macro: it renders tiles client-side
    from JSON (collection.html) to keep 10k+ cards off the server-rendered
    DOM — keep the two markups in sync. #}
+{# Ownership tags for a singleton deck line (Commander: one copy per card).
+   Owned copies are split between "libre" (free in the collection) and
+   "dans un deck" (every copy already sleeved in another deck — from_deck),
+   so the user knows building this list means dismantling something. #}
+{% macro owned_tags(c) %}
+  {%- if c.owned and c.from_deck %}<span class="tag deck-tag">possédée · dans un deck</span>
+  {%- elif c.owned %}<span class="tag owned-tag">{{ 'terrain' if c.is_basic else 'possédée · libre' }}</span>
+  {%- else %}<span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur) }} €{% else %}à acheter{% endif %}</span>
+  {%- endif %}
+{% endmacro %}
+
+{# Ownership tags for a 4-of deck line (60-card formats: qty/owned_qty/
+   missing_qty/in_deck_qty). Same libre ⇄ dans un deck nuance, but per copy:
+   free copies, then copies to buy, then copies locked in other decks. #}
+{% macro owned_tags_counted(c) %}
+  {%- if c.owned %}<span class="tag owned-tag">{{ 'terrain' if c.is_basic else ('possédées · libres' if c.qty > 1 else 'possédée · libre') }}</span>
+  {%- elif c.owned_qty %}<span class="tag owned-tag">{{ c.owned_qty }} libre{{ 's' if c.owned_qty > 1 }}</span><span class="tag buy-tag">manque {{ c.missing_qty }}{% if c.price_eur is not none %} · {{ "%.2f"|format(c.price_eur * c.missing_qty) }} €{% endif %}</span>
+  {%- else %}<span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur * c.qty) }} €{% else %}à acheter{% endif %}</span>
+  {%- endif %}
+  {%- if c.in_deck_qty %}<span class="tag deck-tag">{{ c.in_deck_qty }} possédée{{ 's' if c.in_deck_qty > 1 }} · dans un deck</span>{% endif %}
+{% endmacro %}
+
+{# One clickable decklist row: qty + name + ownership tags, with the card
+   itself (image ⇄ text, per the global navbar toggle) revealed below on click.
+   Centralises every decklist line so the click-to-preview behaviour is
+   consistent across deck pages and chat artifacts. `tags` selects the
+   ownership-label style: "singleton" (Commander: owned / from_deck),
+   "counted" (4-of: owned_qty / missing_qty / in_deck_qty), "basic" (terrain),
+   or "none" (pool decks, no per-card ownership data). Cards with no cached
+   image fall back to the text card (still useful) — see image_or_text. #}
+{% macro deck_line(c, tags="singleton") %}
+  <li class="deck-line {{ 'to-buy' if (c.owned is defined and not c.owned) else 'owned' }}">
+    <div class="deck-line-main" role="button" tabindex="0" aria-expanded="false">
+      <span class="qty">{{ c.qty }}</span>
+      <span class="dname">{{ c.name }}</span>
+      {%- if tags == "singleton" %}{{ owned_tags(c) }}
+      {%- elif tags == "counted" %}{{ owned_tags_counted(c) }}
+      {%- elif tags == "basic" %}<span class="tag owned-tag">terrain</span>
+      {%- endif %}
+      <span class="deck-line-caret" aria-hidden="true">▾</span>
+    </div>
+    <div class="deck-line-preview" hidden>
+      {{ image_or_text(c.name, c.get("image"), extra_class="cv-preview") }}
+    </div>
+  </li>
+{% endmacro %}
+
 {% macro image_or_text(name, image, price_eur=none, qty=none, extra_class="") %}
   {% set info = card_info(name) %}
   <div class="cv-img-wrap {{ extra_class }}">

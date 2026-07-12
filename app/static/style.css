@@ -507,6 +507,23 @@ details.buylist > .buy-grid { padding: 14px; margin-top: 0; }
 .niche-tag { background: color-mix(in oklch, var(--accent) 18%, transparent); color: var(--accent); }
 .deck-tag { background: color-mix(in oklch, var(--accent) 14%, transparent); color: var(--accent); }
 
+/* Clickable decklist rows: click a card to reveal its image/text below. */
+.decklist li.deck-line { flex-direction: column; align-items: stretch; gap: 0; padding: 0; }
+.decklist li.deck-line:hover { background: transparent; }
+.deck-line-main {
+  display: flex; align-items: center; gap: 8px; padding: 3px 6px;
+  border-radius: 6px; cursor: pointer; user-select: none;
+}
+.deck-line-main:hover { background: var(--bg3); }
+.deck-line-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.deck-line-caret { color: var(--muted); font-size: .7rem; transition: transform .15s ease; }
+.deck-line.open .deck-line-caret { transform: rotate(180deg); color: var(--accent); }
+.deck-line.open > .deck-line-main .dname { color: var(--accent); }
+.deck-line-preview { padding: 4px 6px 10px 26px; }
+.cv-img-wrap.cv-preview { width: 220px; max-width: 62%; }
+.cv-img-wrap.cv-preview img { width: 100%; border-radius: 10px; display: block; }
+.cv-text-card.cv-preview { max-width: 360px; }
+
 .export { margin-top: 16px; }
 .export summary { cursor: pointer; color: var(--muted); }
 .export summary:hover { color: var(--text); }

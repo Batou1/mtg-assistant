@@ -162,33 +162,15 @@
       <div class="deck-group">
         <h4>{{ group.label }} <span class="muted small">({{ group.cards|sum(attribute='qty') }})</span></h4>
         <ul class="decklist">
-          {% for c in group.cards %}
-          <li class="{{ 'to-buy' if not c.owned else 'owned' }}">
-            <span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span>
-            {% if c.owned %}<span class="tag owned-tag">possédée{{ 's' if c.qty > 1 }}</span>
-            {% elif c.owned_qty %}<span class="tag buy-tag">manque {{ c.missing_qty }}{% if c.price_eur is not none %} · {{ "%.2f"|format(c.price_eur * c.missing_qty) }} €{% endif %}</span>
-            {% else %}<span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur * c.qty) }} €{% else %}à acheter{% endif %}</span>{% endif %}
-            {% if c.in_deck_qty %}<span class="tag deck-tag">{{ c.in_deck_qty }} dans tes decks</span>{% endif %}
-          </li>
-          {% endfor %}
+          {% for c in group.cards %}{{ cardview.deck_line(c, "counted") }}{% endfor %}
         </ul>
       </div>
       {% endfor %}
       <div class="deck-group">
         <h4>Terrains <span class="muted small">({{ deck.lands.total }})</span></h4>
         <ul class="decklist">
-          {% for c in deck.lands.nonbasic %}
-          <li class="{{ 'to-buy' if not c.owned else 'owned' }}">
-            <span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span>
-            {% if c.owned %}<span class="tag owned-tag">possédée{{ 's' if c.qty > 1 }}</span>
-            {% elif c.owned_qty %}<span class="tag buy-tag">manque {{ c.missing_qty }}{% if c.price_eur is not none %} · {{ "%.2f"|format(c.price_eur * c.missing_qty) }} €{% endif %}</span>
-            {% else %}<span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur * c.qty) }} €{% else %}à acheter{% endif %}</span>{% endif %}
-            {% if c.in_deck_qty %}<span class="tag deck-tag">{{ c.in_deck_qty }} dans tes decks</span>{% endif %}
-          </li>
-          {% endfor %}
-          {% for c in deck.lands.basics %}
-          <li class="owned"><span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span><span class="tag owned-tag">terrain</span></li>
-          {% endfor %}
+          {% for c in deck.lands.nonbasic %}{{ cardview.deck_line(c, "counted") }}{% endfor %}
+          {% for c in deck.lands.basics %}{{ cardview.deck_line(c, "basic") }}{% endfor %}
         </ul>
       </div>
     </details>
@@ -283,14 +265,7 @@
       <div class="deck-group">
         <h4>{{ group.label }} <span class="muted small">({{ group.cards|sum(attribute='qty') }})</span></h4>
         <ul class="decklist">
-          {% for c in group.cards %}
-          <li class="{{ 'to-buy' if not c.owned else 'owned' }}">
-            <span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span>
-            {% if c.owned and c.from_deck %}<span class="tag deck-tag">dans un autre deck</span>
-            {% elif c.owned %}<span class="tag owned-tag">{{ 'terrain' if c.is_basic else 'possédée' }}</span>
-            {% else %}<span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur) }} €{% else %}à acheter{% endif %}</span>{% endif %}
-          </li>
-          {% endfor %}
+          {% for c in group.cards %}{{ cardview.deck_line(c, "singleton") }}{% endfor %}
         </ul>
       </div>
       {% endfor %}
@@ -301,14 +276,7 @@
         {% if deck.counts.sideboard_to_buy %}<span class="muted small">({{ deck.counts.sideboard_to_buy }} à acheter · {{ "%.2f"|format(deck.sideboard_buy_total_eur) }} €)</span>{% endif %}
       </summary>
       <ul class="decklist">
-        {% for c in deck.sideboard %}
-        <li class="{{ 'to-buy' if not c.owned else 'owned' }}">
-          <span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span>
-          {% if c.owned and c.from_deck %}<span class="tag deck-tag">dans un autre deck</span>
-          {% elif c.owned %}<span class="tag owned-tag">possédée</span>
-          {% else %}<span class="tag buy-tag">{% if c.price_eur is not none %}{{ "%.2f"|format(c.price_eur) }} €{% else %}à acheter{% endif %}</span>{% endif %}
-        </li>
-        {% endfor %}
+        {% for c in deck.sideboard %}{{ cardview.deck_line(c, "singleton") }}{% endfor %}
       </ul>
     </details>
     {% endif %}
@@ -361,7 +329,7 @@
         <div class="buy-item">
           {{ cardview.image_or_text(item.name, item.image, extra_class="cv-buyitem") }}
           <span class="buy-name">{{ item.name }}</span>
-          <span class="tag owned-tag">possédée</span>
+          <span class="tag owned-tag">possédée · libre</span>
         </div>
         {% endfor %}
       </div>
@@ -386,21 +354,15 @@
       <div class="deck-group">
         <h4>{{ group.label }} <span class="muted small">({{ group.cards|sum(attribute='qty') }})</span></h4>
         <ul class="decklist">
-          {% for c in group.cards %}
-          <li class="owned"><span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span></li>
-          {% endfor %}
+          {% for c in group.cards %}{{ cardview.deck_line(c, "none") }}{% endfor %}
         </ul>
       </div>
       {% endfor %}
       <div class="deck-group">
         <h4>Terrains <span class="muted small">({{ data.lands.total }})</span></h4>
         <ul class="decklist">
-          {% for c in data.lands.nonbasic %}
-          <li class="owned"><span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span></li>
-          {% endfor %}
-          {% for c in data.lands.basics %}
-          <li class="owned"><span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span><span class="tag owned-tag">terrain</span></li>
-          {% endfor %}
+          {% for c in data.lands.nonbasic %}{{ cardview.deck_line(c, "none") }}{% endfor %}
+          {% for c in data.lands.basics %}{{ cardview.deck_line(c, "basic") }}{% endfor %}
         </ul>
       </div>
     </details>
@@ -408,9 +370,7 @@
     <details class="owned-list">
       <summary>Réserve — {{ data.counts.sideboard }} carte(s) du pool non jouées</summary>
       <ul class="decklist">
-        {% for c in data.sideboard %}
-        <li class="owned"><span class="qty">{{ c.qty }}</span><span class="dname">{{ c.name }}</span></li>
-        {% endfor %}
+        {% for c in data.sideboard %}{{ cardview.deck_line(c, "none") }}{% endfor %}
       </ul>
     </details>
     {% endif %}
