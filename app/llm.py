@@ -72,14 +72,19 @@ def create_message(system: str, messages: list[dict], tools: list[dict] | None =
         return None
 
 
-def chat_json(system: str, user: str) -> dict | None:
-    """Ask for a strict JSON object back. Returns the parsed dict or None."""
+def chat_json(system: str, user: str, max_tokens: int | None = None) -> dict | None:
+    """Ask for a strict JSON object back. Returns the parsed dict or None.
+
+    ``max_tokens`` must cover the model's adaptive-thinking spend PLUS the JSON
+    itself; a truncated response is invalid JSON and comes back as None, so
+    callers expecting long outputs (full decklists) should pass a large budget.
+    """
     system = (
         system
         + "\n\nRéponds UNIQUEMENT avec un objet JSON valide, sans texte autour "
         "ni balises Markdown."
     )
-    content = _message(system, user, settings.anthropic_max_tokens)
+    content = _message(system, user, max_tokens or settings.anthropic_max_tokens)
     if content is None:
         return None
     content = _FENCE_RE.sub("", content).strip()
@@ -149,7 +154,8 @@ def archetype_research(fmt: str, intent: dict, context: str) -> dict | None:
         )
     if context:
         parts.append(f"\nExtraits web récents (métagame) :\n{context}")
-    return chat_json(system, "\n".join(parts))
+    return chat_json(system, "\n".join(parts),
+                     max_tokens=settings.anthropic_deck_max_tokens)
 
 
 def pool_deck(spec, intent: dict, pool_lines: list[str]) -> dict | None:
@@ -206,7 +212,10 @@ def pool_deck(spec, intent: dict, pool_lines: list[str]) -> dict | None:
     if intent.get("colors"):
         parts.append(f"Couleurs imposées : {', '.join(intent['colors'])}")
     parts.append("POOL DISPONIBLE :\n" + "\n".join(pool_lines))
-    return chat_json(system, "\n".join(parts))
+    # A Commander answer is ~90 singleton JSON entries; the default budget gets
+    # eaten by thinking + truncated mid-JSON (=> None => heuristic fallback).
+    return chat_json(system, "\n".join(parts),
+                     max_tokens=settings.anthropic_deck_max_tokens)
 
 
 def pool_bonus(spec, archetype: dict, deck_cards: list[str], colors: list[str],

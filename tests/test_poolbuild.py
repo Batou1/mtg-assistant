@@ -209,6 +209,62 @@ def test_commander_enforces_colour_identity(monkeypatch):
     # The commander must not also appear in the leftover sideboard.
     assert "Krenko, Mob Boss" not in {c["name"] for c in deck["sideboard"]}
 
+def test_commander_heuristic_picks_covering_commander(monkeypatch):
+    """Without an LLM, the commander must be the legend covering the pool's
+    colours (not the first legendary), the deck stays 100 cards, and the
+    archetype is labelled Commander (not Limité)."""
+    legal = {"commander": "legal"}
+    pool = {
+        # Mono-red legend listed FIRST: the naive pick, wrong for a B/G+R pool.
+        "krenko, mob boss": _card("Krenko, Mob Boss", "Legendary Creature — Goblin",
+                                   ["R"], 4.0, legal=legal),
+        "meren of clan nel toth": _card("Meren of Clan Nel Toth",
+                                        "Legendary Creature — Human Shaman",
+                                        ["B", "G"], 4.0, legal=legal),
+        "llanowar elves": _card("Llanowar Elves", "Creature — Elf", ["G"], 1.0,
+                                 legal=legal),
+        "sign in blood": _card("Sign in Blood", "Sorcery", ["B"], 2.0, legal=legal),
+        "putrefy": _card("Putrefy", "Instant", ["B", "G"], 3.0, legal=legal),
+    }
+
+    def resolve(names, client=None):
+        return ({n.lower(): pool[n.lower()] for n in names if n.lower() in pool},
+                [n for n in names if n.lower() not in pool])
+
+    monkeypatch.setattr(scryfall, "resolve_cards", resolve)
+    monkeypatch.setattr(llm, "is_available", lambda: False)
+
+    deck = poolbuild.build_from_pool(
+        [(c["name"], 1) for c in pool.values()], "commander", {}, with_bonus=False,
+    )
+    assert deck["source"] == "heuristic"
+    assert deck["commander"]["name"] == "Meren of Clan Nel Toth"
+    assert deck["archetype"]["colors"] == ["B", "G"]
+    assert "Commander" in deck["archetype"]["name"]
+    assert "Limité" not in deck["archetype"]["name"]
+    assert deck["counts"]["total"] == 100  # commander + spells + basics top-up
+    played = {c["name"] for g in deck["groups"] for c in g["cards"]}
+    assert "Krenko, Mob Boss" not in played  # red, outside Meren's identity
+
+
+def test_pool_deck_llm_gets_large_token_budget(monkeypatch):
+    """A 100-card singleton answer is ~90 JSON entries on top of the model's
+    thinking spend; the default budget truncates it (=> None => heuristic)."""
+    from app.config import settings
+
+    captured = {}
+
+    def fake_message(system, user, max_tokens):
+        captured["max_tokens"] = max_tokens
+        return None
+
+    monkeypatch.setattr(llm, "is_available", lambda: True)
+    monkeypatch.setattr(llm, "_message", fake_message)
+    llm.pool_deck(poolbuild.SPECS["commander"], {}, ["- Krenko, Mob Boss"])
+    assert captured["max_tokens"] == settings.anthropic_deck_max_tokens
+    assert captured["max_tokens"] > settings.anthropic_max_tokens
+
+
 def test_duelcommander_spec_enforces_duel_legality(monkeypatch):
     # Registered like "commander" but with its own (stricter) legality key.
     spec = poolbuild.SPECS["duelcommander"]

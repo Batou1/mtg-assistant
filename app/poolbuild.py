@@ -215,11 +215,45 @@ def _derive_colors(cards: list[dict]) -> list[str]:
     return colors
 
 
+def _pick_commander(pool: list[dict]) -> dict | None:
+    """Best commander candidate from the pool, without an LLM.
+
+    A pasted Commander list is usually a whole deck, so the right commander is
+    the legendary creature whose colour identity covers the most of the pool
+    (a mono-colour legend in a two-colour list would wrongly exile half the
+    cards). Ties keep first-seen order — decklists conventionally start with
+    the commander.
+    """
+    candidates = [e for e in pool if _is_commander_candidate(e["card"])]
+    if not candidates:
+        return None
+    support: Counter = Counter()
+    for e in pool:
+        for c in scryfall.color_identity(e["card"]):
+            if c in _BASICS:
+                support[c] += e["qty"]
+
+    def coverage(entry: dict) -> int:
+        identity = {c for c in scryfall.color_identity(entry["card"]) if c in _BASICS}
+        return sum(q for c, q in support.items() if c in identity)
+
+    return max(candidates, key=coverage)
+
+
 def _heuristic_select(pool: list[dict], spec: FormatSpec, intent: dict) -> dict:
-    """Key-free fallback: pick the strongest colour pair by depth, fill the curve."""
+    """Key-free fallback: pick the strongest colour pair by depth, fill the curve.
+
+    For commander-style specs, the colours come from the chosen commander's
+    identity (NOT the top-2 colour pair — a 3+ colour deck must keep all its
+    colours), and the commander is reported so the caller doesn't have to guess.
+    """
     nonland = [e for e in pool if not _is_land(e["card"])]
 
-    if intent.get("colors"):
+    commander = _pick_commander(pool) if spec.needs_commander else None
+    if commander is not None:
+        colors = sorted(c for c in scryfall.color_identity(commander["card"])
+                        if c in _BASICS)
+    elif intent.get("colors"):
         colors = [c for c in intent["colors"] if c in _BASICS]
     else:
         support: Counter = Counter()
@@ -250,11 +284,14 @@ def _heuristic_select(pool: list[dict], spec: FormatSpec, intent: dict) -> dict:
     # Include on-colour non-basic lands from the pool.
     for e in pool:
         if _is_land(e["card"]) and fits(e["card"]):
-            main.append({"name": e["name"], "count": min(e["qty"], 2)})
+            take = 1 if spec.singleton else min(e["qty"], 2)
+            main.append({"name": e["name"], "count": take})
 
-    archetype = ("/".join(colors) + " Limité") if colors else "Limité"
+    label = spec.label if spec.name != DEFAULT_FORMAT else "Limité"
+    archetype = ("/".join(colors) + " " + label) if colors else label
     return {"archetype": archetype, "colors": colors, "strategy": "", "main_deck": main,
-            "basic_lands": {}}
+            "basic_lands": {},
+            "commander": commander["name"] if commander else None}
 
 
 # --- Land maths ----------------------------------------------------------
@@ -374,7 +411,9 @@ def build_from_pool(pool_items, fmt: str, intent: dict, client: httpx.Client | N
     if spec.needs_commander and pool:
         cmd = index.get(_norm(selection.get("commander") or ""))
         if cmd is None:
-            cmd = next((e for e in pool if _is_commander_candidate(e["card"])), None)
+            # LLM named nothing (or a name outside the pool): pick the legendary
+            # creature whose identity best covers the pool, not just the first.
+            cmd = _pick_commander(pool)
         if cmd is not None:
             commander_key = cmd["key"]
             commander_identity = {c for c in scryfall.color_identity(cmd["card"]) if c in _BASICS}

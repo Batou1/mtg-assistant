@@ -84,9 +84,16 @@ class Settings:
     # --- LLM (Anthropic / Claude) ------------------------------------------
     # The API key is read by the SDK from ANTHROPIC_API_KEY (kept in .env).
     anthropic_model: str = os.environ.get("MTG_ANTHROPIC_MODEL", "claude-sonnet-5")
-    # Sonnet 5's tokenizer emits ~30% more tokens per unit of text than 4.6, so
-    # the output budget is bumped ~30% to preserve the same text headroom.
-    anthropic_max_tokens: int = int(os.environ.get("MTG_ANTHROPIC_MAX_TOKENS", "2700"))
+    # Sonnet 5 runs adaptive thinking by default and thinking tokens count
+    # against max_tokens, so the budget must leave room for BOTH the (invisible)
+    # reasoning and the actual text. 2700 proved too tight: on hard prompts the
+    # whole budget went to thinking and the response was truncated before any
+    # text (stop_reason=max_tokens, empty content), which callers see as a
+    # failed/None LLM call.
+    anthropic_max_tokens: int = int(os.environ.get("MTG_ANTHROPIC_MAX_TOKENS", "8000"))
+    # Deck-proposal calls (pool_deck for a 100-card singleton list, 60-card
+    # archetypes) must emit up to ~90 JSON entries on top of the thinking spend.
+    anthropic_deck_max_tokens: int = int(os.environ.get("MTG_ANTHROPIC_DECK_MAX_TOKENS", "16000"))
 
     # --- Iterative chat (Phase 3) ------------------------------------------
     # How many tool-call rounds a single chat turn may take before stopping.
