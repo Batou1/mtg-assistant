@@ -137,7 +137,15 @@ def archetype_research(fmt: str, intent: dict, context: str) -> dict | None:
     if intent.get("keywords"):
         parts.append(f"Mots-clés : {', '.join(intent['keywords'])}")
     if intent.get("colors"):
-        parts.append(f"Couleurs souhaitées : {', '.join(intent['colors'])}")
+        wanted = ", ".join(intent["colors"])
+        min_colors = intent.get("min_colors")
+        if min_colors is not None and min_colors >= len(intent["colors"]):
+            parts.append(
+                f"Couleurs imposées : {wanted} — le deck doit jouer TOUTES ces "
+                "couleurs (pas un sous-ensemble)."
+            )
+        else:
+            parts.append(f"Couleurs souhaitées : {wanted}")
     # Player-forced cards: the caller (formats60.analyze) still validates and
     # force-adds any the model leaves out, but asking here yields sensible
     # copy counts and a deck built AROUND them rather than a bolt-on.
@@ -183,7 +191,11 @@ def pool_deck(spec, intent: dict, pool_lines: list[str]) -> dict | None:
             "deck (99 cartes + le commandant) respecte STRICTEMENT son identité de couleur."
         )
     if intent.get("colors"):
-        rules.append(f"Reste STRICTEMENT dans les couleurs imposées : {', '.join(intent['colors'])}.")
+        rule = f"Reste STRICTEMENT dans les couleurs imposées : {', '.join(intent['colors'])}."
+        min_colors = intent.get("min_colors")
+        if min_colors is not None and min_colors >= len(intent["colors"]):
+            rule += " Le deck doit jouer TOUTES ces couleurs (pas un sous-ensemble)."
+        rules.append(rule)
     else:
         rules.append("Choisis automatiquement la/les meilleure(s) couleur(s) à jouer d'après le pool.")
     rules.append(

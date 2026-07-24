@@ -32,3 +32,25 @@ def test_mono_excludes_two_color():
 def test_no_colors_requested_allows_anything():
     assert analysis._color_ok(_card("U", "G"), [], None)
     assert analysis._color_ok(_card(), [], None)
+
+
+def test_min_colors_rejects_sub_combinations():
+    # Regression: a "temur" wish (G/U/R, min 3) must not surface 1- or
+    # 2-colour commanders (mono-red, Simic…) just because they are subsets.
+    wanted = ["G", "U", "R"]
+    assert analysis._color_ok(_card("G", "U", "R"), wanted, None, 3)
+    assert not analysis._color_ok(_card("G", "U"), wanted, None, 3)
+    assert not analysis._color_ok(_card("U", "R"), wanted, None, 3)
+    assert not analysis._color_ok(_card("R"), wanted, None, 3)
+
+
+def test_min_colors_without_wanted_list():
+    # "au moins 3 couleurs" without naming them: only the count is enforced.
+    assert analysis._color_ok(_card("W", "U", "B"), [], None, 3)
+    assert not analysis._color_ok(_card("W", "U"), [], None, 3)
+
+
+def test_min_colors_default_keeps_subset_behaviour():
+    # Without a floor, the historical subset semantics are unchanged.
+    assert analysis._color_ok(_card("G", "U"), ["G", "U", "R"], None)
+    assert analysis._color_ok(_card("G", "U"), ["G", "U", "R"], None, None)

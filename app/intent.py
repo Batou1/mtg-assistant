@@ -9,6 +9,8 @@ the same shape:
                 "modern" | "pioneer" | "pauper" | "legacy" | "vintage" |
                 "premodern" | None,
       "colors": ["W","U","B","R","G"]  (subset, may be empty),
+      "min_colors": int | None   (identity must use at least this many colours),
+      "max_colors": int | None   (identity must use at most this many colours),
       "theme": "<short free text>",
       "keywords": ["aristocrats", "sacrifice", ...],
       "budget_eur": float | None,
@@ -110,6 +112,12 @@ _SYSTEM_PROMPT = (
     '- "max_colors": entier = nombre MAXIMUM de couleurs autorisees si '
     'l\'utilisateur le precise ("monocouleur"/"mono"/"monocolore" => 1, '
     '"bicolore"/"deux couleurs" => 2), sinon null.\n'
+    '- "min_colors": entier = nombre MINIMUM de couleurs exigees. A renseigner '
+    "des que l'utilisateur veut TOUTES les couleurs listees ensemble : nom de "
+    'guilde/shard/wedge ("temur" => colors=["G","U","R"] ET min_colors=3), '
+    '"exactement ces couleurs", ou une liste conjonctive ("bleu, vert et '
+    'rouge" => min_colors=3). Laisser null quand les couleurs sont des '
+    'alternatives ("noir OU blanc") ou non precisees.\n'
     '- "budget_eur": nombre (euros) = budget TOTAL si mentionne, sinon null.\n'
     '- "max_card_price_eur": nombre (euros) = prix MAXIMUM par carte, '
     "UNIQUEMENT si l'utilisateur precise un plafond individuel distinct du "
@@ -118,6 +126,8 @@ _SYSTEM_PROMPT = (
     "RESPECTE STRICTEMENT les couleurs, le nombre de couleurs et le theme "
     'demandes. Pour "noir OU blanc monocouleur", colors=["B","W"] et '
     "max_colors=1 (chaque deck propose sera mono-noir OU mono-blanc). "
+    'Pour "un commandant temur", colors=["G","U","R"] et min_colors=3 '
+    "(jamais un commandant a 1 ou 2 couleurs). "
     "N'invente jamais de noms de cartes."
 )
 
@@ -167,9 +177,26 @@ def coerce(data: dict) -> dict:
     if max_colors is not None and max_colors < 1:
         max_colors = None
 
+    min_colors = data.get("min_colors")
+    try:
+        min_colors = int(min_colors) if min_colors is not None else None
+    except (TypeError, ValueError):
+        min_colors = None
+    if min_colors is not None and min_colors < 1:
+        min_colors = None
+    # The identity must also stay a subset of ``colors``: a floor above their
+    # count would match nothing, so cap it (an over-eager LLM value survives
+    # as "all the listed colours" instead of an impossible filter).
+    if min_colors is not None and colors and min_colors > len(colors):
+        min_colors = len(colors)
+    # An explicit ceiling (e.g. "monocouleur") wins over an inferred floor.
+    if min_colors is not None and max_colors is not None and min_colors > max_colors:
+        min_colors = None
+
     return {
         "format": fmt,
         "colors": colors,
+        "min_colors": min_colors,
         "max_colors": max_colors,
         "theme": theme,
         "keywords": keywords,
@@ -192,12 +219,17 @@ def _heuristic(text: str) -> dict:
             break
 
     colors = []
+    plain_color_hits = 0
     for word, sym in _COLOR_WORDS.items():
-        if re.search(rf"\b{re.escape(word)}\b", low) and sym not in colors:
-            colors.append(sym)
+        if re.search(rf"\b{re.escape(word)}\b", low):
+            if sym not in colors:
+                colors.append(sym)
+                plain_color_hits += 1
     # Guild/shard/wedge names expand to their colours (e.g. "grixis" -> U,B,R).
+    guild_sizes = []
     for word, syms in _GUILD_SHARD_WORDS.items():
         if re.search(rf"\b{re.escape(word)}\b", low):
+            guild_sizes.append(len(syms))
             for sym in syms:
                 if sym not in colors:
                     colors.append(sym)
@@ -206,6 +238,20 @@ def _heuristic(text: str) -> dict:
 
     # "monocouleur", "mono noir", "monocolore" -> at most one colour.
     max_colors = 1 if re.search(r"\bmono", low) else None
+
+    # Floor on the colour count: a guild/shard/wedge name ("temur") or a
+    # conjunctive colour list ("bleu vert rouge") means ALL those colours, so
+    # a 2-colour commander must not satisfy a 3-colour wish. A disjunction
+    # ("noir ou blanc", "parmi") keeps the historical subset-only behaviour:
+    # each colour is an acceptable alternative, not a requirement.
+    disjunctive = bool(re.search(r"\b(ou|or|soit|parmi)\b", low))
+    min_colors = None
+    if guild_sizes:
+        min_colors = max(guild_sizes)
+    elif plain_color_hits >= 2 and not disjunctive:
+        min_colors = plain_color_hits
+    if colors and re.search(r"\bexactement\b", low):
+        min_colors = len(colors)
 
     # Opt-in to niche commanders under the EDHREC popularity floor.
     include_low_decks = bool(
@@ -252,6 +298,7 @@ def _heuristic(text: str) -> dict:
         {
             "format": fmt,
             "colors": colors,
+            "min_colors": min_colors,
             "max_colors": max_colors,
             "theme": text.strip()[:120],
             "keywords": keywords,
@@ -286,6 +333,10 @@ def parse_intent(text: str) -> dict:
             intent["colors"] = heur["colors"]
         if intent["max_colors"] is None:
             intent["max_colors"] = heur["max_colors"]
+        # Same rationale for the floor: a dropped min_colors would let a
+        # 2-colour commander through a "temur" (3-colour) wish.
+        if intent["min_colors"] is None and intent["max_colors"] is None:
+            intent["min_colors"] = heur["min_colors"]
         if intent["max_card_price_eur"] is None:
             intent["max_card_price_eur"] = heur["max_card_price_eur"]
         return intent

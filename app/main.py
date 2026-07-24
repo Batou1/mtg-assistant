@@ -18,7 +18,7 @@ from . import (
 )
 from .config import settings
 
-APP_VERSION = "1.7"
+APP_VERSION = "1.8"
 
 logger = logging.getLogger(__name__)
 
@@ -364,6 +364,9 @@ async def build_from_list(
     pool_items = poolbuild.parse_pool(text, filename)
     parsed = intent.coerce({
         "colors": colors,
+        # Checked colours are a deliberate constraint: the deck must play all
+        # of them, not a sub-combination the builder finds more convenient.
+        "min_colors": len(colors) if colors else None,
         "theme": theme,
         "budget_eur": _parse_budget(budget),
         "max_card_price_eur": _parse_budget(max_card_price),

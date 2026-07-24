@@ -147,6 +147,53 @@ def test_heuristic_no_per_card_cap_when_not_mentioned():
     assert intent._heuristic("deck bleu control, budget 50 euros")["max_card_price_eur"] is None
 
 
+def test_heuristic_wedge_name_requires_all_colors():
+    # "un commandant temur" means exactly G/U/R — a 2-colour subset (Simic,
+    # Izzet…) must be filtered out downstream, hence min_colors=3.
+    parsed = intent._heuristic("je veux un commandant temur")
+    assert set(parsed["colors"]) == {"G", "U", "R"}
+    assert parsed["min_colors"] == 3
+    assert intent._heuristic("deck izzet spellslinger")["min_colors"] == 2
+
+
+def test_heuristic_conjunctive_color_list_requires_all():
+    parsed = intent._heuristic("un deck commander bleu vert et rouge")
+    assert set(parsed["colors"]) == {"U", "G", "R"}
+    assert parsed["min_colors"] == 3
+
+
+def test_heuristic_disjunctive_colors_keep_subset_semantics():
+    # "noir ou blanc" offers alternatives: mono-black and mono-white are fine.
+    parsed = intent._heuristic("un deck lifegain en noir ou en blanc")
+    assert set(parsed["colors"]) == {"B", "W"}
+    assert parsed["min_colors"] is None
+
+
+def test_heuristic_mono_wins_over_color_list():
+    # "monocouleur noir ou blanc": the explicit ceiling must not be
+    # contradicted by an inferred floor.
+    parsed = intent._heuristic("un deck monocouleur en noir ou en blanc")
+    assert parsed["max_colors"] == 1
+    assert parsed["min_colors"] is None
+
+
+def test_heuristic_exactement_requires_all_colors():
+    parsed = intent._heuristic("exactement les couleurs bleu, vert ou rouge")
+    assert parsed["min_colors"] == 3
+
+
+def test_coerce_min_colors():
+    assert intent.coerce({"min_colors": 3, "colors": ["U", "G", "R"]})["min_colors"] == 3
+    assert intent.coerce({"min_colors": 0})["min_colors"] is None
+    assert intent.coerce({"min_colors": "x"})["min_colors"] is None
+    # A floor above the listed colours would match nothing: capped to the list.
+    assert intent.coerce({"min_colors": 4, "colors": ["U", "G"]})["min_colors"] == 2
+    # An explicit ceiling (mono) wins over a conflicting floor.
+    assert intent.coerce({"min_colors": 2, "max_colors": 1,
+                          "colors": ["B", "W"]})["min_colors"] is None
+    assert intent.coerce({})["min_colors"] is None
+
+
 def test_coerce_max_card_price_eur():
     assert intent.coerce({"max_card_price_eur": "5"})["max_card_price_eur"] == 5.0
     assert intent.coerce({"max_card_price_eur": 0})["max_card_price_eur"] is None

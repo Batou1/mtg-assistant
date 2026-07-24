@@ -17,14 +17,17 @@ from .config import settings
 _norm = scryfall.norm_name
 
 
-def _color_ok(card: dict, wanted: list[str], max_colors: int | None) -> bool:
+def _color_ok(card: dict, wanted: list[str], max_colors: int | None,
+              min_colors: int | None = None) -> bool:
     """Does the commander respect the requested colours and colour count?
 
     With colours requested, the commander's colour identity must be non-empty
     and a subset of them (so 'noir/blanc' never surfaces a blue or green card,
     nor a colourless one). ``max_colors`` enforces e.g. mono-colour: 'monocouleur
     noir ou blanc' is colours {B,W} with max_colors=1, keeping only mono-black or
-    mono-white commanders — not two-colour Orzhov.
+    mono-white commanders — not two-colour Orzhov. ``min_colors`` is the floor:
+    'temur' is colours {G,U,R} with min_colors=3, so a Simic (2-colour)
+    commander — a subset, which the colour test alone accepts — is rejected.
     """
     identity = set(scryfall.color_identity(card))
     if wanted:
@@ -32,6 +35,8 @@ def _color_ok(card: dict, wanted: list[str], max_colors: int | None) -> bool:
         if not identity or not identity.issubset(allowed):
             return False
     if max_colors is not None and len(identity) > max_colors:
+        return False
+    if min_colors is not None and len(identity) < min_colors:
         return False
     return True
 
@@ -188,7 +193,8 @@ def _discover_unowned(owned_cards: list, owned_keys: set, intent: dict,
         card = resolved.get(_norm(name))
         if not card or not commanders.is_eligible_commander(card, fmt):
             continue
-        if not _color_ok(card, intent.get("colors") or [], intent.get("max_colors")):
+        if not _color_ok(card, intent.get("colors") or [], intent.get("max_colors"),
+                         intent.get("min_colors")):
             continue
         price = scryfall.price_eur(card)
         # "Match the budget": a commander you must buy can't exceed it alone.
@@ -360,7 +366,8 @@ def find_commanders(intent: dict, profile_id: int, limit: int | None = None):
             card = resolved.get(_norm(name))
             if not card or not commanders.is_eligible_commander(card, fmt):
                 continue
-            if not _color_ok(card, intent.get("colors") or [], intent.get("max_colors")):
+            if not _color_ok(card, intent.get("colors") or [], intent.get("max_colors"),
+                             intent.get("min_colors")):
                 continue
             owned = _norm(card["name"]) in owned_keys
             price = scryfall.price_eur(card)
@@ -448,7 +455,8 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
                 continue
             seen.add(cid)
             if commanders.is_eligible_commander(card, fmt) and _color_ok(
-                card, intent.get("colors") or [], intent.get("max_colors")
+                card, intent.get("colors") or [], intent.get("max_colors"),
+                intent.get("min_colors")
             ):
                 candidates.append(card)
 

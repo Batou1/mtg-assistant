@@ -13,6 +13,7 @@
     {% if intent.colors %}
       <li class="chip">Couleurs :
         {% for c in intent.colors %}<span class="pip pip-{{ c }}">{{ COLOR_NAMES[c] }}</span>{% endfor %}
+        {%- if intent.min_colors and intent.min_colors >= intent.colors|length %} (toutes){% endif %}
       </li>
     {% endif %}
     {% if intent.budget_eur is not none %}<li class="chip">Budget : {{ "%.0f"|format(intent.budget_eur) }} €</li>{% endif %}
