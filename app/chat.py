@@ -60,7 +60,12 @@ SYSTEM_PROMPT = (
     "- Respecte STRICTEMENT le format, les couleurs et le nombre de couleurs "
     "demandés. « monocouleur » => max_colors=1. Convertis les noms de "
     "guildes/shards/wedges en couleurs WUBRG quand tu appelles un outil "
-    "(ex: Grixis=U,B,R ; Rakdos=B,R ; Jeskai=U,R,W ; Esper=W,U,B ; Bant=G,W,U).\n"
+    "(ex: Grixis=U,B,R ; Rakdos=B,R ; Jeskai=U,R,W ; Esper=W,U,B ; Bant=G,W,U) "
+    "et passe ALORS min_colors = nombre de ces couleurs : un nom de "
+    "guilde/shard/wedge ou une liste de couleurs voulues ensemble exige "
+    "TOUTES ces couleurs (« temur » => colors=[G,U,R] ET min_colors=3, jamais "
+    "un commandant à 1 ou 2 couleurs). Sans min_colors, seules des couleurs "
+    "alternatives (« noir ou blanc ») sont acceptées.\n"
     "- BUDGET TOTAL vs PLAFOND PAR CARTE : ce sont deux contraintes "
     "différentes et indépendantes. budget_eur est le total à ne pas dépasser ; "
     "max_card_price_eur est un plafond individuel (« pas plus de 5€ la carte », "
@@ -119,6 +124,16 @@ _INTENT_PROPS = {
         "type": "array",
         "items": {"type": "string", "enum": ["W", "U", "B", "R", "G"]},
         "description": "Couleurs souhaitées (WUBRG). Vide si non précisé.",
+    },
+    "min_colors": {
+        "type": "integer",
+        "description": (
+            "Nombre MINIMUM de couleurs. À passer dès que le joueur exige "
+            "TOUTES les couleurs listées : nom de guilde/shard/wedge "
+            "(« temur » => colors=[G,U,R] et min_colors=3), « exactement ces "
+            "couleurs », liste conjonctive (« bleu, vert et rouge »). Omettre "
+            "quand les couleurs sont des alternatives (« noir ou blanc »)."
+        ),
     },
     "max_colors": {
         "type": "integer",
@@ -339,6 +354,7 @@ TOOLS = [
                     "description": "Format visé pour le deck construit depuis la liste (par défaut, celui déjà utilisé).",
                 },
                 "colors": dict(_INTENT_PROPS["colors"]),
+                "min_colors": dict(_INTENT_PROPS["min_colors"]),
                 "max_colors": dict(_INTENT_PROPS["max_colors"]),
                 "theme": dict(_INTENT_PROPS["theme"]),
                 "keywords": dict(_INTENT_PROPS["keywords"]),
@@ -440,6 +456,7 @@ def _intent_from(args: dict, fmt: str | None) -> dict:
         {
             "format": fmt,
             "colors": args.get("colors") or [],
+            "min_colors": args.get("min_colors"),
             "max_colors": args.get("max_colors"),
             "theme": args.get("theme") or "",
             "keywords": args.get("keywords") or [],
@@ -882,10 +899,20 @@ def _snapshot_decklist(art: dict) -> str:
 
 
 def _snapshot_commanders(art: dict) -> str:
-    fmt = (art.get("intent") or {}).get("format") or "commander"
+    art_intent = art.get("intent") or {}
+    fmt = art_intent.get("format") or "commander"
     head = ("COMMANDANTS TROUVÉS PAR THÈME, HORS COLLECTION"
             if art.get("finder") else "COMMANDANTS SUGGÉRÉS")
-    lines = [f"{head} ({fmt.upper()}) :"]
+    head = f"{head} ({fmt.upper()})"
+    # Restate the colour constraint so follow-up turns keep honouring it
+    # (e.g. a "temur" wish must not drift to 2-colour commanders later).
+    wanted = art_intent.get("colors") or []
+    if wanted:
+        head += f" — couleurs demandées : {_fmt_colors(wanted)}"
+        min_colors = art_intent.get("min_colors")
+        if min_colors is not None and min_colors >= len(wanted):
+            head += " (TOUTES exigées)"
+    lines = [f"{head} :"]
     for r in art.get("results") or []:
         buy = r.get("buylist") or {}
         if _is_owned(r):
