@@ -147,11 +147,33 @@
       <li class="chip">{{ deck.counts.lands }} terrains</li>
       <li class="chip">{{ deck.counts.owned }} possédées</li>
       <li class="chip">{{ deck.counts.to_buy }} à acheter</li>
-      {% if data.buylist %}
+      {% if data.deck_cost_eur is defined and data.deck_cost_eur is not none %}
+      {# Current shape: the FULL price of the missing copies. The buylist total
+         stops at the budget, so showing it alone made an unaffordable deck
+         look affordable. #}
+      <li class="chip {{ 'warn' if data.budget_exceeded }}">Coût des manquantes :
+        <strong>{{ "%.2f"|format(data.deck_cost_eur) }} €</strong>
+        {% if data.budget_eur is not none %} / {{ "%.0f"|format(data.budget_eur) }} € budget{% endif %}</li>
+      {% elif data.buylist %}
       <li class="chip">Achat : <strong>{{ "%.2f"|format(data.buylist.total_eur) }} €</strong>
         {% if data.buylist.budget_eur is not none %} / {{ "%.0f"|format(data.buylist.budget_eur) }} € budget{% endif %}</li>
       {% endif %}
     </ul>
+    {% if data.budget_exceeded %}
+    <p class="notice warn small">
+      Ce deck coûte <strong>{{ "%.2f"|format(data.deck_cost_eur) }} €</strong> à compléter,
+      soit {{ "%.2f"|format(data.over_budget_eur) }} € au-dessus du budget de
+      {{ "%.0f"|format(data.budget_eur) }} €. La liste d'achat s'arrête au budget.
+    </p>
+    {% endif %}
+    {% if data.over_cap_cards %}
+    <p class="notice warn small">Au-dessus du plafond de
+      {{ "%.0f"|format(data.max_card_price_eur) }} €/carte : {{ data.over_cap_cards|join(", ") }}.</p>
+    {% endif %}
+    {% if data.unpriced_missing %}
+    <p class="notice info small">{{ data.unpriced_missing }} exemplaire(s) manquant(s)
+      sans prix Cardmarket : le coût affiché est un minimum.</p>
+    {% endif %}
     <div class="completion">
       <div class="bar"><span style="width: {{ (100 * deck.counts.owned / deck.counts.total) if deck.counts.total else 0 }}%"></span></div>
       <p><strong>{{ deck.counts.owned }}</strong> / {{ deck.counts.total }} cartes du deck possédées</p>

@@ -54,7 +54,9 @@ wish (texte FR) → intent.parse_intent (LLM + fallback heuristique, backfill cr
                            complet 60 cartes {name,count} + manabase → CHAQUE carte
                            validée Scryfall existence + légalité, copies clampées à 4,
                            complété à 60 avec des bases ; possession comptée PAR
-                           exemplaire ; decklist_text exportable)
+                           exemplaire ; deck chiffré aux vrais prix puis RECONSTRUIT
+                           par le LLM tant qu'il dépasse le budget (2 passes max) ;
+                           decklist_text exportable)
 Résultats → buylist.build (glouton, ordre EDHREC, budget + plafond/carte en EUR ;
                            accepte nom seul ou (nom, qté))
 ```
@@ -109,7 +111,10 @@ Résultats → buylist.build (glouton, ordre EDHREC, budget + plafond/carte en E
 5. **Deux contraintes budgétaires indépendantes** : `budget_eur` (total) et
    `max_card_price_eur` (plafond par carte). Elles se propagent ensemble partout
    (intent → analyse → buylist → deckgen → artefacts). Ne pas en fusionner une
-   dans l'autre.
+   dans l'autre. Le total d'une buylist s'ARRÊTE au budget : ne jamais l'afficher
+   comme « le prix du deck » (c'est ce qui faisait passer un deck Vintage à
+   4 000 € pour un deck à 190 €). Le coût réel des exemplaires manquants est un
+   champ distinct (`deck_cost_eur` + `budget_exceeded`), toujours annoncé.
 
 6. **Persistance du chat = texte + artefacts uniquement.** Le transcript
    `tool_use`/`tool_result` est éphémère (intra-tour). Le contexte inter-tours est
@@ -132,11 +137,20 @@ Résultats → buylist.build (glouton, ordre EDHREC, budget + plafond/carte en E
    d'accueil sont cachées dans `meta` (`collection_stats:<pid>`) et invalidées à
    l'import de collection et après un refresh bulk.
 
-10. **Politesse envers les APIs externes** : throttle `request_delay`, User-Agent
+10. **Jamais de printing numérique pour un prix.** Le choix canonique de
+    Scryfall pour un nom de carte est parfois une édition MTGO/Arena (Vintage
+    Masters, Masters Edition, Alchemy) : `prices.eur` y est nul, donc la carte
+    passe pour gratuite (Mishra's Workshop à 0 €). `scryfall.resolve_cards`
+    rebascule automatiquement sur un printing papier (`_ensure_paper`, qui
+    répare le cache au passage) et l'import bulk `oracle_cards` saute les cartes
+    non papier. Toute nouvelle source de cartes doit passer par
+    `scryfall.is_paper`.
+
+11. **Politesse envers les APIs externes** : throttle `request_delay`, User-Agent
     dédié, backoff avec jitter sur EDHREC (qui est derrière Cloudflare et bloque
     les clients non-navigateur — les en-têtes `_EDHREC_HEADERS` sont nécessaires).
 
-11. **Copies déjà en deck ≠ copies disponibles.** La colonne ManaBox
+12. **Copies déjà en deck ≠ copies disponibles.** La colonne ManaBox
     « Binder Type » alimente `collection.deck_qty` ; `db.owned_quantities`
     renvoie `{name_key: (total, deck_qty)}`. La génération de decks minimise le
     recours aux copies en deck : `deckgen` les prend en dernier recours (flag

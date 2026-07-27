@@ -20,6 +20,10 @@ RESOLVED = {
     # "Card D" intentionally absent -> nonexistent card
     "card e": _card("Card E", legal=True, eur=0.3),  # not in the LLM's deck
     "dual land": _card("Dual Land", legal=True, eur=0.5, type_line="Land"),
+    # Budget-pass fixtures: an unaffordable bomb and its cheap replacement.
+    "power card": _card("Power Card", legal=True, eur=500.0),
+    "cheap card": _card("Cheap Card", legal=True, eur=0.05),
+    "unpriced card": _card("Unpriced Card", legal=True),  # no EUR price at all
 }
 
 
@@ -43,10 +47,18 @@ ARCHETYPE = {
 }
 
 
-def _analyze(monkeypatch, archetype=ARCHETYPE, owned=(), budget=5.0, extra=None):
-    """``owned`` entries: (name, qty) or (name, qty, deck_qty)."""
+def _analyze(monkeypatch, archetype=ARCHETYPE, owned=(), budget=5.0, extra=None,
+             revise=None):
+    """``owned`` entries: (name, qty) or (name, qty, deck_qty).
+
+    ``revise`` is the archetype the budget rewrite pass returns (None disables
+    the pass, which is also what happens without an Anthropic key).
+    """
     monkeypatch.setattr(research, "brave_search", lambda q, count=8: [])
     monkeypatch.setattr(llm, "archetype_research", lambda fmt, intent, context: archetype)
+    monkeypatch.setattr(llm, "is_available", lambda: revise is not None)
+    monkeypatch.setattr(llm, "archetype_revise",
+                        lambda fmt, intent, previous, report, cost: revise)
     monkeypatch.setattr(scryfall, "resolve_cards", _fake_resolve)
     monkeypatch.setattr(db, "owned_quantities",
                         lambda pid: {e[0].lower(): (e[1], e[2] if len(e) > 2 else 0)
@@ -179,6 +191,95 @@ def test_include_cards_already_in_deck_keep_their_count(monkeypatch):
     assert cards["Card A"]["qty"] == 4
     assert cards["Card A"]["forced"] is True
     assert data["forced_cards"] == ["Card A"]
+
+
+# --- Budget ---------------------------------------------------------------
+#
+# Regression: the deck used to be built with no notion of what it costs, and
+# the UI quoted the BUYLIST total (which stops at the budget) as "the price",
+# so a 4000 € Vintage deck was announced as "190 € / 200 € budget".
+
+def _deck_of(*entries, basics=20):
+    return {"archetype": "Test", "colors": ["R"], "strategy": "",
+            "main_deck": [{"name": n, "count": c} for n, c in entries],
+            "basic_lands": {"Mountain": basics}}
+
+
+EXPENSIVE = _deck_of(("Power Card", 4), ("Card A", 4), ("Dual Land", 4))
+CHEAP = _deck_of(("Cheap Card", 4), ("Card A", 4), ("Dual Land", 4))
+
+
+def test_deck_cost_is_the_full_price_of_the_missing_copies(monkeypatch):
+    # 4 Card A (0.10) + 4 Card B (1.00) + 4 Dual Land (0.50) = 6.40 €, of which
+    # only 5 € fits the budget: both figures are reported, and they differ.
+    data = _analyze(monkeypatch, budget=5.0)
+    assert data["deck_cost_eur"] == 6.4
+    assert data["budget_exceeded"] is True
+    assert data["over_budget_eur"] == 1.4
+    assert data["buylist"]["total_eur"] < data["deck_cost_eur"]
+
+
+def test_owned_copies_are_not_counted_in_the_deck_cost(monkeypatch):
+    data = _analyze(monkeypatch, owned=[("Card B", 4)], budget=5.0)
+    assert data["deck_cost_eur"] == 0.4 + 2.0    # Card A + Dual Land only
+    assert data["budget_exceeded"] is False
+    assert data["over_budget_eur"] == 0.0
+
+
+def test_over_budget_deck_is_rebuilt_with_real_prices(monkeypatch):
+    # First proposal: 4x a 500 € card. Given the actual prices, the model
+    # comes back with an affordable list and that one is kept.
+    data = _analyze(monkeypatch, archetype=EXPENSIVE, budget=5.0, revise=CHEAP)
+    cards = {c["name"] for g in data["deck"]["groups"] for c in g["cards"]}
+    assert "Power Card" not in cards
+    assert "Cheap Card" in cards
+    assert data["deck_cost_eur"] == 0.2 + 0.4 + 2.0
+    assert data["budget_exceeded"] is False
+    assert data["budget_passes"] == 1
+    assert data["deck"]["counts"]["total"] == 60
+
+
+def test_revision_that_is_not_cheaper_is_discarded(monkeypatch):
+    pricier = _deck_of(("Power Card", 4), ("Card B", 4), ("Dual Land", 4))
+    data = _analyze(monkeypatch, archetype=EXPENSIVE, budget=5.0, revise=pricier)
+    cards = {c["name"] for g in data["deck"]["groups"] for c in g["cards"]}
+    assert cards == {"Power Card", "Card A"}     # the original build survives
+    assert data["budget_exceeded"] is True
+
+
+def test_degenerate_revision_is_refused(monkeypatch):
+    # A rewrite that keeps almost nothing is cheap only because it isn't a
+    # deck any more: it must not replace a working (if pricey) list.
+    empty = _deck_of(("Cheap Card", 1), basics=59)
+    data = _analyze(monkeypatch, archetype=EXPENSIVE, budget=5.0, revise=empty)
+    cards = {c["name"] for g in data["deck"]["groups"] for c in g["cards"]}
+    assert "Power Card" in cards
+    assert data["budget_exceeded"] is True
+
+
+def test_no_revision_pass_without_a_budget(monkeypatch):
+    data = _analyze(monkeypatch, archetype=EXPENSIVE, budget=None, revise=CHEAP)
+    cards = {c["name"] for g in data["deck"]["groups"] for c in g["cards"]}
+    assert "Power Card" in cards                  # nothing to fit into
+    assert data["budget_exceeded"] is False
+    assert data["budget_passes"] == 0
+    assert data["deck_cost_eur"] == 2000.4 + 2.0
+
+
+def test_cards_above_the_per_card_cap_are_reported(monkeypatch):
+    data = _analyze(monkeypatch, archetype=EXPENSIVE, budget=5000.0,
+                    extra={"max_card_price_eur": 10.0})
+    assert data["over_cap_cards"] == ["Power Card"]
+    # Total budget is fine, the per-card ceiling is not: the two constraints
+    # stay independent.
+    assert data["budget_exceeded"] is False
+
+
+def test_missing_copies_without_a_price_are_flagged_not_counted_as_free(monkeypatch):
+    arch = _deck_of(("Unpriced Card", 4), ("Card A", 4))
+    data = _analyze(monkeypatch, archetype=arch, budget=5.0)
+    assert data["unpriced_missing"] == 4
+    assert data["deck_cost_eur"] == 0.4
 
 
 def test_groups_are_sorted_alphabetically(monkeypatch):

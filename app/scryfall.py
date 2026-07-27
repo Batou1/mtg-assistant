@@ -23,6 +23,11 @@ NON_GAME_LAYOUTS = {
     "scheme", "vanguard", "planar", "augment", "host",
 }
 
+# Marker written on a cached card meaning "we already looked for a paper
+# printing of this and there is none" (Alchemy/Arena-only cards). Without it,
+# every lookup of such a card would re-run the search below forever.
+_PAPER_CHECKED = "_paper_checked"
+
 
 def norm_name(name: str) -> str:
     """Canonical card-name key: front-face name, lowercased.
@@ -79,11 +84,89 @@ def _post_collection(conn: httpx.Client, identifiers: list[dict]) -> dict | None
     return resp.json()
 
 
+def is_paper(card: dict) -> bool:
+    """True if this printing exists in the real world (not MTGO/Arena-only).
+
+    Scryfall's "one canonical printing per card" pick — what the oracle_cards
+    bulk export holds and what ``/cards/collection`` returns for a bare name —
+    sometimes lands on a digital-only printing: Vintage Masters and Masters
+    Edition (MTGO), Alchemy/Arena rebalances. Those objects carry NO Cardmarket
+    price, so a deck built on them silently prices its most expensive cards at
+    zero (Mishra's Workshop as a free card). Everything the app prices or asks
+    the user to buy must therefore go through a paper printing.
+    """
+    games = card.get("games")
+    if games:
+        return "paper" in games
+    return not card.get("digital")
+
+
+def _paper_printing(conn: httpx.Client, name: str) -> dict | None:
+    """Find a paper printing of ``name``, preferring one with a EUR price.
+
+    Cheapest reliable route: an exact-name search restricted to paper, newest
+    first. Returns None when the card genuinely has no paper printing.
+    """
+    try:
+        resp = conn.get(
+            f"{settings.scryfall_api}/cards/search",
+            params={"q": f'!"{name}" game:paper', "unique": "prints",
+                    "order": "released", "dir": "desc"},
+        )
+    except httpx.HTTPError:
+        return None
+    if resp.status_code >= 400:
+        return None
+    printings = [c for c in (resp.json().get("data") or []) if is_paper(c)]
+    if not printings:
+        return None
+    # A paper printing without a Cardmarket price (very new, or promo-only) is
+    # still better than a digital one, but a priced one is what we're after.
+    return next((c for c in printings if price_eur(c) is not None), printings[0])
+
+
+def _ensure_paper(results: dict[str, dict], client: httpx.Client | None) -> None:
+    """Replace digital-only entries of ``results`` (and of the cache) in place.
+
+    Runs after every name resolution, so an app-wide fix: the corrected card is
+    written back under the requested key, which also repairs a cache poisoned by
+    an older bulk import without needing a multi-GB re-import.
+    """
+    by_name: dict[str, list[str]] = {}
+    for key, card in results.items():
+        if not is_paper(card) and not card.get(_PAPER_CHECKED):
+            by_name.setdefault(card.get("name") or key, []).append(key)
+    if not by_name:
+        return
+
+    conn, owns = _client(client)
+    try:
+        for name, keys in by_name.items():
+            paper = _paper_printing(conn, name)
+            time.sleep(settings.request_delay)
+            if paper is None:
+                # Digital-only card (Alchemy…): keep it, but remember the miss.
+                for key in keys:
+                    marked = dict(results[key])
+                    marked[_PAPER_CHECKED] = True
+                    db.set_card(key, marked)
+                    results[key] = marked
+                continue
+            _register(paper, results)
+            for key in keys:
+                db.set_card(key, paper)
+                results[key] = paper
+    finally:
+        if owns:
+            conn.close()
+
+
 def resolve_cards(names, client: httpx.Client | None = None):
     """Resolve ``names`` to card dicts.
 
     Returns (results, not_found) where results maps a lowercased name to the
     Scryfall card dict and not_found is the list of names Scryfall did not match.
+    Digital-only printings are swapped for a paper one (see ``_ensure_paper``).
     """
     results: dict[str, dict] = {}
     missing: list[str] = []
@@ -97,6 +180,7 @@ def resolve_cards(names, client: httpx.Client | None = None):
 
     not_found: list[str] = []
     if not missing:
+        _ensure_paper(results, client)
         return results, not_found
 
     conn, owns = _client(client)
@@ -114,6 +198,7 @@ def resolve_cards(names, client: httpx.Client | None = None):
             for nf in payload.get("not_found", []):
                 not_found.append(nf.get("name", str(nf)) if isinstance(nf, dict) else str(nf))
             time.sleep(settings.request_delay)
+        _ensure_paper(results, conn)
     finally:
         if owns:
             conn.close()

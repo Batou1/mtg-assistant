@@ -335,6 +335,13 @@ button:disabled {
   background: var(--bg3); border: 1px solid var(--line); border-radius: 999px;
   padding: 4px 13px; font-size: .84rem;
 }
+/* A budget the deck busts must read as a problem, not as a neutral figure. */
+.chip.warn {
+  background: color-mix(in oklch, var(--warn) 14%, transparent);
+  border-color: color-mix(in oklch, var(--warn) 40%, transparent);
+  color: var(--warn);
+}
+.chip.warn strong { color: var(--warn); }
 
 /* --- Color pips ----------------------------------------------------------- */
 

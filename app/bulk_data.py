@@ -109,11 +109,20 @@ def _import_oracle_cards(cards) -> int:
     etc. Those routinely reuse a real card's display name (e.g. an Art Series
     "Sol Ring // Sol Ring") without being that card — registering them under
     name_key would silently clobber the real card's cache entry.
+
+    Also skips digital-only printings (see ``scryfall.is_paper``): Scryfall's
+    canonical pick for a card is sometimes its MTGO printing (Vintage Masters,
+    Masters Edition…), which carries no Cardmarket price. Caching that under
+    the card's name would make it look free forever. Leaving the name
+    unregistered sends the first lookup to the live API, where
+    ``scryfall._ensure_paper`` resolves and caches a real paper printing.
     """
     batch: list[tuple[str, dict]] = []
     total = 0
     for card in cards:
         if card.get("layout") in scryfall.NON_GAME_LAYOUTS:
+            continue
+        if not scryfall.is_paper(card):
             continue
         name = card.get("name") or ""
         if not name:

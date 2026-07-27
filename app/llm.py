@@ -99,15 +99,34 @@ def chat_text(system: str, user: str) -> str | None:
     return _message(system, user, 800) or None
 
 
-def archetype_research(fmt: str, intent: dict, context: str) -> dict | None:
-    """Propose a complete 60-card decklist for a non-singleton format.
+def _budget_rules(intent: dict) -> list[str]:
+    """Budget constraints, worded for a deck proposal (French, for the prompt).
 
-    Given the format, the player's wish and recent web-search context, return a
-    JSON archetype with a full main deck (multiple copies allowed, 4-of rule)
-    and a basic-land manabase. Every card name is validated against Scryfall
-    downstream and copy counts are re-clamped, so a few hallucinated names are
-    filtered out rather than trusted.
+    The two budget knobs stay independent — a total and a per-card ceiling —
+    exactly as they are downstream (buylist, deckgen).
     """
+    rules: list[str] = []
+    budget = intent.get("budget_eur")
+    cap = intent.get("max_card_price_eur")
+    if budget is not None:
+        rules.append(
+            f"BUDGET STRICT : {budget:.0f} € MAXIMUM pour l'ensemble des cartes du "
+            "deck (prix Cardmarket en euros ; les terrains de base sont gratuits). "
+            "C'est une contrainte PRIORITAIRE sur la puissance : choisis la "
+            "déclinaison « budget » de l'archétype et écarte les cartes hors de "
+            "prix (Reserved List, duals, Power…) au profit d'alternatives "
+            "abordables qui remplissent le même rôle. Un deck légèrement moins "
+            "fort mais achetable vaut mieux qu'un deck injouable pour ce budget."
+        )
+    if cap is not None:
+        rules.append(
+            f"PLAFOND PAR CARTE : aucune carte du deck ne doit dépasser {cap:.0f} € "
+            "l'unité."
+        )
+    return rules
+
+
+def _archetype_system(fmt: str, intent: dict) -> str:
     system = (
         f"Tu es un expert Magic: the Gathering, format {fmt}. À partir de l'envie "
         "du joueur et d'extraits web récents sur le métagame, propose UN deck "
@@ -131,6 +150,12 @@ def archetype_research(fmt: str, intent: dict, context: str) -> dict | None:
         f"n'es pas certain qu'une carte existe et est légale en {fmt}, ne la mets "
         "pas. Privilégie les staples reconnus."
     )
+    for rule in _budget_rules(intent):
+        system += "\n" + rule
+    return system
+
+
+def _archetype_user(fmt: str, intent: dict) -> list[str]:
     parts = [f"Format : {fmt}"]
     if intent.get("theme"):
         parts.append(f"Envie du joueur : {intent['theme']}")
@@ -160,9 +185,56 @@ def archetype_research(fmt: str, intent: dict, context: str) -> dict | None:
             "Cartes INTERDITES — ne les inclus PAS dans le deck : "
             + ", ".join(intent["exclude_cards"])
         )
+    return parts
+
+
+def archetype_research(fmt: str, intent: dict, context: str) -> dict | None:
+    """Propose a complete 60-card decklist for a non-singleton format.
+
+    Given the format, the player's wish and recent web-search context, return a
+    JSON archetype with a full main deck (multiple copies allowed, 4-of rule)
+    and a basic-land manabase. Every card name is validated against Scryfall
+    downstream and copy counts are re-clamped, so a few hallucinated names are
+    filtered out rather than trusted.
+
+    The model only *aims* at the budget here (it prices cards from memory);
+    ``archetype_revise`` is what enforces it, with real Cardmarket prices.
+    """
+    parts = _archetype_user(fmt, intent)
     if context:
         parts.append(f"\nExtraits web récents (métagame) :\n{context}")
-    return chat_json(system, "\n".join(parts),
+    return chat_json(_archetype_system(fmt, intent), "\n".join(parts),
+                     max_tokens=settings.anthropic_deck_max_tokens)
+
+
+def archetype_revise(fmt: str, intent: dict, previous: dict, price_report: str,
+                     cost_eur: float) -> dict | None:
+    """Rebuild the 60-card deck under budget, given its REAL prices.
+
+    The first proposal is priced from the model's memory, which is why it
+    routinely lands far above budget. Here it gets the actual Cardmarket price
+    of every card it just picked plus the resulting total, so the rewrite is
+    grounded in numbers instead of guesses. Same output shape as
+    ``archetype_research`` — the caller re-validates it identically.
+    """
+    budget = intent.get("budget_eur")
+    parts = _archetype_user(fmt, intent)
+    parts.append(
+        f"\nTa proposition précédente (« {previous.get('archetype') or 'deck'} ») "
+        f"coûte {cost_eur:.2f} € à l'achat, soit BIEN AU-DESSUS du budget de "
+        f"{budget:.0f} €. Prix Cardmarket réels des cartes que tu avais "
+        f"choisies :\n{price_report}"
+    )
+    parts.append(
+        "\nPropose maintenant une NOUVELLE liste complète de 60 cartes pour la même "
+        "envie, dont le coût total tient sous le budget. Remplace les cartes les "
+        "plus chères ci-dessus par des alternatives abordables jouant le même rôle "
+        "(mêmes effets, coût de mana proche) ; garde les cartes bon marché qui "
+        "fonctionnent. Si l'archétype demandé est intrinsèquement inaccessible à ce "
+        "budget, bascule sur la variante budget la plus proche et explique-le dans "
+        '"strategy". Même format JSON que précédemment.'
+    )
+    return chat_json(_archetype_system(fmt, intent), "\n".join(parts),
                      max_tokens=settings.anthropic_deck_max_tokens)
 
 
