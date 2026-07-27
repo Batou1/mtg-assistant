@@ -53,6 +53,22 @@ def test_import_oracle_cards_skips_non_game_layouts(fresh):
     assert db.get_card("sol ring")["id"] == "abc-1"
 
 
+def test_import_oracle_cards_skips_digital_only_printings(fresh):
+    """Regression: Scryfall's canonical pick for a card is sometimes its
+    MTGO-only printing (Vintage Masters, Masters Edition…), which carries no
+    Cardmarket price. Caching that under the card's name made expensive
+    staples look free. Leaving the name unregistered sends the lookup to the
+    live API, where scryfall._ensure_paper finds a real paper printing."""
+    bulk_data, db = fresh
+    mtgo_workshop = {
+        "id": "mtgo-1", "name": "Mishra's Workshop", "games": ["mtgo"],
+        "digital": True,
+    }
+    bulk_data._import_oracle_cards([SOL_RING, mtgo_workshop])
+    assert db.get_card("sol ring")["id"] == "abc-1"
+    assert db.get_card("mishra's workshop") is None
+
+
 def test_import_all_cards_registers_id_only(fresh):
     bulk_data, db = fresh
     bulk_data._import_all_cards([SOL_RING])

@@ -607,10 +607,28 @@ def _exec_research_archetype(args: dict, profile_id: int, ctx: dict | None = Non
         f"({'/'.join(arch.get('colors') or []) or 'incolore'}). "
         f"{counts.get('total', 0)} cartes dont {counts.get('lands', 0)} terrains ; "
         f"{counts.get('owned', 0)} possédées, {counts.get('to_buy', 0)} manquantes ; "
-        f"achat {buy.get('total_eur', 0)} € "
-        f"({buy.get('bought_count', 0)} cartes)"
-        f"{_cap_suffix(buy.get('max_card_price_eur'))}."
+        f"coût réel des cartes manquantes {data.get('deck_cost_eur', 0)} €"
     )
+    if data.get("budget_eur") is not None:
+        text += (f" (dont {buy.get('total_eur', 0)} € tenant dans le budget, "
+                 f"{buy.get('bought_count', 0)} cartes)")
+    text += f"{_cap_suffix(buy.get('max_card_price_eur'))}."
+    # The buylist total stops at the budget, so quoting it alone would tell the
+    # player an unaffordable deck is affordable. Say it plainly instead.
+    if data.get("budget_exceeded"):
+        text += (
+            f" ATTENTION : ce deck coûte {data['deck_cost_eur']} € alors que le "
+            f"budget est de {data.get('budget_eur')} € "
+            f"({data.get('over_budget_eur')} € de dépassement) — dis-le "
+            "explicitement au joueur et propose de baisser l'ambition de "
+            "l'archétype ou d'augmenter le budget."
+        )
+    if data.get("over_cap_cards"):
+        text += (" Cartes au-dessus du plafond par carte : "
+                 + ", ".join(data["over_cap_cards"][:8]) + ".")
+    if data.get("unpriced_missing"):
+        text += (f" {data['unpriced_missing']} exemplaire(s) manquant(s) sans prix "
+                 "Cardmarket : le coût réel est un minimum.")
     # Explicitly confirm/deny each requested card so the model never claims a
     # card was "not kept" when it actually made the deck (or vice versa).
     if data.get("forced_cards"):
@@ -947,6 +965,13 @@ def _snapshot_archetype(art: dict) -> str:
         ]
         if arch.get("strategy"):
             lines.append(f"Stratégie : {arch['strategy']}")
+        if data.get("deck_cost_eur") is not None:
+            cost = (f"Coût des cartes manquantes : {data['deck_cost_eur']} €")
+            if data.get("budget_eur") is not None:
+                cost += f" pour un budget de {data['budget_eur']} €"
+                if data.get("budget_exceeded"):
+                    cost += f" (DÉPASSÉ de {data.get('over_budget_eur')} €)"
+            lines.append(cost + ".")
         # Player-forced inclusions/exclusions must survive turns: on the next
         # regeneration the model re-passes them via include_cards/exclude_cards.
         if data.get("forced_cards"):

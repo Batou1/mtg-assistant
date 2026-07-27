@@ -42,10 +42,34 @@
       <li class="chip">{{ deck.counts.lands }} terrains</li>
       <li class="chip">{{ deck.counts.owned }} possédées</li>
       <li class="chip">{{ deck.counts.to_buy }} à acheter</li>
-      <li class="chip">Achat : <strong>{{ "%.2f"|format(data.buylist.total_eur) }} €</strong>
-        {% if data.buylist.budget_eur is not none %} / {{ "%.0f"|format(data.buylist.budget_eur) }} € budget{% endif %}
+      <li class="chip {{ 'warn' if data.budget_exceeded }}">Coût des manquantes :
+        <strong>{{ "%.2f"|format(data.deck_cost_eur) }} €</strong>
+        {% if data.budget_eur is not none %} / {{ "%.0f"|format(data.budget_eur) }} € budget{% endif %}
       </li>
     </ul>
+
+    {% if data.budget_exceeded %}
+    <p class="notice warn">
+      Ce deck coûte <strong>{{ "%.2f"|format(data.deck_cost_eur) }} €</strong> à compléter,
+      soit {{ "%.2f"|format(data.over_budget_eur) }} € au-dessus du budget de
+      {{ "%.0f"|format(data.budget_eur) }} €{% if data.budget_passes %} (malgré
+      {{ data.budget_passes }} tentative(s) de version budget){% endif %}.
+      La liste d'achat ci-dessous s'arrête au budget : le reste des cartes manque encore.
+      Relance avec un budget plus élevé, ou vise un archétype moins cher.
+    </p>
+    {% endif %}
+    {% if data.over_cap_cards %}
+    <p class="notice warn small">
+      Au-dessus du plafond de {{ "%.0f"|format(data.max_card_price_eur) }} €/carte :
+      {{ data.over_cap_cards|join(", ") }}.
+    </p>
+    {% endif %}
+    {% if data.unpriced_missing %}
+    <p class="notice info small">
+      {{ data.unpriced_missing }} exemplaire(s) manquant(s) sans prix Cardmarket :
+      le coût affiché est un minimum.
+    </p>
+    {% endif %}
 
     <div class="completion">
       <div class="bar"><span style="width: {{ (100 * deck.counts.owned / deck.counts.total) if deck.counts.total else 0 }}%"></span></div>
