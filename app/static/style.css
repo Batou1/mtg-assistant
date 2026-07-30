@@ -548,7 +548,8 @@ details.buylist > .buy-grid { padding: 14px; margin-top: 0; }
   display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 18px 0;
 }
 .collection-search {
-  max-width: 340px; height: 42px; border-radius: 999px;
+  flex: 1 1 320px; min-width: 200px; max-width: 460px;
+  height: 42px; border-radius: 999px; font-family: var(--font-mono); font-size: .84rem;
 }
 .collection-toolbar .chip { cursor: pointer; user-select: none; }
 .collection-toolbar .chip.active { border-color: var(--accent); color: var(--accent); }
@@ -568,17 +569,68 @@ details.buylist > .buy-grid { padding: 14px; margin-top: 0; }
   border-radius: 999px; background: var(--bg3); font-family: var(--font-mono); font-size: .82rem;
 }
 
-/* Color-pip filter buttons (search toolbar) */
-.pip-filters { display: flex; gap: 6px; }
-.pip-filter {
-  background: transparent; border: none; box-shadow: none; padding: 2px; border-radius: 50%;
-  line-height: 0; cursor: pointer;
+/* Plain-French search: the friendly entry point, one row above the query box
+   it writes into. Accent border so it reads as the "ask me" field. */
+.collection-ask { margin-bottom: 0; }
+.collection-nl {
+  flex: 1 1 420px; min-width: 220px; max-width: 620px; height: 42px;
+  border-radius: 999px; border-color: color-mix(in oklch, var(--accent) 45%, var(--line));
 }
-.pip-filter:hover { transform: none; filter: none; box-shadow: none; }
-.pip-filter .pip-swatch { width: 26px; height: 26px; border-width: 2px; }
-.pip-filter.active .pip-swatch { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 30%, transparent); }
+.collection-toolbar .nl-submit {
+  height: 42px; padding: 0 18px; cursor: pointer; white-space: nowrap;
+  border-color: color-mix(in oklch, var(--accent) 45%, var(--line)); color: var(--accent);
+}
+.nl-echo { color: var(--text); }
 
-#type-filter { width: auto; height: 42px; padding-top: 0; padding-bottom: 0; }
+/* Toolbar selects (tri) keep the pill look of the chips next to them. */
+.collection-toolbar select.chip {
+  width: auto; height: 42px; padding: 0 30px 0 14px; border-radius: 999px;
+  background-color: var(--bg3); font-size: .84rem;
+}
+.collection-toolbar button[type=submit] { height: 42px; border-radius: 999px; padding: 0 20px; }
+
+/* Advanced filter panel: a query builder that writes Scryfall syntax. */
+.filter-panel {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg2); margin-bottom: 14px;
+}
+.filter-panel > summary {
+  cursor: pointer; list-style: none; padding: 11px 16px; font-size: .84rem;
+  font-weight: 600; color: var(--muted);
+}
+.filter-panel > summary::-webkit-details-marker { display: none; }
+.filter-panel > summary::before { content: "▸ "; }
+.filter-panel[open] > summary::before { content: "▾ "; }
+.filter-panel[open] > summary { border-bottom: 1px solid var(--line); color: var(--text); }
+.filter-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px 16px; padding: 16px;
+}
+.filter-grid .field-wide { grid-column: 1 / -1; }
+.filter-colors { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.filter-colors select { width: auto; min-width: 220px; }
+.range-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.filter-actions {
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 16px 16px;
+}
+
+.query-echo { margin: 0 0 6px; color: var(--muted); word-break: break-word; }
+.query-echo code { color: var(--accent); }
+.query-error {
+  margin: 0 0 10px; padding: 9px 13px; border-radius: var(--radius-sm);
+  font-size: .85rem; color: var(--warn);
+  background: color-mix(in oklch, var(--warn) 12%, transparent);
+  border: 1px solid color-mix(in oklch, var(--warn) 35%, transparent);
+}
+
+.syntax-help { margin-bottom: 6px; font-size: .82rem; }
+.syntax-help > summary { cursor: pointer; color: var(--muted); }
+.syntax-help ul { margin: 8px 0 0; padding-left: 20px; color: var(--muted); line-height: 1.9; }
+.syntax-help code {
+  background: var(--bg3); border-radius: 5px; padding: 1px 6px;
+  font-family: var(--font-mono); font-size: .78rem; color: var(--text);
+}
 
 /* ==========================================================================
    Card image ⇄ text view — shared by every screen (collection grid,
@@ -601,6 +653,8 @@ details.buylist > .buy-grid { padding: 14px; margin-top: 0; }
 .cv-type { font-size: .74rem; color: var(--muted); padding-bottom: 6px; border-bottom: 1px solid var(--line); }
 .cv-oracle { font-size: .8125rem; line-height: 1.5; white-space: pre-line; }
 .cv-pt { align-self: flex-end; font-size: .8125rem; font-weight: 700; color: var(--text); }
+/* Printing metadata (edition · rareté · copies en deck) — collection grid only. */
+.cv-set { font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .cv-price { margin-top: auto; padding-top: 6px; font-family: var(--font-mono); font-size: .8rem; color: var(--accent); text-align: right; }
 
 /* Card-image grid (collection page) */
