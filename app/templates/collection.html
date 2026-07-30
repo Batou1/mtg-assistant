@@ -19,6 +19,13 @@
      panel below and the free-text box are compiled into ONE Scryfall query, so
      there is a single filter engine and the panel doubles as syntax tutorial. #}
   <form class="collection-filters" method="get" action="/collection" id="collection-filters">
+    {# qgen carries the query this page generated: on the next submit the route
+       compares it with the visible box to tell a hand edit (which wins over
+       everything) from an untouched echo. panel remembers the disclosure's own
+       open/closed state so filtering never toggles it. #}
+    <input type="hidden" name="qgen" value="{{ query }}">
+    <input type="hidden" name="panel" id="panel-state" value="{{ 1 if panel_open else 0 }}">
+
     {# The French box is rendered EMPTY on purpose: its translation lands in
        the query box below, so refining that query never re-runs the LLM. #}
     <div class="collection-toolbar collection-ask">
@@ -185,10 +192,18 @@
       <div class="filter-actions">
         <button type="submit">Appliquer les filtres</button>
         <a class="link small" href="/collection">Tout effacer</a>
+        <span class="muted small">Les filtres choisis ici s'ajoutent à la requête Scryfall ci-dessus.</span>
       </div>
     </details>
   </form>
 
+  {% if panel_ignored %}
+    <p class="query-error">
+      ⚠ La requête Scryfall que tu as modifiée est prioritaire : le texte en
+      français et les filtres du panneau n'ont pas été appliqués. Vide la
+      requête pour repartir de zéro.
+    </p>
+  {% endif %}
   {% if translation and translation.error %}
     <p class="query-error">
       ⚠ {{ translation.error }}
@@ -315,6 +330,16 @@
       document.querySelectorAll("#collection-filters [data-autosubmit]").forEach(function (node) {
         node.addEventListener("change", function () { node.form.submit(); });
       });
+
+      // Remember whether the user opened the panel, so submitting from it (or
+      // from any other control) brings the page back in the same state.
+      var panel = document.querySelector(".filter-panel");
+      var panelState = document.getElementById("panel-state");
+      if (panel && panelState) {
+        panel.addEventListener("toggle", function () {
+          panelState.value = panel.open ? "1" : "0";
+        });
+      }
 
       var manaInput = document.getElementById("mana-input");
       var manaLegend = document.getElementById("mana-legend");

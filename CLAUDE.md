@@ -64,22 +64,28 @@ Résultats → buylist.build (glouton, ordre EDHREC, budget + plafond/carte en E
 ### Filtres de la collection (`/collection`)
 
 ```
-GET /collection?ask=…&q=…&type=…&colors=…&mana=…&mv_max=…&sort=…&dir=…
-  ask (français) → nlquery.translate  (LLM → requête Scryfall, RE-PARSÉE par
-                     scryquery ; 1 tentative de réparation avec l'erreur du
-                     parseur, sinon repli heuristique par mots-clés ; résultat
-                     mis en cache dans `meta`) → remplace la boîte `q`
-  → collection.build_query  (panneau structuré + boîte libre → UNE requête Scryfall)
+GET /collection?ask=…&q=…&qgen=…&panel=…&type=…&colors=…&mana=…&sort=…&dir=…
+  q ≠ qgen (boîte modifiée à la main) → `q` GAGNE, rien d'autre n'est appliqué
+  sinon ask (français) → nlquery.translate  (LLM → requête Scryfall, RE-PARSÉE
+                     par scryquery ; 1 tentative de réparation avec l'erreur du
+                     parseur, sinon repli heuristique ; cache dans `meta`)
+                     → REMPLACE la requête
+  sinon panneau → collection.panel_query + combine  (termes AJOUTÉS à `q`)
   → scryquery.parse         (AST ; QueryError = message affiché, aucun résultat)
   → collection.search       (filtrage puis tri côté serveur, cache local uniquement)
 ```
 
 Le filtrage est **entièrement côté serveur** : la page n'embarque que les cartes
-qui matchent. Le panneau de filtres et la boîte en français sont des
-*constructeurs de requête* — ils ne filtrent pas eux-mêmes, ils produisent la
-même syntaxe que la boîte libre (invariant 13). La requête générée est réinjectée
-dans la boîte `q` (et la boîte français est vidée) : l'utilisateur peut la lire
-et l'affiner sans relancer le LLM.
+qui matchent.
+
+**La boîte `q` est l'état.** Le panneau de filtres et la boîte en français sont
+des *constructeurs* à usage unique : ce qu'ils expriment est compilé dans la
+boîte `q`, puis leurs champs sont re-rendus VIDES. La requête affichée décrit
+donc toujours exactement ce qui est filtré, et reste modifiable — sans relancer
+le LLM. Deux champs cachés portent cet état : `qgen` (la requête générée au
+rendu précédent, pour distinguer une modification manuelle d'un simple écho) et
+`panel` (l'ouverture du `<details>`, qui est une décision de l'utilisateur :
+filtrer ne doit ni l'ouvrir ni le refermer).
 
 ### Modules (`app/`)
 
@@ -183,11 +189,13 @@ et l'affiner sans relancer le LLM.
 
 13. **Un seul moteur de filtre pour la collection.** Les contrôles structurés
     de `/collection` sont *compilés* en syntaxe Scryfall par
-    `collection.build_query`, et la recherche en langage naturel est *traduite*
+    `collection.panel_query`, et la recherche en langage naturel est *traduite*
     en syntaxe Scryfall par `nlquery.translate` — jamais évalués par un second
     chemin de code (ni en Python, ni en JS) : c'est ce qui garantit que les
-    trois entrées ne peuvent pas diverger, et que la requête effective affichée
-    sous la barre décrit exactement ce qui a été filtré. Corollaire côté LLM :
+    trois entrées ne peuvent pas diverger, et que la requête affichée dans la
+    boîte `q` décrit exactement ce qui a été filtré. Corollaire : toute nouvelle
+    entrée de filtrage doit écrire dans cette boîte, jamais filtrer à côté
+    d'elle, et une requête modifiée à la main l'emporte toujours. Côté LLM :
     ce qu'il produit est une *requête*, systématiquement re-parsée par
     `scryquery` avant d'être appliquée — c'est l'ancrage anti-hallucination
     (invariant 1) transposé aux filtres, une clé inventée est rejetée, jamais

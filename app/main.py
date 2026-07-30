@@ -18,7 +18,7 @@ from . import (
 )
 from .config import settings
 
-APP_VERSION = "2.2"
+APP_VERSION = "2.3"
 
 logger = logging.getLogger(__name__)
 
@@ -234,26 +234,41 @@ async def import_collection(request: Request, file: UploadFile = File(...)):
 def collection(request: Request):
     """Collection browser with Scryfall-syntax filtering.
 
-    The structured panel, the free-text box and the plain-French box are
-    compiled into a single query (``collection.build_query``) so all three go
-    through one filter engine; the effective query is echoed back to the page,
-    which is also how they teach the syntax.
+    **The query box is the state.** The filter panel and the plain-French box
+    are one-shot builders: whatever they mean is compiled into the box, and they
+    are rendered empty again, so the box always spells out exactly what is being
+    filtered and stays editable. One filter engine, one visible source of truth.
 
-    A natural-language search REPLACES the query box rather than adding to it:
-    its translation is what lands in the box, and the French field is rendered
-    empty afterwards so refining the generated query never re-triggers a
-    translation.
+    Precedence when several arrive at once is the one the box implies: a query
+    the user typed by hand wins over everything (detected by comparing ``q``
+    with the ``qgen`` hidden field, which carries the query the page last
+    generated), then the French box, then the panel — whose terms refine the
+    current query rather than replacing it.
     """
     profile = current_profile(request)
     params = request.query_params
-    filters = {k: params.get(k, "") for k in collection_mod.FILTER_FIELDS}
-    filters["colors"] = params.getlist("colors")
-
+    typed = (params.get("q") or "").strip()
+    generated = (params.get("qgen") or "").strip()
     ask = (params.get("ask") or "").strip()
-    translation = nlquery.translate(ask) if ask else None
-    if translation is not None:
-        filters["q"] = translation["query"]
-    effective = collection_mod.build_query(params, q=filters["q"] if translation else None)
+    terms = collection_mod.panel_query(params)
+
+    # An edited box is the user's explicit intent: never silently rebuild over it.
+    hand_edited = typed != generated
+    translation = None
+    panel_ignored = False
+    if hand_edited or not (ask or terms):
+        effective = typed
+        panel_ignored = bool(ask or terms)
+    elif ask:
+        translation = nlquery.translate(ask)
+        effective = translation["query"]
+    else:
+        effective = collection_mod.combine(typed, terms)
+
+    # Everything the builders expressed now lives in the query box.
+    filters = {k: "" for k in collection_mod.FILTER_FIELDS}
+    filters["colors"] = []
+    filters["q"] = effective
 
     error = None
     cards: list[dict] = []
@@ -281,8 +296,12 @@ def collection(request: Request):
         filtered=bool(effective),
         ask=ask,
         translation=translation,
+        panel_ignored=panel_ignored,
         llm_ok=llm.is_available(),
-        panel_open=any(v for k, v in filters.items() if k != "q"),
+        # The panel's own toggle, round-tripped through a hidden field: opening
+        # it is the user's decision, so applying a filter must not re-open it
+        # (nor slam it shut while they are working in it).
+        panel_open=params.get("panel") == "1",
         sort=sort,
         direction=direction,
         sorts=collection_mod.SORTS,
