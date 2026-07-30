@@ -19,6 +19,18 @@
      panel below and the free-text box are compiled into ONE Scryfall query, so
      there is a single filter engine and the panel doubles as syntax tutorial. #}
   <form class="collection-filters" method="get" action="/collection" id="collection-filters">
+    {# The French box is rendered EMPTY on purpose: its translation lands in
+       the query box below, so refining that query never re-runs the LLM. #}
+    <div class="collection-toolbar collection-ask">
+      <input type="search" name="ask" id="collection-ask" class="collection-nl"
+             value="" autocomplete="off"
+             placeholder="Décris ce que tu cherches — ex. « mes créatures vertes à moins de 3 manas »">
+      <button type="submit" class="chip nl-submit">Chercher ✨</button>
+      {% if not llm_ok %}
+        <span class="muted small">Sans clé API : reconnaissance de mots-clés seulement.</span>
+      {% endif %}
+    </div>
+
     <div class="collection-toolbar">
       <input type="search" name="q" id="collection-search" class="collection-search"
              value="{{ filters.q }}" autocomplete="off" spellcheck="false"
@@ -153,10 +165,24 @@
     </details>
   </form>
 
+  {% if translation and translation.error %}
+    <p class="query-error">
+      ⚠ {{ translation.error }}
+      {%- if not translation.query %} <span class="muted">Aucun filtre n'a été appliqué à partir de « {{ ask }} ».</span>{% endif %}
+    </p>
+  {% endif %}
   {% if query_error %}
     <p class="query-error">⚠ {{ query_error }}</p>
   {% elif query %}
-    <p class="query-echo mono small">Requête : <code>{{ query }}</code></p>
+    <p class="query-echo mono small">
+      {%- if ask and translation and translation.query %}
+        <span class="nl-echo">« {{ ask }} »</span> →
+      {% endif -%}
+      Requête : <code>{{ query }}</code>
+      {%- if translation and translation.source == "heuristic" %}
+        <span class="muted">(mots-clés)</span>
+      {% endif -%}
+    </p>
   {% endif %}
 
   <details class="syntax-help">

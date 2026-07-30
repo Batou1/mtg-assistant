@@ -264,10 +264,14 @@ def _clean(params, key: str) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def build_query(params) -> str:
+def build_query(params, q: str | None = None) -> str:
     """Compile the filter panel's fields (+ the raw ``q`` box) into one query.
 
-    ``q`` is parenthesised before being ANDed with the panel's terms: a raw
+    ``q`` overrides the ``q`` parameter — that is how a natural-language search
+    (``app.nlquery``) feeds its translated query through exactly the same path
+    as a hand-written one.
+
+    The raw query is parenthesised before being ANDed with the panel's terms: a
     query containing a top-level ``or`` would otherwise bind only its last
     branch to the panel's filters.
     """
@@ -313,7 +317,7 @@ def build_query(params) -> str:
     if copies in ("spare", "indeck"):
         parts.append(f"is:{copies}")
 
-    raw = _clean(params, "q")
+    raw = _clean(params, "q") if q is None else (q or "").strip()
     if raw and parts:
         return " ".join([f"({raw})"] + parts)
     return raw or " ".join(parts)

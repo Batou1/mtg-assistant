@@ -64,15 +64,22 @@ Résultats → buylist.build (glouton, ordre EDHREC, budget + plafond/carte en E
 ### Filtres de la collection (`/collection`)
 
 ```
-GET /collection?q=…&type=…&colors=…&mv_max=…&sort=…&dir=…
+GET /collection?ask=…&q=…&type=…&colors=…&mv_max=…&sort=…&dir=…
+  ask (français) → nlquery.translate  (LLM → requête Scryfall, RE-PARSÉE par
+                     scryquery ; 1 tentative de réparation avec l'erreur du
+                     parseur, sinon repli heuristique par mots-clés ; résultat
+                     mis en cache dans `meta`) → remplace la boîte `q`
   → collection.build_query  (panneau structuré + boîte libre → UNE requête Scryfall)
   → scryquery.parse         (AST ; QueryError = message affiché, aucun résultat)
   → collection.search       (filtrage puis tri côté serveur, cache local uniquement)
 ```
 
 Le filtrage est **entièrement côté serveur** : la page n'embarque que les cartes
-qui matchent. Le panneau de filtres est un *constructeur de requête* — il ne
-filtre pas lui-même, il produit la même syntaxe que la boîte libre (invariant 13).
+qui matchent. Le panneau de filtres et la boîte en français sont des
+*constructeurs de requête* — ils ne filtrent pas eux-mêmes, ils produisent la
+même syntaxe que la boîte libre (invariant 13). La requête générée est réinjectée
+dans la boîte `q` (et la boîte français est vidée) : l'utilisateur peut la lire
+et l'affiner sans relancer le LLM.
 
 ### Modules (`app/`)
 
@@ -88,6 +95,7 @@ filtre pas lui-même, il produit la même syntaxe que la boîte libre (invariant
 | `bulk_data.py` | Import des exports bulk Scryfall + rafraîchissement auto en thread démon. |
 | `cardsearch.py` | Recherche dans le pool Scryfall local en mémoire (type/keyword/texte oracle). |
 | `scryquery.py` | Parseur + évaluateur de la syntaxe Scryfall (`t:`, `o:`, `mv<=3`, `or`, `-`, regex…). |
+| `nlquery.py` | Question en français → requête Scryfall (LLM validé par `scryquery`, repli mots-clés). |
 | `deckgen.py` | Decklist Commander 100 cartes depuis la page EDHREC (déterministe). |
 | `poolbuild.py` | Meilleur deck depuis une liste fournie (`FormatSpec` par format ; LLM + fallback). |
 | `formats60.py` | Deck 60 cartes complet par archétype (Brave → LLM → validation Scryfall, 4-of, manabase). |
@@ -175,10 +183,15 @@ filtre pas lui-même, il produit la même syntaxe que la boîte libre (invariant
 
 13. **Un seul moteur de filtre pour la collection.** Les contrôles structurés
     de `/collection` sont *compilés* en syntaxe Scryfall par
-    `collection.build_query`, jamais évalués par un second chemin de code (ni
-    en Python, ni en JS) : c'est ce qui garantit que le panneau et la boîte
-    libre ne peuvent pas diverger, et que la requête effective affichée sous la
-    barre décrit exactement ce qui a été filtré. Une clé inconnue lève
+    `collection.build_query`, et la recherche en langage naturel est *traduite*
+    en syntaxe Scryfall par `nlquery.translate` — jamais évalués par un second
+    chemin de code (ni en Python, ni en JS) : c'est ce qui garantit que les
+    trois entrées ne peuvent pas diverger, et que la requête effective affichée
+    sous la barre décrit exactement ce qui a été filtré. Corollaire côté LLM :
+    ce qu'il produit est une *requête*, systématiquement re-parsée par
+    `scryquery` avant d'être appliquée — c'est l'ancrage anti-hallucination
+    (invariant 1) transposé aux filtres, une clé inventée est rejetée, jamais
+    appliquée. Une clé inconnue lève
     `scryquery.QueryError` (message affiché, zéro résultat) plutôt que d'être
     ignorée. Une carte que le cache n'a pas encore résolue n'a que son nom :
     tout filtre portant sur des données de carte doit répondre « non » pour

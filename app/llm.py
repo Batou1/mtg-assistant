@@ -99,6 +99,75 @@ def chat_text(system: str, user: str) -> str | None:
     return _message(system, user, 800) or None
 
 
+# Filter vocabulary handed to the model for collection search. It mirrors
+# app/scryquery.py (_KEYS) — keep the two in sync when adding a filter. The
+# model can only ever *propose* a query: app/nlquery.py re-parses whatever
+# comes back with the real engine, so an invented key is rejected rather than
+# silently applied (anti-hallucination anchoring, invariant 1).
+_QUERY_SYNTAX = """\
+- t:<type ou sous-type> — ex. t:creature, t:goblin, t:equipment, t:legendary
+- o:<texte> — texte de règles (oracle), en ANGLAIS ; guillemets si plusieurs mots
+- kw:<mot-clé> — mot-clé officiel en anglais : kw:flying, kw:trample, kw:deathtouch
+- mv, pow, tou, loy — coût de mana converti, force, endurance, loyauté
+  (opérateurs : mv:3, mv<=3, mv>3, mv>=2)
+- r:<rareté> — common, uncommon, rare, mythic (r>=rare fonctionne)
+- c:<couleurs> — couleurs de la carte : c:r, c:rg (contient), c=r (exactement),
+  c:m (multicolore), c:c (incolore)
+- id<=<couleurs> — identité de couleur INCLUSE dans (ce qui est jouable sous un
+  commandant) ; accepte aussi les noms de guildes : id<=izzet, id<=jund
+- m:<coût> — symboles du coût de mana, ex. m:{2}{R}
+- s:<code d'édition> — ex. s:mh3 ; year>=2020 ; a:"<artiste>"
+- f:<format> — légalité : f:commander, f:modern, f:pauper… ; banned:<format>
+- is:commander, is:legendary, is:permanent, is:vanilla, is:dfc, is:reserved,
+  is:multicolor, is:colorless, is:mono, is:hybrid, is:reprint, is:promo
+- eur — prix unitaire en euros : eur<=5, eur>20
+- qty, deck — exemplaires POSSÉDÉS et exemplaires déjà rangés dans un deck :
+  qty>=4, deck>0 ; is:indeck (au moins une copie en deck),
+  is:spare (au moins une copie libre)
+- name:<texte> — nom de la carte ; !"Nom Exact" pour une correspondance exacte
+Combinaisons : espace = ET, `or` = OU, `-` devant un filtre = exclusion,
+parenthèses pour grouper. Ex. `t:creature id<=g mv<=3 -o:defender`."""
+
+_QUERY_SYSTEM = (
+    "Tu traduis la demande d'un joueur de Magic: the Gathering, écrite en "
+    "français courant, en UNE requête de recherche au format Scryfall qui "
+    "filtrera SA COLLECTION de cartes.\n\n"
+    "Filtres autorisés (n'en utilise AUCUN autre) :\n" + _QUERY_SYNTAX + "\n\n"
+    "Règles :\n"
+    "- Réponds UNIQUEMENT par la requête, sur une seule ligne, sans explication, "
+    "sans guillemets autour, sans balise Markdown.\n"
+    "- Les valeurs de t:, o: et kw: s'écrivent en ANGLAIS (les cartes sont en "
+    "anglais), même si la demande est en français.\n"
+    "- Traduis l'intention, pas les mots : « ce que je peux jouer sous un "
+    "commandant Simic » → id<=gu, « mes bombes » → mv>=5 t:creature, « pas cher » "
+    "→ eur<=2.\n"
+    "- Une demande de couleur ambiguë se traduit par l'identité (id<=), qui est "
+    "ce qu'un joueur veut presque toujours dire.\n"
+    "- N'ajoute aucun filtre qui n'est pas demandé, et surtout aucun nom de carte "
+    "que le joueur n'a pas cité.\n"
+    "- Si la demande ne contient aucun critère traduisible, réponds exactement : NONE"
+)
+
+
+def collection_query(question: str, previous: str | None = None,
+                     parse_error: str | None = None) -> str | None:
+    """Translate a French question into a Scryfall query string.
+
+    ``previous``/``parse_error`` feed one repair attempt: the caller parses the
+    first answer with the real engine and, when it doesn't compile, hands the
+    model its own output plus the parser's message. That keeps the model honest
+    without a free-form retry loop.
+    """
+    user = f"Demande du joueur : {question}"
+    if previous and parse_error:
+        user += (
+            f"\n\nTa réponse précédente était « {previous} » et le moteur de "
+            f"recherche l'a refusée : {parse_error}\n"
+            "Corrige-la en n'utilisant QUE les filtres autorisés."
+        )
+    return _message(_QUERY_SYSTEM, user, 300)
+
+
 def _budget_rules(intent: dict) -> list[str]:
     """Budget constraints, worded for a deck proposal (French, for the prompt).
 

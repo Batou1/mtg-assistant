@@ -14,11 +14,11 @@ from starlette.concurrency import run_in_threadpool
 
 from . import (
     analysis, bulk_data, chat, collection as collection_mod, commanders, db, deckgen, formats60,
-    intent, llm, manabox, poolbuild, scryquery, textutil,
+    intent, llm, manabox, nlquery, poolbuild, scryquery, textutil,
 )
 from .config import settings
 
-APP_VERSION = "2.0"
+APP_VERSION = "2.1"
 
 logger = logging.getLogger(__name__)
 
@@ -234,16 +234,26 @@ async def import_collection(request: Request, file: UploadFile = File(...)):
 def collection(request: Request):
     """Collection browser with Scryfall-syntax filtering.
 
-    The structured panel and the free-text box are compiled into a single
-    query (``collection.build_query``) so both go through one filter engine;
-    the effective query is echoed back to the page, which is also how the
-    panel teaches the syntax.
+    The structured panel, the free-text box and the plain-French box are
+    compiled into a single query (``collection.build_query``) so all three go
+    through one filter engine; the effective query is echoed back to the page,
+    which is also how they teach the syntax.
+
+    A natural-language search REPLACES the query box rather than adding to it:
+    its translation is what lands in the box, and the French field is rendered
+    empty afterwards so refining the generated query never re-triggers a
+    translation.
     """
     profile = current_profile(request)
     params = request.query_params
     filters = {k: params.get(k, "") for k in collection_mod.FILTER_FIELDS}
     filters["colors"] = params.getlist("colors")
-    effective = collection_mod.build_query(params)
+
+    ask = (params.get("ask") or "").strip()
+    translation = nlquery.translate(ask) if ask else None
+    if translation is not None:
+        filters["q"] = translation["query"]
+    effective = collection_mod.build_query(params, q=filters["q"] if translation else None)
 
     error = None
     cards: list[dict] = []
@@ -269,6 +279,9 @@ def collection(request: Request):
         query=effective,
         query_error=error,
         filtered=bool(effective),
+        ask=ask,
+        translation=translation,
+        llm_ok=llm.is_available(),
         panel_open=any(v for k, v in filters.items() if k != "q"),
         sort=sort,
         direction=direction,
