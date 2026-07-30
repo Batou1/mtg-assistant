@@ -128,6 +128,20 @@ def test_colorless_and_identity_semantics():
     assert match("id:izzet", card=SOL_RING, extra=extra) is True
 
 
+def test_mana_symbol_forms():
+    """`m:` accepts braced and bare forms, and hybrid/phyrexian symbols."""
+    hybrid = {"name": "Boros Charm", "mana_cost": "{R/W}{1}", "type_line": "Instant",
+              "oracle_text": "x", "colors": ["R", "W"]}
+    extra = {"qty": 1, "deck_qty": 0}
+    assert match("m:2R") is True                  # bare form == {2}{R}
+    assert match("m:{R}") is True
+    assert match("m>={R}") is True
+    assert match("m:{R/W}", card=hybrid, extra=extra) is True
+    assert match("m:{R}", card=hybrid, extra=extra) is False
+    # A `/` inside a value must not be read as the start of a regex literal.
+    assert match("m:{R/W}{1}", card=hybrid, extra=extra) is True
+
+
 def test_quoted_values_keep_their_spaces_and_parens():
     assert match('o:"for a Goblin card"') is True
     assert match('o:"for a Goblin card" t:creature') is True

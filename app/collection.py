@@ -208,8 +208,26 @@ def search(profile_id: int, query: scryquery.Query,
 #: Query-string parameters the filter panel round-trips (``colors`` is a list).
 FILTER_FIELDS = (
     "q", "name", "oracle", "type", "subtype", "rarity", "kw", "set", "format",
-    "mv_min", "mv_max", "pow_min", "pow_max", "tou_min", "tou_max",
+    "mana", "mv_min", "mv_max", "pow_min", "pow_max", "tou_min", "tou_max",
     "price_min", "price_max", "qty_min", "copies", "color_mode",
+)
+
+#: Mana symbols offered as click-to-insert chips under the "Symboles de mana"
+#: field: (symbol, WUBRG class for the swatch or "" for a neutral chip, title).
+MANA_SYMBOLS = (
+    ("{W}", "W", "Blanc"),
+    ("{U}", "U", "Bleu"),
+    ("{B}", "B", "Noir"),
+    ("{R}", "R", "Rouge"),
+    ("{G}", "G", "Vert"),
+    ("{C}", "", "Mana incolore"),
+    ("{X}", "", "Coût variable X"),
+    ("{1}", "", "1 mana générique"),
+    ("{2}", "", "2 manas génériques"),
+    ("{3}", "", "3 manas génériques"),
+    ("{W/U}", "", "Hybride (blanc ou bleu)"),
+    ("{2/W}", "", "Mono-hybride (2 génériques ou blanc)"),
+    ("{W/P}", "", "Phyrexian (blanc ou 2 points de vie)"),
 )
 
 #: value -> (label, query fragment) for the "copies" selector, which exists
@@ -294,6 +312,11 @@ def build_query(params, q: str | None = None) -> str:
     kw = _clean(params, "kw")
     if kw:
         parts.append(f"kw:{quote(kw)}")
+    # Spaces between symbols are how people type a cost ("{2} {R}"); the query
+    # syntax has no room for them, and scryquery reads "2R" as {2}{R} anyway.
+    mana = _clean(params, "mana").replace(" ", "")
+    if mana:
+        parts.append(f"m:{mana}")
     set_code = _clean(params, "set")
     if set_code:
         parts.append(f"s:{quote(set_code)}")
