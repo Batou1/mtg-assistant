@@ -14,11 +14,11 @@ from starlette.concurrency import run_in_threadpool
 
 from . import (
     analysis, bulk_data, chat, collection as collection_mod, commanders, db, deckgen, formats60,
-    intent, llm, manabox, poolbuild, textutil,
+    intent, llm, manabox, poolbuild, scryquery, textutil,
 )
 from .config import settings
 
-APP_VERSION = "1.9"
+APP_VERSION = "2.0"
 
 logger = logging.getLogger(__name__)
 
@@ -232,15 +232,56 @@ async def import_collection(request: Request, file: UploadFile = File(...)):
 
 @app.get("/collection", response_class=HTMLResponse)
 def collection(request: Request):
+    """Collection browser with Scryfall-syntax filtering.
+
+    The structured panel and the free-text box are compiled into a single
+    query (``collection.build_query``) so both go through one filter engine;
+    the effective query is echoed back to the page, which is also how the
+    panel teaches the syntax.
+    """
     profile = current_profile(request)
-    cards = collection_mod.enrich(profile["id"])
+    params = request.query_params
+    filters = {k: params.get(k, "") for k in collection_mod.FILTER_FIELDS}
+    filters["colors"] = params.getlist("colors")
+    effective = collection_mod.build_query(params)
+
+    error = None
+    cards: list[dict] = []
+    query = None
+    try:
+        query = scryquery.parse(effective)
+    except scryquery.QueryError as exc:
+        error = str(exc)
+
+    sort = collection_mod.resolve_sort(params.get("sort"), query.order if query else None)
+    direction = params.get("dir") or (query.direction if query else None)
+    if direction not in ("asc", "desc"):
+        direction = "desc" if collection_mod.SORTS[sort]["desc"] else "asc"
+    if query is not None:
+        cards = collection_mod.search(profile["id"], query, sort, direction)
+
+    distinct_all, total_all = db.collection_count(profile["id"])
     ctx = _base_context(
         request,
         profile,
         cards=cards,
+        filters=filters,
+        query=effective,
+        query_error=error,
+        filtered=bool(effective),
+        panel_open=any(v for k, v in filters.items() if k != "q"),
+        sort=sort,
+        direction=direction,
+        sorts=collection_mod.SORTS,
+        type_choices=collection_mod.TYPE_CHOICES,
+        rarity_choices=collection_mod.RARITY_CHOICES,
+        copies_choices=collection_mod.COPIES_CHOICES,
+        color_mode_choices=collection_mod.COLOR_MODE_CHOICES,
         distinct=len(cards),
         total=sum(c["qty"] for c in cards),
         total_value=collection_mod.total_value_eur(cards),
+        collection_distinct=distinct_all,
+        collection_total=total_all,
     )
     return _render(request, profile, "collection.html", ctx)
 

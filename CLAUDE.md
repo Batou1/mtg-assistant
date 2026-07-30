@@ -61,6 +61,19 @@ Résultats → buylist.build (glouton, ordre EDHREC, budget + plafond/carte en E
                            accepte nom seul ou (nom, qté))
 ```
 
+### Filtres de la collection (`/collection`)
+
+```
+GET /collection?q=…&type=…&colors=…&mv_max=…&sort=…&dir=…
+  → collection.build_query  (panneau structuré + boîte libre → UNE requête Scryfall)
+  → scryquery.parse         (AST ; QueryError = message affiché, aucun résultat)
+  → collection.search       (filtrage puis tri côté serveur, cache local uniquement)
+```
+
+Le filtrage est **entièrement côté serveur** : la page n'embarque que les cartes
+qui matchent. Le panneau de filtres est un *constructeur de requête* — il ne
+filtre pas lui-même, il produit la même syntaxe que la boîte libre (invariant 13).
+
 ### Modules (`app/`)
 
 | Module | Rôle |
@@ -74,12 +87,13 @@ Résultats → buylist.build (glouton, ordre EDHREC, budget + plafond/carte en E
 | `scryfall.py` | Résolution nom/id → carte (batch `/cards/collection`), accesseurs (prix, image…). |
 | `bulk_data.py` | Import des exports bulk Scryfall + rafraîchissement auto en thread démon. |
 | `cardsearch.py` | Recherche dans le pool Scryfall local en mémoire (type/keyword/texte oracle). |
+| `scryquery.py` | Parseur + évaluateur de la syntaxe Scryfall (`t:`, `o:`, `mv<=3`, `or`, `-`, regex…). |
 | `deckgen.py` | Decklist Commander 100 cartes depuis la page EDHREC (déterministe). |
 | `poolbuild.py` | Meilleur deck depuis une liste fournie (`FormatSpec` par format ; LLM + fallback). |
 | `formats60.py` | Deck 60 cartes complet par archétype (Brave → LLM → validation Scryfall, 4-of, manabase). |
 | `chat.py` | Boucle agent (tools Anthropic sur les modules ci-dessus), tours en thread. |
 | `buylist.py` | Liste d'achat gloutonne sous budget, prix EUR Cardmarket. |
-| `collection.py` | Enrichissement de la collection depuis le cache local uniquement. |
+| `collection.py` | Enrichissement + recherche de la collection depuis le cache local uniquement. |
 | `commanders.py` | Éligibilité commandant + variantes (`FORMATS`, `SCRYFALL_LEGALITY`). |
 | `manabox.py` / `parsing.py` | Parsing CSV ManaBox / decklists collées. |
 | `research.py` | Brave Search API (titres+snippets pour ancrer le LLM). |
@@ -158,6 +172,18 @@ Résultats → buylist.build (glouton, ordre EDHREC, budget + plafond/carte en E
     possédées que les copies libres (`in_deck_qty` pour l'affichage), et le
     bonus de `poolbuild` les exclut. Toute nouvelle consommation de la
     collection pour construire un deck doit suivre cette convention.
+
+13. **Un seul moteur de filtre pour la collection.** Les contrôles structurés
+    de `/collection` sont *compilés* en syntaxe Scryfall par
+    `collection.build_query`, jamais évalués par un second chemin de code (ni
+    en Python, ni en JS) : c'est ce qui garantit que le panneau et la boîte
+    libre ne peuvent pas diverger, et que la requête effective affichée sous la
+    barre décrit exactement ce qui a été filtré. Une clé inconnue lève
+    `scryquery.QueryError` (message affiché, zéro résultat) plutôt que d'être
+    ignorée. Une carte que le cache n'a pas encore résolue n'a que son nom :
+    tout filtre portant sur des données de carte doit répondre « non » pour
+    elle (`_Term.needs_card`), sinon une identité de couleur absente rendrait
+    `id<=u` vrai partout.
 
 ## Conventions
 

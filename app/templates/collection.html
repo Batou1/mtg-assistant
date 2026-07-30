@@ -6,35 +6,174 @@
 <div class="page-head" style="display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
   <div>
     <h1 style="font-size: 1.7rem; margin-bottom: 4px;">Ma collection</h1>
-    <p class="muted mono small">{{ total }} cartes · {{ distinct }} uniques · {{ "%.2f"|format(total_value) }} €</p>
+    <p class="muted mono small">
+      {{ total }} cartes · {{ distinct }} uniques · {{ "%.2f"|format(total_value) }} €
+      {%- if filtered %} · filtré sur {{ collection_total }} cartes{% endif %}
+    </p>
   </div>
   <a href="/"><button type="button">Importer ManaBox</button></a>
 </div>
 
-{% if cards %}
-  <div class="collection-toolbar">
-    <input type="text" class="collection-search" id="collection-search" placeholder="Rechercher une carte…">
-    <div class="pip-filters" id="pip-filters">
-      {% for c in ["W", "U", "B", "R", "G"] %}
-        <button type="button" class="pip-filter" data-color="{{ c }}" title="{{ COLOR_NAMES[c] }}">
-          <span class="pip-swatch {{ c }}"></span>
-        </button>
-      {% endfor %}
+{% if collection_distinct %}
+  {# Filtering happens server-side (app/collection.py + app/scryquery.py): the
+     panel below and the free-text box are compiled into ONE Scryfall query, so
+     there is a single filter engine and the panel doubles as syntax tutorial. #}
+  <form class="collection-filters" method="get" action="/collection" id="collection-filters">
+    <div class="collection-toolbar">
+      <input type="search" name="q" id="collection-search" class="collection-search"
+             value="{{ filters.q }}" autocomplete="off" spellcheck="false"
+             placeholder="Requête Scryfall — ex. t:creature mv&lt;=3 -o:vol">
+      <button type="submit">Filtrer</button>
+      <select class="chip" name="sort" data-autosubmit>
+        {% for key, spec in sorts.items() %}
+          <option value="{{ key }}" {% if key == sort %}selected{% endif %}>Tri · {{ spec.label }}</option>
+        {% endfor %}
+      </select>
+      <select class="chip" name="dir" data-autosubmit title="Sens du tri">
+        <option value="desc" {% if direction == "desc" %}selected{% endif %}>↓ Décroissant</option>
+        <option value="asc" {% if direction == "asc" %}selected{% endif %}>↑ Croissant</option>
+      </select>
+      {% if filtered %}<a class="link small" href="/collection">Réinitialiser</a>{% endif %}
     </div>
-    <select class="chip" id="type-filter">
-      <option value="">Type · Tous</option>
-      <option value="Creature">Créatures</option>
-      <option value="Instant">Éphémères</option>
-      <option value="Sorcery">Rituels</option>
-      <option value="Artifact">Artefacts</option>
-      <option value="Enchantment">Enchantements</option>
-      <option value="Planeswalker">Planeswalkers</option>
-      <option value="Land">Terrains</option>
-    </select>
-    <button type="button" class="chip" data-sort="value" id="sort-value">Tri · Valeur ↓</button>
-    <button type="button" class="chip active" data-sort="qty" id="sort-qty">Tri · Quantité ↓</button>
-    <button type="button" class="chip" data-sort="name" id="sort-name">Tri · Nom</button>
-  </div>
+
+    <details class="filter-panel" {% if panel_open %}open{% endif %}>
+      <summary>Filtres avancés</summary>
+      <div class="filter-grid">
+        <label class="field">
+          <span class="flabel">Nom</span>
+          <input type="text" name="name" value="{{ filters.name }}" placeholder="Sol Ring">
+        </label>
+        <label class="field">
+          <span class="flabel">Texte (oracle)</span>
+          <input type="text" name="oracle" value="{{ filters.oracle }}" placeholder="sacrifice a creature">
+        </label>
+        <label class="field">
+          <span class="flabel">Type</span>
+          <select name="type">
+            {% for value, label in type_choices.items() %}
+              <option value="{{ value }}" {% if value == filters.type %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="flabel">Sous-type <span class="flabel-note">(ou type libre)</span></span>
+          <input type="text" name="subtype" value="{{ filters.subtype }}" placeholder="Goblin, Equipment…">
+        </label>
+        <label class="field">
+          <span class="flabel">Rareté</span>
+          <select name="rarity">
+            {% for value, label in rarity_choices.items() %}
+              <option value="{{ value }}" {% if value == filters.rarity %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="flabel">Mot-clé</span>
+          <input type="text" name="kw" value="{{ filters.kw }}" placeholder="flying, deathtouch…">
+        </label>
+
+        <div class="field field-wide">
+          <span class="flabel">Couleurs</span>
+          <div class="filter-colors">
+            <div class="pip-choices">
+              {% for sym, name in COLOR_NAMES.items() %}
+                <label class="pip-choice" title="{{ name }}">
+                  <input type="checkbox" name="colors" value="{{ sym }}"
+                         {% if sym in filters.colors %}checked{% endif %}>
+                  <span class="pip-swatch {{ sym }}"></span>
+                </label>
+              {% endfor %}
+            </div>
+            <select name="color_mode">
+              {% for value, label in color_mode_choices.items() %}
+                <option value="{{ value }}" {% if value == filters.color_mode %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="flabel">Coût de mana</span>
+          <div class="range-row">
+            <input type="text" name="mv_min" inputmode="decimal" value="{{ filters.mv_min }}" placeholder="min">
+            <input type="text" name="mv_max" inputmode="decimal" value="{{ filters.mv_max }}" placeholder="max">
+          </div>
+        </div>
+        <div class="field">
+          <span class="flabel">Force</span>
+          <div class="range-row">
+            <input type="text" name="pow_min" inputmode="decimal" value="{{ filters.pow_min }}" placeholder="min">
+            <input type="text" name="pow_max" inputmode="decimal" value="{{ filters.pow_max }}" placeholder="max">
+          </div>
+        </div>
+        <div class="field">
+          <span class="flabel">Endurance</span>
+          <div class="range-row">
+            <input type="text" name="tou_min" inputmode="decimal" value="{{ filters.tou_min }}" placeholder="min">
+            <input type="text" name="tou_max" inputmode="decimal" value="{{ filters.tou_max }}" placeholder="max">
+          </div>
+        </div>
+        <div class="field">
+          <span class="flabel">Prix unitaire (€)</span>
+          <div class="range-row">
+            <input type="text" name="price_min" inputmode="decimal" value="{{ filters.price_min }}" placeholder="min">
+            <input type="text" name="price_max" inputmode="decimal" value="{{ filters.price_max }}" placeholder="max">
+          </div>
+        </div>
+        <label class="field">
+          <span class="flabel">Quantité minimum</span>
+          <input type="text" name="qty_min" inputmode="numeric" value="{{ filters.qty_min }}" placeholder="2">
+        </label>
+        <label class="field">
+          <span class="flabel">Édition <span class="flabel-note">(code)</span></span>
+          <input type="text" name="set" value="{{ filters.set }}" placeholder="mh3">
+        </label>
+        <label class="field">
+          <span class="flabel">Légal en</span>
+          <select name="format">
+            <option value="">Format · Tous</option>
+            {% for value, label in FORMAT_LABELS.items() %}
+              <option value="{{ value }}" {% if value == filters.format %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="flabel">Copies</span>
+          <select name="copies">
+            {% for value, label in copies_choices.items() %}
+              <option value="{{ value }}" {% if value == filters.copies %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="filter-actions">
+        <button type="submit">Appliquer les filtres</button>
+        <a class="link small" href="/collection">Tout effacer</a>
+      </div>
+    </details>
+  </form>
+
+  {% if query_error %}
+    <p class="query-error">⚠ {{ query_error }}</p>
+  {% elif query %}
+    <p class="query-echo mono small">Requête : <code>{{ query }}</code></p>
+  {% endif %}
+
+  <details class="syntax-help">
+    <summary>Aide sur la syntaxe (identique à Scryfall)</summary>
+    <ul>
+      <li><code>t:creature</code> · <code>t:goblin</code> — type et sous-type</li>
+      <li><code>o:"draw a card"</code> · <code>o:/^Flying/</code> — texte oracle (guillemets, ou regex entre <code>/…/</code>)</li>
+      <li><code>mv&gt;=4</code> · <code>pow&gt;5</code> · <code>tou&lt;=2</code> · <code>loy:3</code> — valeurs numériques</li>
+      <li><code>r:mythic</code> · <code>r&gt;=rare</code> — rareté</li>
+      <li><code>c:rg</code> (contient) · <code>c=r</code> (exactement) · <code>id&lt;=wu</code> (identité) · <code>c:m</code> (multicolore)</li>
+      <li><code>kw:flying</code> · <code>m:{2}{R}</code> · <code>s:mh3</code> · <code>year&gt;=2020</code> · <code>a:"Rebecca Guay"</code></li>
+      <li><code>f:commander</code> · <code>banned:legacy</code> — légalité</li>
+      <li><code>is:commander</code> · <code>is:legendary</code> · <code>is:dfc</code> · <code>is:reserved</code> · <code>is:vanilla</code></li>
+      <li><code>eur&lt;=5</code> · <code>qty&gt;=4</code> · <code>deck&gt;0</code> · <code>is:spare</code> · <code>is:indeck</code> — prix et exemplaires possédés</li>
+      <li>Combinaisons : <code>-t:land</code> (exclusion), <code>or</code>, <code>and</code>, parenthèses, <code>!"Sol Ring"</code> (nom exact)</li>
+    </ul>
+  </details>
 
   {# Tiles are rendered client-side in chunks as you scroll: a 10k+ card
      collection server-rendered both image and text blocks per card, which
@@ -42,7 +181,9 @@
      mirrors the image_or_text macro in _cardview.html — keep them in sync. #}
   <div class="collection-grid" id="collection-grid"></div>
   <div id="collection-sentinel" aria-hidden="true"></div>
-  <p class="muted small" id="collection-empty" style="display: none;">Aucune carte ne correspond aux filtres.</p>
+  {% if not cards %}
+    <p class="muted small">Aucune carte ne correspond aux filtres.</p>
+  {% endif %}
 
   <script id="collection-data" type="application/json">{{ cards|tojson }}</script>
   <script>
@@ -54,14 +195,8 @@
       // (488w) image on hiDPI screens — sharp at every zoom level.
       var SIZES = "(max-width: 420px) 46vw, (max-width: 640px) 31vw, (max-width: 980px) 23vw, 15vw";
 
-      var search = document.getElementById("collection-search");
-      var typeFilter = document.getElementById("type-filter");
       var grid = document.getElementById("collection-grid");
       var sentinel = document.getElementById("collection-sentinel");
-      var empty = document.getElementById("collection-empty");
-      var activeColors = [];
-      var sortKey = "qty";
-      var filtered = [];
       var rendered = 0;
 
       function el(tag, className, text) {
@@ -100,6 +235,11 @@
         if (c.type_line) text.appendChild(el("div", "cv-type", c.type_line));
         if (c.oracle_text) text.appendChild(el("div", "cv-oracle", c.oracle_text));
         if (c.power_toughness) text.appendChild(el("div", "cv-pt mono", c.power_toughness));
+        var meta = [];
+        if (c.set_code) meta.push(c.set_code);
+        if (c.rarity) meta.push(c.rarity);
+        if (c.deck_qty) meta.push(c.deck_qty + " en deck");
+        if (meta.length) text.appendChild(el("div", "cv-set mono", meta.join(" · ")));
         if (c.price_eur !== null && c.price_eur !== undefined) {
           text.appendChild(el("div", "cv-price mono", c.price_eur.toFixed(2) + " €"));
         }
@@ -108,63 +248,25 @@
       }
 
       function renderMore() {
-        var end = Math.min(rendered + CHUNK, filtered.length);
+        var end = Math.min(rendered + CHUNK, DATA.length);
         if (end <= rendered) return;
         var frag = document.createDocumentFragment();
-        for (var i = rendered; i < end; i++) frag.appendChild(makeTile(filtered[i]));
+        for (var i = rendered; i < end; i++) frag.appendChild(makeTile(DATA[i]));
         rendered = end;
         grid.appendChild(frag);
-      }
-
-      function apply() {
-        var q = (search.value || "").trim().toLowerCase();
-        var type = typeFilter.value.toLowerCase();
-        filtered = DATA.filter(function (c) {
-          if (q && c.name.toLowerCase().indexOf(q) === -1) return false;
-          if (type && c.type_line.toLowerCase().indexOf(type) === -1) return false;
-          return activeColors.every(function (col) { return c.colors.indexOf(col) !== -1; });
-        });
-        filtered.sort(function (a, b) {
-          if (sortKey === "qty") return b.qty - a.qty;
-          if (sortKey === "value") return (b.line_total || 0) - (a.line_total || 0);
-          return a.name.localeCompare(b.name);
-        });
-        grid.textContent = "";
-        rendered = 0;
-        renderMore();
-        empty.style.display = filtered.length ? "none" : "";
       }
 
       new IntersectionObserver(function (entries) {
         if (entries.some(function (e) { return e.isIntersecting; })) renderMore();
       }, { rootMargin: "800px 0px" }).observe(sentinel);
 
-      function setSort(key, btn) {
-        sortKey = key;
-        document.querySelectorAll(".collection-toolbar [data-sort]").forEach(function (b) {
-          b.classList.remove("active");
-        });
-        btn.classList.add("active");
-        apply();
-      }
-
-      search.addEventListener("input", apply);
-      typeFilter.addEventListener("change", apply);
-      document.getElementById("sort-name").addEventListener("click", function () { setSort("name", this); });
-      document.getElementById("sort-qty").addEventListener("click", function () { setSort("qty", this); });
-      document.getElementById("sort-value").addEventListener("click", function () { setSort("value", this); });
-
-      document.querySelectorAll(".pip-filter").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          var c = btn.getAttribute("data-color");
-          var i = activeColors.indexOf(c);
-          if (i === -1) { activeColors.push(c); btn.classList.add("active"); }
-          else { activeColors.splice(i, 1); btn.classList.remove("active"); }
-          apply();
-        });
+      // Selects re-run the search straight away; the text inputs wait for
+      // Enter or the button, so typing never fires a round-trip per keystroke.
+      document.querySelectorAll("#collection-filters [data-autosubmit]").forEach(function (node) {
+        node.addEventListener("change", function () { node.form.submit(); });
       });
 
-      apply();
+      renderMore();
     })();
   </script>
 {% else %}
