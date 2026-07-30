@@ -64,7 +64,7 @@ Résultats → buylist.build (glouton, ordre EDHREC, budget + plafond/carte en E
 ### Filtres de la collection (`/collection`)
 
 ```
-GET /collection?ask=…&q=…&type=…&colors=…&mv_max=…&sort=…&dir=…
+GET /collection?ask=…&q=…&type=…&colors=…&mana=…&mv_max=…&sort=…&dir=…
   ask (français) → nlquery.translate  (LLM → requête Scryfall, RE-PARSÉE par
                      scryquery ; 1 tentative de réparation avec l'erreur du
                      parseur, sinon repli heuristique par mots-clés ; résultat

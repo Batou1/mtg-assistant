@@ -18,7 +18,7 @@ from . import (
 )
 from .config import settings
 
-APP_VERSION = "2.1"
+APP_VERSION = "2.2"
 
 logger = logging.getLogger(__name__)
 
@@ -290,6 +290,7 @@ def collection(request: Request):
         rarity_choices=collection_mod.RARITY_CHOICES,
         copies_choices=collection_mod.COPIES_CHOICES,
         color_mode_choices=collection_mod.COLOR_MODE_CHOICES,
+        mana_symbols=collection_mod.MANA_SYMBOLS,
         distinct=len(cards),
         total=sum(c["qty"] for c in cards),
         total_value=collection_mod.total_value_eur(cards),

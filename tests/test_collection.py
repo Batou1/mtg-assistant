@@ -189,6 +189,26 @@ def test_build_query_compiles_the_panel_into_scryfall_syntax(fresh):
     assert collection.build_query({}) == ""
 
 
+def test_build_query_strips_spaces_between_mana_symbols(fresh):
+    """The symbol chips and hand-typing both produce a valid `m:` term."""
+    collection = fresh[1]
+    import app.scryquery as scryquery
+    for typed, expected in (("{2} {R}", "m:{2}{R}"), ("{2}{R}", "m:{2}{R}"),
+                            ("2R", "m:2R"), ("{W/U}", "m:{W/U}")):
+        query = collection.build_query({"mana": typed})
+        assert query == expected
+        scryquery.parse(query)
+
+
+def test_search_matches_on_mana_symbols(fresh):
+    _db, collection, pid = _stocked(fresh)
+    # Goblin Matron is {R}, Counterspell {U}{U}, Sol Ring {1}.
+    assert _names(collection, pid, "m:{R}") == ["Goblin Matron"]
+    assert _names(collection, pid, "m:{U}{U}") == ["Counterspell"]
+    assert _names(collection, pid, "m:{U}") == ["Counterspell"]
+    assert _names(collection, pid, "m:{G}") == []
+
+
 def test_build_query_parenthesises_the_raw_box(fresh):
     """A top-level `or` in the free-text box must not swallow the panel's terms."""
     collection = fresh[1]

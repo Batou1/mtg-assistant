@@ -83,6 +83,19 @@
           <span class="flabel">Mot-clé</span>
           <input type="text" name="kw" value="{{ filters.kw }}" placeholder="flying, deathtouch…">
         </label>
+        <label class="field">
+          <span class="flabel">Édition <span class="flabel-note">(code)</span></span>
+          <input type="text" name="set" value="{{ filters.set }}" placeholder="mh3">
+        </label>
+        <label class="field">
+          <span class="flabel">Légal en</span>
+          <select name="format">
+            <option value="">Format · Tous</option>
+            {% for value, label in FORMAT_LABELS.items() %}
+              <option value="{{ value }}" {% if value == filters.format %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
 
         <div class="field field-wide">
           <span class="flabel">Couleurs</span>
@@ -104,8 +117,32 @@
           </div>
         </div>
 
+        <div class="field field-wide">
+          <span class="flabel">Symboles de mana
+            <span class="flabel-note">— la carte doit contenir au moins ces symboles</span>
+          </span>
+          <input type="text" name="mana" id="mana-input" class="mana-input"
+                 value="{{ filters.mana }}" autocomplete="off" spellcheck="false"
+                 placeholder="{2}{R} — ou 2R, ou clique sur les symboles ci-dessous">
+          {# Clicking a chip appends its symbol: the fastest way to learn how a
+             cost is written, and it guarantees a well-formed value. #}
+          <div class="mana-legend" id="mana-legend">
+            {% for symbol, color, label in mana_symbols %}
+              <button type="button" class="mana-sym {{ color }}" data-symbol="{{ symbol }}"
+                      title="{{ label }}">{{ symbol }}</button>
+            {% endfor %}
+            <button type="button" class="mana-sym mana-clear" data-clear="1" title="Vider le champ">✕</button>
+          </div>
+          <p class="mana-hint muted small">
+            <code>{2}{R}</code> = deux manas génériques et un rouge ·
+            <code>{G}{G}</code> = au moins deux verts ·
+            <code>{X}</code> = coût variable ·
+            <code>{W/U}</code> hybride · <code>{W/P}</code> phyrexian.
+            Pour un coût <em>exactement</em> égal, écris <code>m={2}{R}</code> dans la requête Scryfall.
+          </p>
+        </div>
         <div class="field">
-          <span class="flabel">Coût de mana</span>
+          <span class="flabel">Coût de mana <span class="flabel-note">(valeur convertie)</span></span>
           <div class="range-row">
             <input type="text" name="mv_min" inputmode="decimal" value="{{ filters.mv_min }}" placeholder="min">
             <input type="text" name="mv_max" inputmode="decimal" value="{{ filters.mv_max }}" placeholder="max">
@@ -135,19 +172,6 @@
         <label class="field">
           <span class="flabel">Quantité minimum</span>
           <input type="text" name="qty_min" inputmode="numeric" value="{{ filters.qty_min }}" placeholder="2">
-        </label>
-        <label class="field">
-          <span class="flabel">Édition <span class="flabel-note">(code)</span></span>
-          <input type="text" name="set" value="{{ filters.set }}" placeholder="mh3">
-        </label>
-        <label class="field">
-          <span class="flabel">Légal en</span>
-          <select name="format">
-            <option value="">Format · Tous</option>
-            {% for value, label in FORMAT_LABELS.items() %}
-              <option value="{{ value }}" {% if value == filters.format %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
         </label>
         <label class="field">
           <span class="flabel">Copies</span>
@@ -291,6 +315,18 @@
       document.querySelectorAll("#collection-filters [data-autosubmit]").forEach(function (node) {
         node.addEventListener("change", function () { node.form.submit(); });
       });
+
+      var manaInput = document.getElementById("mana-input");
+      var manaLegend = document.getElementById("mana-legend");
+      if (manaInput && manaLegend) {
+        manaLegend.addEventListener("click", function (e) {
+          var btn = e.target.closest("[data-symbol], [data-clear]");
+          if (!btn) return;
+          manaInput.value = btn.hasAttribute("data-clear")
+            ? "" : manaInput.value + btn.getAttribute("data-symbol");
+          manaInput.focus();
+        });
+      }
 
       renderMore();
     })();
