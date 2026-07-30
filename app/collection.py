@@ -282,16 +282,11 @@ def _clean(params, key: str) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def build_query(params, q: str | None = None) -> str:
-    """Compile the filter panel's fields (+ the raw ``q`` box) into one query.
+def panel_query(params) -> str:
+    """Compile the filter panel's own fields into query terms (no ``q`` box).
 
-    ``q`` overrides the ``q`` parameter — that is how a natural-language search
-    (``app.nlquery``) feeds its translated query through exactly the same path
-    as a hand-written one.
-
-    The raw query is parenthesised before being ANDed with the panel's terms: a
-    query containing a top-level ``or`` would otherwise bind only its last
-    branch to the panel's filters.
+    Returns "" when the panel is empty, which is how the caller tells "the user
+    asked something with the panel" from "the panel had nothing to say".
     """
     parts: list[str] = []
     quote = scryquery.quote
@@ -340,10 +335,26 @@ def build_query(params, q: str | None = None) -> str:
     if copies in ("spare", "indeck"):
         parts.append(f"is:{copies}")
 
-    raw = _clean(params, "q") if q is None else (q or "").strip()
-    if raw and parts:
-        return " ".join([f"({raw})"] + parts)
-    return raw or " ".join(parts)
+    return " ".join(parts)
+
+
+def combine(raw: str, terms: str) -> str:
+    """AND an existing query with extra terms, keeping ``raw``'s meaning intact.
+
+    ``raw`` is parenthesised only when it has a top-level ``or``, which would
+    otherwise bind just its last branch to the added terms; a plain conjunction
+    is appended to as-is so a query refined filter by filter stays readable.
+    """
+    raw, terms = (raw or "").strip(), (terms or "").strip()
+    if not (raw and terms):
+        return raw or terms
+    return f"({raw}) {terms}" if scryquery.needs_grouping(raw) else f"{raw} {terms}"
+
+
+def build_query(params, q: str | None = None) -> str:
+    """The panel's terms ANDed with the query box (or with ``q`` when given)."""
+    raw = _clean(params, "q") if q is None else q
+    return combine(raw, panel_query(params))
 
 
 def stats(profile_id: int) -> dict:

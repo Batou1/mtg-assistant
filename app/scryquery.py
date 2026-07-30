@@ -687,6 +687,25 @@ def parse(text: str) -> Query:
     return Query(node, options)
 
 
+def needs_grouping(text: str) -> bool:
+    """True if ANDing extra terms onto ``text`` requires parenthesising it.
+
+    Only a top-level ``or`` changes meaning when terms are appended (``a or b``
+    plus ``c`` would bind ``c`` to ``b`` alone). Everything else is already a
+    conjunction, so it is left alone and a query built up filter by filter stays
+    readable instead of accumulating nested parentheses.
+    """
+    depth = 0
+    for kind, _raw in _tokenize(text or ""):
+        if kind == "(":
+            depth += 1
+        elif kind == ")":
+            depth = max(0, depth - 1)
+        elif kind == "OR" and depth == 0:
+            return True
+    return False
+
+
 def quote(value: str) -> str:
     """Quote ``value`` for embedding in a query, if it needs it.
 

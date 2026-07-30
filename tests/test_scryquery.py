@@ -176,6 +176,20 @@ def test_inline_order_is_exposed():
     assert query.match(MATRON, MATRON_EXTRA) is True
 
 
+@pytest.mark.parametrize("query, expected", [
+    ("t:goblin or t:elf", True),
+    ("t:goblin OR t:elf", True),
+    ("(t:goblin or t:elf)", False),      # the `or` is already grouped
+    ("-(t:goblin or t:elf)", False),
+    ("t:goblin t:legendary", False),
+    ("t:goblin and t:legendary", False),
+    ("", False),
+    ('o:"draw or discard"', False),      # `or` inside a quoted value
+])
+def test_needs_grouping_spots_a_top_level_or(query, expected):
+    assert sq.needs_grouping(query) is expected
+
+
 def test_quote_only_quotes_when_needed():
     assert sq.quote("goblin") == "goblin"
     assert sq.quote("draw a card") == '"draw a card"'
