@@ -266,10 +266,19 @@ def image_small(card: dict) -> str | None:
     return None
 
 
-def price_eur(card: dict) -> float | None:
-    """Cardmarket EUR price (non-foil preferred, else foil)."""
+def price_eur(card: dict, foil: bool = False) -> float | None:
+    """Cardmarket EUR price of THIS printing (non-foil preferred, else foil).
+
+    ``foil=True`` looks at the foil price first: a foil copy is a different and
+    usually dearer product, so pricing an owned foil non-foil undervalues the
+    collection. Either field still falls back to the other — plenty of
+    printings only have one of the two.
+
+    This prices the printing it is handed. For "what does this card cost to
+    buy", where no edition has been chosen, use ``prices.buy_price_eur``.
+    """
     prices = card.get("prices") or {}
-    for field in ("eur", "eur_foil"):
+    for field in (("eur_foil", "eur") if foil else ("eur", "eur_foil")):
         val = prices.get(field)
         if val:
             try:

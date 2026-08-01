@@ -16,7 +16,7 @@ The function takes ``cards_by_name`` (a name->Scryfall-card map the caller has
 already resolved) instead of doing network I/O itself, which keeps it unit
 testable and lets the caller batch/caches Scryfall calls.
 """
-from . import commanders, scryfall
+from . import commanders, prices, scryfall
 
 # EDHREC section tags grouped by role.
 _LAND_TAGS = {"lands", "utilitylands"}
@@ -229,7 +229,7 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
         name = entry["name"]
         card = card_of(name)
         is_owned = is_basic or owned(name)
-        price = None if is_owned else scryfall.price_eur(card) if card else None
+        price = None if is_owned else prices.buy_price_eur(card)
         # EDHREC only types cards listed in a typed section; cards seen only in
         # "High Synergy"/"Top Cards" (and forced includes) fall back to their
         # Scryfall type line instead of landing in "autres".
@@ -252,7 +252,7 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
 
     def price_of(name: str):
         card = card_of(name)
-        return scryfall.price_eur(card) if card else None
+        return prices.buy_price_eur(card)
 
     def take_unowned(entry: dict, items: list) -> bool:
         nonlocal buy_total

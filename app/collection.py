@@ -16,6 +16,7 @@ import json
 from . import db, scryfall, scryquery
 
 STATS_META_PREFIX = "collection_stats:"
+PRICES_META_PREFIX = "collection_prices:"
 
 # name_key -> small text-view dict, shared across requests. Card text almost
 # never changes, and one chat page can render hundreds of card views — without
@@ -25,8 +26,9 @@ _TEXT_CACHE_MAX = 20000
 _text_cache: dict[str, dict] = {}
 
 
-def _row(raw_name: str, name_key: str, qty: int, deck_qty: int, card: dict | None) -> dict:
-    price = scryfall.price_eur(card) if card else None
+def _row(raw_name: str, name_key: str, qty: int, deck_qty: int, card: dict | None,
+         price: float | None = None, line_total: float | None = None,
+         set_code: str = "") -> dict:
     return {
         "name": raw_name,
         "name_key": name_key,
@@ -35,28 +37,108 @@ def _row(raw_name: str, name_key: str, qty: int, deck_qty: int, card: dict | Non
         "image": scryfall.image(card) if card else None,
         "image_small": scryfall.image_small(card) if card else None,
         "price_eur": price,
-        "line_total": round(price * qty, 2) if price is not None else None,
+        "line_total": line_total,
         "type_line": (card.get("type_line") if card else "") or "",
         "mana_cost": scryfall.mana_cost(card) if card else "",
         "oracle_text": scryfall.oracle_text(card) if card else "",
         "power_toughness": scryfall.power_toughness(card) if card else "",
         "colors": scryfall.color_identity(card) if card else [],
         "rarity": (card.get("rarity") if card else "") or "",
-        "set_code": ((card.get("set") if card else "") or "").upper(),
+        # The edition owned, not Scryfall's canonical one: it is the edition
+        # the displayed price is the price of.
+        "set_code": set_code or ((card.get("set") if card else "") or "").upper(),
         "set_name": (card.get("set_name") if card else "") or "",
         "cmc": (card.get("cmc") if card else None),
         "released_at": (card.get("released_at") if card else "") or "",
     }
 
 
+def _compute_owned_prices(profile_id: int) -> dict[str, list]:
+    """``{name_key: [unit_eur, line_eur, set_code]}`` from the OWNED printings.
+
+    A card in a collection has an edition, so it is worth what that edition is
+    worth — and the spread is not a rounding detail: Chainer, Dementia Master
+    is 44 € in Torment and 0.24 € in the printing Scryfall calls canonical.
+    Foil copies are priced as foil, being a different (dearer) product.
+
+    ``line_eur`` sums each printing's own price times its copies, so a name
+    owned in two editions is valued honestly; ``unit_eur`` is the resulting
+    average, which in the overwhelmingly common single-printing case is just
+    that printing's price. ``set_code`` is the most-owned printing's, so the
+    edition shown next to a price is the edition that price refers to.
+    """
+    rows = db.collection_printings(profile_id)
+    by_id = db.printing_prices(
+        f"id:{r['scryfall_id']}" for r in rows if r["scryfall_id"]
+    )
+    # Three ways an owned printing can fail to answer: no Scryfall id in the
+    # import, an id the bulk cache doesn't have yet, and — the common one, a
+    # foreign-language or promo-only printing — an id whose Cardmarket price is
+    # simply null. All three fall back to the canonical by-name entry: an
+    # approximate price beats reporting a card the user owns as worthless.
+    by_name = db.printing_prices({r["name_key"] for r in rows})
+
+    totals: dict[str, list] = {}
+    for r in rows:
+        foil = bool(r["foil"])
+        source = by_id.get(f"id:{r['scryfall_id']}") if r["scryfall_id"] else None
+        unit = scryfall.price_eur(source, foil=foil) if source else None
+        if unit is None:
+            source = by_name.get(r["name_key"])
+            unit = scryfall.price_eur(source, foil=foil) if source else None
+        entry = totals.setdefault(r["name_key"], [0.0, 0, 0, ""])
+        if unit is not None:
+            entry[0] += unit * r["qty"]
+            entry[1] += r["qty"]
+        if r["qty"] > entry[2]:
+            entry[2] = r["qty"]
+            entry[3] = (r["set_code"] or "").upper()
+
+    return {
+        key: [round(total / priced, 2), round(total, 2), set_code] if priced
+        else [None, None, set_code]
+        for key, (total, priced, _qty, set_code) in totals.items()
+    }
+
+
+def owned_prices(profile_id: int) -> dict[str, list]:
+    """``_compute_owned_prices`` memoized in ``meta``.
+
+    Pricing the owned printings means touching one ``id:<uuid>`` cache row per
+    printing, scattered across a multi-GB table — about a second on a large
+    collection, paid again on every filtered view. So it is cached like the
+    home-page stats, and dropped by the same two events: a collection import
+    (``db.replace_collection``) and a bulk-data refresh, which is precisely
+    when prices move.
+    """
+    key = f"{PRICES_META_PREFIX}{int(profile_id)}"
+    raw = db.get_meta(key)
+    if raw:
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    result = _compute_owned_prices(profile_id)
+    db.set_meta(key, json.dumps(result))
+    return result
+
+
 def _owned(profile_id: int):
-    """Yield ``(raw_name, name_key, qty, deck_qty, card_or_None)`` per owned card."""
+    """Yield ``(raw_name, name_key, qty, deck_qty, card, unit, line, set_code)``
+    per owned card.
+
+    ``card`` is Scryfall's canonical entry for the name (text, image, colours —
+    all printing-independent), while the price and the edition come from the
+    printings actually owned (``owned_prices``).
+    """
     names = db.collection_names(profile_id)
     cards = db.get_cards(name_key for _, name_key, _ in names)
     quantities = db.owned_quantities(profile_id)
+    priced = owned_prices(profile_id)
     for raw_name, name_key, qty in names:
         deck_qty = quantities.get(name_key, (qty, 0))[1] or 0
-        yield raw_name, name_key, qty, deck_qty, cards.get(name_key)
+        unit, line, set_code = priced.get(name_key) or (None, None, "")
+        yield raw_name, name_key, qty, deck_qty, cards.get(name_key), unit, line, set_code
 
 
 def enrich(profile_id: int) -> list[dict]:
@@ -190,16 +272,20 @@ def search(profile_id: int, query: scryquery.Query,
     that skips thousands of image/oracle-text lookups per filtered view.
     """
     out = []
-    for raw_name, name_key, qty, deck_qty, card in _owned(profile_id):
-        price = scryfall.price_eur(card) if card else None
+    for owned in _owned(profile_id):
+        raw_name, name_key, qty, deck_qty, card, price, line_total, set_code = owned
         extra = {
             "qty": qty,
             "deck_qty": deck_qty,
-            "line_total": round(price * qty, 2) if price is not None else 0.0,
+            # The owned printing's price and edition: the query box must filter
+            # on exactly what the page displays (see app/scryquery.py).
+            "unit_price": price,
+            "set_code": set_code,
+            "line_total": line_total or 0.0,
             "resolved": card is not None,
         }
         if query.match(card if card is not None else {"name": raw_name}, extra):
-            out.append(_row(raw_name, name_key, qty, deck_qty, card))
+            out.append(_row(*owned))
     return sort_rows(out, sort, direction)
 
 

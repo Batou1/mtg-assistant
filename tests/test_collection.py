@@ -78,6 +78,110 @@ def test_enrich_uses_cache_and_fills_fields(fresh):
     assert unknown["image"] is None and unknown["price_eur"] is None
 
 
+def _printing(name, scryfall_id, set_code, eur, foil=0, qty=1):
+    return {
+        "scryfall_id": scryfall_id, "name_key": name.lower(), "raw_name": name,
+        "set_code": set_code, "foil": foil, "condition": "near_mint",
+        "quantity": qty, "binder_type": "binder",
+    }, eur
+
+
+def _stock_printings(db, pid, *specs):
+    """Import ``specs`` and cache each one's exact printing under ``id:<uuid>``."""
+    rows = []
+    for row, prices in specs:
+        rows.append(row)
+        if row["scryfall_id"]:
+            db.set_card(f"id:{row['scryfall_id']}",
+                        _card(row["raw_name"], set=row["set_code"].lower(), prices=prices))
+    db.replace_collection(pid, rows)
+
+
+def test_owned_card_is_priced_from_the_printing_owned(fresh):
+    """The canonical Scryfall entry for a name is not what the shelf is worth:
+    Chainer is 0.24 € there and 44 € in the Torment copy actually owned."""
+    db, collection = fresh
+    pid = db.ensure_default_profile()
+    db.set_card("chainer, dementia master", _card("Chainer, Dementia Master", eur="0.24"))
+    _stock_printings(db, pid, _printing(
+        "Chainer, Dementia Master", "tor-uuid", "TOR", {"eur": "44.21"}, qty=2))
+
+    row = collection.enrich(pid)[0]
+    assert row["price_eur"] == 44.21
+    assert row["line_total"] == 88.42
+    assert row["set_code"] == "TOR"
+
+
+def test_foil_copies_are_priced_as_foil(fresh):
+    db, collection = fresh
+    pid = db.ensure_default_profile()
+    _stock_printings(db, pid, _printing(
+        "Sol Ring", "voc-uuid", "VOC", {"eur": "0.61", "eur_foil": "3.40"}, foil=1))
+    assert collection.enrich(pid)[0]["price_eur"] == 3.40
+
+
+def test_copies_across_printings_are_valued_per_printing(fresh):
+    """One name, two editions: the line total sums each copy at its own price
+    rather than extrapolating from whichever printing was picked."""
+    db, collection = fresh
+    pid = db.ensure_default_profile()
+    _stock_printings(
+        db, pid,
+        _printing("Sol Ring", "voc-uuid", "VOC", {"eur": "0.61"}, qty=3),
+        _printing("Sol Ring", "msc-uuid", "MSC", {"eur": "1.18"}, qty=1),
+    )
+    row = collection.enrich(pid)[0]
+    assert row["qty"] == 4
+    assert row["line_total"] == 3.01          # 3 x 0.61 + 1.18
+    assert row["set_code"] == "VOC"           # the most-owned printing
+
+
+def test_price_filter_matches_the_displayed_owned_price(fresh):
+    """One filter engine: `eur:` must see the same number the page shows."""
+    import app.scryquery as scryquery
+    db, collection = fresh
+    pid = db.ensure_default_profile()
+    db.set_card("chainer, dementia master", _card("Chainer, Dementia Master", eur="0.24"))
+    _stock_printings(db, pid, _printing(
+        "Chainer, Dementia Master", "tor-uuid", "TOR", {"eur": "44.21"}))
+
+    assert collection.search(pid, scryquery.parse("eur>40")) != []
+    assert collection.search(pid, scryquery.parse("eur<1")) == []
+    assert collection.search(pid, scryquery.parse("s:tor")) != []
+
+
+def test_owned_prices_cached_and_invalidated_on_import(fresh):
+    db, collection = fresh
+    pid = db.ensure_default_profile()
+    _stock_printings(db, pid, _printing("Sol Ring", "voc-uuid", "VOC", {"eur": "0.61"}))
+    assert collection.enrich(pid)[0]["price_eur"] == 0.61
+    assert db.get_meta(f"{collection.PRICES_META_PREFIX}{pid}") is not None
+
+    _stock_printings(db, pid, _printing("Sol Ring", "msc-uuid", "MSC", {"eur": "1.18"}))
+    assert db.get_meta(f"{collection.PRICES_META_PREFIX}{pid}") is None
+    assert collection.enrich(pid)[0]["price_eur"] == 1.18
+
+
+def test_unknown_printing_falls_back_to_the_card_name_entry(fresh):
+    """A printing the bulk cache has not seen must not price the card at zero."""
+    db, collection = fresh
+    pid = db.ensure_default_profile()
+    db.set_card("sol ring", _card("Sol Ring", eur="1.18"))
+    db.replace_collection(pid, [_row("Sol Ring", qty=2)])   # no Scryfall id
+    assert collection.enrich(pid)[0]["price_eur"] == 1.18
+
+
+def test_priceless_printing_falls_back_to_the_card_name_entry(fresh):
+    """Foreign-language and promo-only printings often carry no Cardmarket
+    price at all — the copy is still worth roughly what the card is worth."""
+    db, collection = fresh
+    pid = db.ensure_default_profile()
+    db.set_card("sol ring", _card("Sol Ring", eur="1.18"))
+    _stock_printings(db, pid, _printing(
+        "Sol Ring", "zhs-uuid", "VOC", {"eur": None, "eur_foil": None}))
+    assert collection.enrich(pid)[0]["price_eur"] == 1.18
+
+
 def test_stats_cached_and_invalidated_on_import(fresh):
     db, collection = fresh
     pid = db.ensure_default_profile()
@@ -123,7 +227,8 @@ def _stocked(fresh):
     db.replace_collection(pid, [
         _row("Goblin Matron", qty=2),
         _row("Goblin Matron", qty=1, binder_type="deck", set_code="XYZ"),
-        _row("Sol Ring", qty=4),
+        # The owned edition, which is what `s:` filters on and the page shows.
+        _row("Sol Ring", qty=4, set_code="C21"),
         _row("Counterspell", qty=1),
         _row("Mystery Card", qty=3),
     ])

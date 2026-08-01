@@ -4,10 +4,13 @@ Cards are considered in EDHREC order (most synergistic first), priced in EUR
 from Scryfall's Cardmarket data, and greedily added while the running total
 stays within budget. With no budget, we simply price the most relevant missing
 cards so you can see what completing the deck would cost.
+
+Prices come from ``app.prices``: a shopping list names cards, not editions, so
+each line is quoted at its cheapest buyable printing (and says which one).
 """
 import httpx
 
-from . import scryfall
+from . import prices, scryfall
 
 # Cap how many missing cards we price per commander to bound Scryfall calls.
 _MAX_PRICED = 60
@@ -54,7 +57,7 @@ def build(missing_cards, budget, max_card_price: float | None = None,
         if not card:
             unpriced += qty
             continue
-        price = scryfall.price_eur(card)
+        price = prices.buy_price_eur(card)
         if price is None:
             unpriced += qty
             continue
@@ -67,10 +70,13 @@ def build(missing_cards, budget, max_card_price: float | None = None,
             take = min(qty, int((budget - total + 1e-9) // price))
         if take <= 0:
             continue
+        set_code, set_name = prices.buy_printing(card)
         items.append({
             "name": name,
             "image": scryfall.image(card),
             "price_eur": round(price, 2),
+            "set_code": set_code,
+            "set_name": set_name,
             "qty": take,
             "line_eur": round(price * take, 2),
         })

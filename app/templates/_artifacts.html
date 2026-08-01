@@ -100,7 +100,7 @@
         <div class="buy-item">
           {{ cardview.image_or_text(item.name, item.image, extra_class="cv-buyitem") }}
           <span class="buy-name">{{ item.name }}</span>
-          <span class="buy-price">{{ "%.2f"|format(item.price_eur) }} €</span>
+          <span class="buy-price">{{ "%.2f"|format(item.price_eur) }} €{% if item.set_code %} <span class="buy-edition" title="édition la moins chère">{{ item.set_code }}</span>{% endif %}</span>
         </div>
         {% endfor %}
       </div>
@@ -231,7 +231,7 @@
         <div class="buy-item">
           {{ cardview.image_or_text(item.name, item.image, extra_class="cv-buyitem") }}
           <span class="buy-name">{% if item.qty and item.qty > 1 %}{{ item.qty }} × {% endif %}{{ item.name }}</span>
-          <span class="buy-price">{{ "%.2f"|format(item.line_eur if item.line_eur is defined else item.price_eur) }} €</span>
+          <span class="buy-price">{{ "%.2f"|format(item.line_eur if item.line_eur is defined else item.price_eur) }} €{% if item.set_code %} <span class="buy-edition" title="édition la moins chère">{{ item.set_code }}</span>{% endif %}</span>
         </div>
         {% endfor %}
       </div>
@@ -363,7 +363,7 @@
         <div class="buy-item">
           {{ cardview.image_or_text(item.name, item.image, extra_class="cv-buyitem") }}
           <span class="buy-name">{{ item.name }}</span>
-          <span class="buy-price">{{ "%.2f"|format(item.price_eur) }} €</span>
+          <span class="buy-price">{{ "%.2f"|format(item.price_eur) }} €{% if item.set_code %} <span class="buy-edition" title="édition la moins chère">{{ item.set_code }}</span>{% endif %}</span>
         </div>
         {% endfor %}
       </div>

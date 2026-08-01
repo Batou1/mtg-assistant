@@ -33,7 +33,7 @@ from datetime import datetime
 
 import httpx
 
-from . import collection, db, scryfall
+from . import collection, db, prices, scryfall
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -138,18 +138,28 @@ def _import_oracle_cards(cards) -> int:
 
 
 def _import_all_cards(cards) -> int:
-    """Register ``id:<uuid>`` only — exact-printing lookups (resolve_ids)."""
+    """Register ``id:<uuid>`` only — exact-printing lookups (resolve_ids).
+
+    Also builds ``app.prices``' cheapest-printing index from the same pass: it
+    is the one place in the app that sees every printing of every card, and
+    re-reading half a million cached rows afterwards just to compare prices
+    would be pure waste.
+    """
+    index = prices.Index()
     batch: list[tuple[str, dict]] = []
     total = 0
     for card in cards:
         cid = card.get("id")
         if not cid:
             continue
+        index.add(card)
         batch.append((f"id:{cid}", card))
         if len(batch) >= _BATCH_SIZE:
             total += db.bulk_set_cards(batch)
             batch = []
     total += db.bulk_set_cards(batch)
+    db.replace_card_prices(index.rows())
+    prices.clear_cache()
     return total
 
 
@@ -173,6 +183,7 @@ def import_local_all_cards_file(path: str) -> int:
     if stamp:
         db.set_meta("bulk_all_cards_updated_at", stamp)
     db.set_meta("bulk_all_cards_synced_at", str(time.time()))
+    prices.mark_indexed()
     return count
 
 
@@ -228,13 +239,20 @@ def refresh(force: bool = False, types=BULK_TYPES) -> dict:
             )
             db.set_meta(updated_key, meta.get("updated_at", ""))
             db.set_meta(f"bulk_{bulk_type}_synced_at", str(time.time()))
+            if bulk_type == "all_cards":
+                # _import_all_cards rebuilt the price index from this export;
+                # stamp it now that its version is known, so the scheduler
+                # doesn't re-scan the cache to rebuild what is already current.
+                prices.mark_indexed()
             imported[bulk_type] = count
             logger.info("bulk_data: imported %d %s rows", count, bulk_type)
     if imported:
         # Card data changed: drop the in-memory text-view cache and the
-        # per-profile collection stats (prices feed the cached total value).
+        # per-profile collection caches (prices feed both the owned-printing
+        # price map and the cached total value).
         collection.clear_text_cache()
         db.delete_meta_prefix(collection.STATS_META_PREFIX)
+        db.delete_meta_prefix(collection.PRICES_META_PREFIX)
     return imported
 
 
@@ -254,6 +272,11 @@ def run_scheduler_loop() -> None:
         try:
             if needs_refresh():
                 refresh()
+            if prices.needs_rebuild():
+                # Cache imported before the price index existed: build it from
+                # the printings already on disk rather than making the user
+                # wait a whole refresh cycle for correct deck prices.
+                prices.rebuild_from_cache()
         except Exception:
             logger.exception("bulk_data: scheduled refresh failed")
         time.sleep(_POLL_INTERVAL_SECONDS)

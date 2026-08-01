@@ -16,7 +16,10 @@ pasted from scryfall.com still runs.
 
 Collection-specific keys (``qty``, ``deck``, ``total``) read from the ``extra``
 mapping the caller passes to ``Query.match`` — owned quantities are not part of
-a Scryfall card object.
+a Scryfall card object. ``extra`` also overrides the price and the set code
+(``eur``, ``price``, ``is:priced``, ``s:``) when the caller knows which
+printing is actually owned, so the query box filters on exactly the numbers the
+collection page displays.
 """
 import difflib
 import operator
@@ -183,6 +186,18 @@ def _price(card: dict, field: str):
         return None
 
 
+def _eur(card: dict, extra: dict):
+    """The EUR price ``eur:``/``price:``/``is:priced`` filter on.
+
+    ``extra["unit_price"]`` is what the collection page DISPLAYS for the row —
+    the printing actually owned, foil copies at foil price, averaged when a
+    name is owned in several editions. Filtering on the card object's own price
+    instead would let the query box and the displayed price disagree.
+    """
+    val = extra.get("unit_price")
+    return _price(card, "eur") if val is None else float(val)
+
+
 # --- Value coercion (parse time, so errors point at the query) -----------
 
 def _as_number(term: _Term) -> float:
@@ -253,7 +268,10 @@ def _h_keyword(term, card, extra):
 
 
 def _h_set(term, card, extra):
-    code = (card.get("set") or "").lower()
+    # ``extra["set_code"]`` is the printing the collection page shows and
+    # prices; without it, `s:tor` would miss a Torment copy whose canonical
+    # Scryfall entry points at another set.
+    code = (extra.get("set_code") or card.get("set") or "").lower()
     found = code == term.value.lower()
     return not found if term.op == "!=" else found
 
@@ -389,7 +407,7 @@ _IS_CHECKS = {
     "textless": lambda c, x: bool(c.get("textless")),
     "digital": lambda c, x: not scryfall.is_paper(c),
     "funny": lambda c, x: c.get("set_type") == "funny",
-    "priced": lambda c, x: _price(c, "eur") is not None,
+    "priced": lambda c, x: _eur(c, x) is not None,
     # Collection-side predicates (see app/collection.py for `extra`).
     "indeck": lambda c, x: x.get("deck_qty", 0) > 0,
     "spare": lambda c, x: x.get("qty", 0) - x.get("deck_qty", 0) > 0,
@@ -448,8 +466,8 @@ _KEYS = {
     "toughness": _number_handler(lambda c, x: _numbers(c, "toughness")),
     "loy": _number_handler(lambda c, x: _numbers(c, "loyalty")),
     "loyalty": _number_handler(lambda c, x: _numbers(c, "loyalty")),
-    "eur": _number_handler(lambda c, x: [p for p in [_price(c, "eur")] if p is not None]),
-    "price": _number_handler(lambda c, x: [p for p in [_price(c, "eur")] if p is not None]),
+    "eur": _number_handler(lambda c, x: [p for p in [_eur(c, x)] if p is not None]),
+    "price": _number_handler(lambda c, x: [p for p in [_eur(c, x)] if p is not None]),
     "usd": _number_handler(lambda c, x: [p for p in [_price(c, "usd")] if p is not None]),
     "m": _h_mana, "mana": _h_mana,
     "f": _h_legal, "format": _h_legal, "legal": _h_legal,
