@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 
-from . import buylist, cardsearch, commanders, db, edhrec, scryfall
+from . import buylist, cardsearch, commanders, db, edhrec, prices, scryfall
 from .config import settings
 
 
@@ -132,7 +132,7 @@ def _build_result(card: dict, data: dict, owned_keys: set, intent: dict,
         "theme_score": _theme_score(intent, ordered, edhrec.extract_tags(data)),
         "recent": _is_recent(card),
         "owned": owned,
-        "price_eur": None if owned else scryfall.price_eur(card),
+        "price_eur": None if owned else prices.buy_price_eur(card),
         "link_count": 0,            # owned cards pointing here (discovery only)
         "linked_owned_cards": [],   # a sample of those cards (discovery only)
         "buylist": None,            # filled in by analyze()
@@ -196,7 +196,7 @@ def _discover_unowned(owned_cards: list, owned_keys: set, intent: dict,
         if not _color_ok(card, intent.get("colors") or [], intent.get("max_colors"),
                          intent.get("min_colors")):
             continue
-        price = scryfall.price_eur(card)
+        price = prices.buy_price_eur(card)
         # "Match the budget": a commander you must buy can't exceed it alone.
         if budget is not None and price is not None and price > budget:
             continue
@@ -370,7 +370,7 @@ def find_commanders(intent: dict, profile_id: int, limit: int | None = None):
                              intent.get("min_colors")):
                 continue
             owned = _norm(card["name"]) in owned_keys
-            price = scryfall.price_eur(card)
+            price = prices.buy_price_eur(card)
             # An unowned commander can't alone exceed the total budget.
             if not owned and budget is not None and price is not None and price > budget:
                 continue

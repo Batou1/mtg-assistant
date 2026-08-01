@@ -26,6 +26,7 @@ MTG_DB_PATH=/tmp/test.db MTG_BULK_AUTO_REFRESH=0 .venv/bin/uvicorn app.main:app 
 .venv/bin/python -m pytest tests/ -q     # tests (~1s, AUCUN réseau requis)
 .venv/bin/python -m app.bulk_data        # import bulk Scryfall forcé (long, ~2.7 GB)
 .venv/bin/python -m app.bulk_data data/all-cards-*.jsonl  # bootstrap depuis un fichier local
+.venv/bin/python -m app.prices   # reconstruit l'index « édition la moins chère » (~20 s)
 ./deploy/install-service.sh   # installe le service launchd macOS (prod perso)
 ```
 
@@ -97,7 +98,8 @@ filtrer ne doit ni l'ouvrir ni le refermer).
 | `intent.py` | Wish FR → intent structuré. LLM d'abord, heuristique en secours, backfill croisé. |
 | `analysis.py` | Suggestions de commandants (possédés + discovery + finder par thème). |
 | `edhrec.py` | Client EDHREC (endpoints json.edhrec.com non officiels) + extraction défensive. |
-| `scryfall.py` | Résolution nom/id → carte (batch `/cards/collection`), accesseurs (prix, image…). |
+| `scryfall.py` | Résolution nom/id → carte (batch `/cards/collection`), accesseurs (prix **de ce printing**, image…). |
+| `prices.py` | Index « édition la moins chère » par nom (prix d'ACHAT), construit depuis le bulk. |
 | `bulk_data.py` | Import des exports bulk Scryfall + rafraîchissement auto en thread démon. |
 | `cardsearch.py` | Recherche dans le pool Scryfall local en mémoire (type/keyword/texte oracle). |
 | `scryquery.py` | Parseur + évaluateur de la syntaxe Scryfall (`t:`, `o:`, `mv<=3`, `or`, `-`, regex…). |
@@ -162,10 +164,36 @@ filtrer ne doit ni l'ouvrir ni le refermer).
 
 9. **Caches et TTL** : cartes 7 j (`cache_ttl_days`), prix 1 j (`price_ttl_days`),
    EDHREC 7 j. Le cache `cards` est partagé entre profils ; les stats de la page
-   d'accueil sont cachées dans `meta` (`collection_stats:<pid>`) et invalidées à
-   l'import de collection et après un refresh bulk.
+   d'accueil (`collection_stats:<pid>`) et les prix des printings possédés
+   (`collection_prices:<pid>`) sont cachés dans `meta` et invalidés à l'import
+   de collection et après un refresh bulk.
 
-10. **Jamais de printing numérique pour un prix.** Le choix canonique de
+10. **Deux prix différents pour deux questions différentes.** « Combien vaut ma
+    carte ? » et « combien va me coûter cette carte ? » n'ont pas la même
+    réponse, et le printing canonique de Scryfall (« la version reconnaissable
+    la plus récente ») ne répond correctement ni à l'une ni à l'autre.
+    - **Collection = l'édition possédée.** `scryfall.price_eur(card, foil=…)`
+      price le printing qu'on lui donne ; `collection` le résout via l'entrée
+      `id:<uuid>` de la ligne ManaBox (Chainer, Dementia Master vaut 44 € en
+      Torment et 0,24 € dans le printing canonique ; un foil est chiffré au
+      prix foil). Lire ces printings coûte une ligne éparpillée dans une table
+      de plusieurs Go PAR exemplaire possédé, donc le résultat est mémoïsé dans
+      `meta` (`collection_prices:<pid>`) et invalidé exactement là où les stats
+      le sont : import de collection + refresh bulk. Le prix ET le code
+      d'édition affichés viennent de cette carte, et `scryquery` filtre dessus
+      via `extra` (`eur:`, `s:`) — cf. invariant 14.
+    - **Deck / decklist / buylist = l'édition la moins chère.** Une decklist
+      nomme une carte, pas une édition : `prices.buy_price_eur` répond depuis
+      l'index `card_prices`, construit *pendant* l'import `all_cards` (le seul
+      passage qui voit tous les printings) et reconstructible depuis le cache
+      local (`prices.rebuild_from_cache`, appelé par le scheduler). Sans index
+      il retombe sur le prix du printing en main — l'app doit marcher sans
+      import bulk. Les printings **non jouables** (bordure or/argent : World
+      Championship, Collector's Edition, Un-cards ; `set_type` memorabilia,
+      funny, token…) sont exclus de l'index : ils sont souvent les moins chers
+      et ne sont légaux nulle part.
+
+11. **Jamais de printing numérique pour un prix.** Le choix canonique de
     Scryfall pour un nom de carte est parfois une édition MTGO/Arena (Vintage
     Masters, Masters Edition, Alchemy) : `prices.eur` y est nul, donc la carte
     passe pour gratuite (Mishra's Workshop à 0 €). `scryfall.resolve_cards`
@@ -174,11 +202,11 @@ filtrer ne doit ni l'ouvrir ni le refermer).
     non papier. Toute nouvelle source de cartes doit passer par
     `scryfall.is_paper`.
 
-11. **Politesse envers les APIs externes** : throttle `request_delay`, User-Agent
+12. **Politesse envers les APIs externes** : throttle `request_delay`, User-Agent
     dédié, backoff avec jitter sur EDHREC (qui est derrière Cloudflare et bloque
     les clients non-navigateur — les en-têtes `_EDHREC_HEADERS` sont nécessaires).
 
-12. **Copies déjà en deck ≠ copies disponibles.** La colonne ManaBox
+13. **Copies déjà en deck ≠ copies disponibles.** La colonne ManaBox
     « Binder Type » alimente `collection.deck_qty` ; `db.owned_quantities`
     renvoie `{name_key: (total, deck_qty)}`. La génération de decks minimise le
     recours aux copies en deck : `deckgen` les prend en dernier recours (flag
@@ -187,7 +215,7 @@ filtrer ne doit ni l'ouvrir ni le refermer).
     bonus de `poolbuild` les exclut. Toute nouvelle consommation de la
     collection pour construire un deck doit suivre cette convention.
 
-13. **Un seul moteur de filtre pour la collection.** Les contrôles structurés
+14. **Un seul moteur de filtre pour la collection.** Les contrôles structurés
     de `/collection` sont *compilés* en syntaxe Scryfall par
     `collection.panel_query`, et la recherche en langage naturel est *traduite*
     en syntaxe Scryfall par `nlquery.translate` — jamais évalués par un second
@@ -204,7 +232,11 @@ filtrer ne doit ni l'ouvrir ni le refermer).
     ignorée. Une carte que le cache n'a pas encore résolue n'a que son nom :
     tout filtre portant sur des données de carte doit répondre « non » pour
     elle (`_Term.needs_card`), sinon une identité de couleur absente rendrait
-    `id<=u` vrai partout.
+    `id<=u` vrai partout. Même règle pour ce qui dépend de l'exemplaire et non
+    du nom : quantités (`qty`, `deck`, `total`), mais aussi **prix et édition**
+    (`eur`, `price`, `is:priced`, `s:`) passent par le dict `extra` fourni par
+    `collection.search`, pour filtrer sur le printing possédé — celui-là même
+    que la page affiche — et non sur le choix canonique de Scryfall.
 
 ## Conventions
 

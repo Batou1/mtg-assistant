@@ -485,6 +485,8 @@ details.buylist > .buy-grid { padding: 14px; margin-top: 0; }
 .buy-item img:hover { transform: translateY(-3px) scale(1.04); }
 .buy-name { font-size: .8rem; }
 .buy-price { font-weight: 700; color: var(--accent); font-size: .85rem; font-family: var(--font-mono); }
+/* Which printing that price is for — a buylist quotes the cheapest one. */
+.buy-edition { font-weight: 400; color: var(--muted); font-size: .72rem; text-transform: uppercase; }
 
 .owned-list { margin-top: 14px; }
 .owned-list summary { cursor: pointer; color: var(--muted); }

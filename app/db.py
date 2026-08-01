@@ -68,6 +68,12 @@ def init_db() -> None:
                 data TEXT NOT NULL,
                 fetched_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS card_prices (
+                name_key TEXT PRIMARY KEY,
+                eur      REAL NOT NULL,
+                set_code TEXT NOT NULL DEFAULT '',
+                set_name TEXT NOT NULL DEFAULT ''
+            );
             CREATE TABLE IF NOT EXISTS edhrec (
                 slug TEXT PRIMARY KEY,
                 data TEXT NOT NULL,
@@ -218,6 +224,58 @@ def bulk_set_cards(items) -> int:
     return len(rows)
 
 
+def printing_prices(name_keys, ttl_days: float | None = None) -> dict[str, dict]:
+    """``{name_key: {"prices": {...}}}`` — price fields only, for many cards.
+
+    Reading one field out of thousands of ~5 KB card blobs is what makes the
+    collection page slow, so the JSON is sliced by SQLite instead of being
+    parsed in Python: pricing a 24k-card collection needs every owned
+    printing's price but only the *displayed* printing's full data.
+    """
+    ttl = settings.cache_ttl_days if ttl_days is None else ttl_days
+    keys = list(name_keys)
+    out: dict[str, dict] = {}
+    if not keys:
+        return out
+    with get_conn() as conn:
+        for i in range(0, len(keys), 900):
+            chunk = keys[i : i + 900]
+            placeholders = ",".join("?" * len(chunk))
+            rows = conn.execute(
+                f"""SELECT name_key, fetched_at,
+                           json_extract(data, '$.prices.eur') AS eur,
+                           json_extract(data, '$.prices.eur_foil') AS eur_foil
+                    FROM cards WHERE name_key IN ({placeholders})""",
+                chunk,
+            ).fetchall()
+            for r in rows:
+                if _fresh(r["fetched_at"], ttl):
+                    out[r["name_key"]] = {
+                        "prices": {"eur": r["eur"], "eur_foil": r["eur_foil"]}
+                    }
+    return out
+
+
+def iter_printings():
+    """Yield every cached printing (the ``id:<uuid>`` rows) as a card dict.
+
+    Streamed rather than returned as a list: this walks ~500k rows / several GB
+    of JSON, which is fine to iterate but not to materialize.
+    """
+    with get_conn() as conn:
+        for row in conn.execute("SELECT data FROM cards WHERE name_key LIKE 'id:%'"):
+            yield json.loads(row["data"])
+
+
+def has_printings() -> bool:
+    """True if the ``all_cards`` bulk export has been imported at least once."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM cards WHERE name_key LIKE 'id:%' LIMIT 1"
+        ).fetchone()
+    return row is not None
+
+
 def all_oracle_cards() -> list[dict]:
     """Every by-name cached card (the oracle_cards bulk import) — excludes the
     by-id printing entries (``id:<uuid>``). Used by ``app.cardsearch`` to scan
@@ -228,6 +286,37 @@ def all_oracle_cards() -> list[dict]:
             "SELECT data FROM cards WHERE name_key NOT LIKE 'id:%'"
         ).fetchall()
     return [json.loads(r["data"]) for r in rows]
+
+
+# --- Cheapest-printing price index (app/prices.py) -----------------------
+
+def replace_card_prices(rows) -> None:
+    """Swap the whole index for ``rows`` — ``(name_key, eur, set_code, set_name)``.
+
+    One transaction, because a half-written index prices part of a decklist
+    from the cheapest printing and the rest from the canonical one.
+    """
+    with get_conn() as conn:
+        conn.execute("DELETE FROM card_prices")
+        conn.executemany(
+            "INSERT OR REPLACE INTO card_prices (name_key, eur, set_code, set_name)"
+            " VALUES (?, ?, ?, ?)",
+            list(rows),
+        )
+
+
+def all_card_prices() -> dict[str, tuple]:
+    """The whole index as ``{name_key: (eur, set_code, set_name)}``."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT name_key, eur, set_code, set_name FROM card_prices"
+        ).fetchall()
+    return {r["name_key"]: (r["eur"], r["set_code"], r["set_name"]) for r in rows}
+
+
+def card_prices_count() -> int:
+    with get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) AS n FROM card_prices").fetchone()["n"]
 
 
 # --- EDHREC cache --------------------------------------------------------
@@ -370,8 +459,12 @@ def replace_collection(profile_id: int, rows, source: str | None = None) -> None
             }
     with get_conn() as conn:
         conn.execute("DELETE FROM collection WHERE profile_id=?", (pid,))
-        # The home page caches per-profile stats (value, colors) in meta.
-        conn.execute("DELETE FROM meta WHERE key=?", (f"collection_stats:{pid}",))
+        # Per-profile meta caches keyed on the collection's contents: the home
+        # page stats (value, colors) and the owned-printing price map.
+        conn.execute(
+            "DELETE FROM meta WHERE key IN (?, ?)",
+            (f"collection_stats:{pid}", f"collection_prices:{pid}"),
+        )
         for r in merged.values():
             conn.execute(
                 """INSERT OR REPLACE INTO collection
@@ -395,6 +488,28 @@ def collection_names(profile_id: int):
             (int(profile_id),),
         ).fetchall()
     return [(r["raw_name"], r["name_key"], r["qty"]) for r in rows]
+
+
+def collection_printings(profile_id: int):
+    """Owned rows grouped per (name, printing, finish), in card-name order.
+
+    ``collection_names`` collapses a card to its name, which is all deck
+    building needs but loses what the copies are actually WORTH: a card you own
+    is worth the price of the printing you own, and the spread is not a detail
+    (Chainer, Dementia Master is 44 € in Torment and 0.24 € in the printing
+    Scryfall calls canonical). Foil is part of the grouping key for the same
+    reason — a foil copy is a different, dearer product.
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT name_key, MIN(raw_name) AS raw_name, scryfall_id, set_code,
+                      foil, SUM(quantity) AS qty, SUM(deck_qty) AS deck_qty
+               FROM collection WHERE profile_id=?
+               GROUP BY name_key, scryfall_id, set_code, foil
+               ORDER BY raw_name""",
+            (int(profile_id),),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def collection_scryfall_ids(profile_id: int):

@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from . import buylist, db, llm, poolbuild, research, scryfall
+from . import buylist, db, llm, poolbuild, prices, research, scryfall
 from .config import settings
 from .poolbuild import CATEGORY_LABELS, CATEGORY_ORDER
 
@@ -246,7 +246,7 @@ def _build_deck(archetype: dict, ctx: _BuildContext) -> dict:
             # Missing copies the user does own — but locked in other decks.
             "in_deck_qty": min(count - owned, ctx.in_deck_qty.get(key, 0)),
             "owned": owned >= count,
-            "price_eur": scryfall.price_eur(card),
+            "price_eur": prices.buy_price_eur(card),
             "cmc": card.get("cmc"),
             "forced": bool(entry.get("forced")),
         }

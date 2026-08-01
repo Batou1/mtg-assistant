@@ -18,7 +18,7 @@ one-shot intent → analyse pipeline and flags that the full chat needs a key.
 import logging
 import threading
 
-from . import analysis, cardsearch, commanders, db, deckgen, formats60, intent, llm, poolbuild, scryfall
+from . import analysis, cardsearch, commanders, db, deckgen, formats60, intent, llm, poolbuild, prices, scryfall
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -690,7 +690,7 @@ def _exec_lookup_card(args: dict, profile_id: int, ctx: dict | None = None):
     card = resolved.get(name.lower())
     if not card:
         return f"Carte « {name} » introuvable sur Scryfall.", None
-    price = scryfall.price_eur(card)
+    price = prices.buy_price_eur(card)
     legal = [f for f in _LEGALITY_FORMATS if scryfall.legal_in(card, f)]
     return (
         f"{card['name']} — prix {price if price is not None else 'indisponible'} € ; "
@@ -709,7 +709,7 @@ def _search_result_line(card: dict) -> str:
     oracle = oracle.replace("\n", " ").strip()
     if len(oracle) > 140:
         oracle = oracle[:140] + "…"
-    price = scryfall.price_eur(card)
+    price = prices.buy_price_eur(card)
     price_txt = f"{price}€" if price is not None else "prix indisponible"
     return f"- {card['name']} | {cost} | {type_line} | {price_txt} | {oracle}"
 

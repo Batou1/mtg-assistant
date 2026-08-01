@@ -5,8 +5,10 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 
-# App data / local DB
+# App data / local DB (SQLite runs in WAL mode: -wal/-shm sit next to the .db)
 data/*.db
+data/*.db-wal
+data/*.db-shm
 data/*.sqlite
 data/*.log
 
