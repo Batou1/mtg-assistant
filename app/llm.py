@@ -50,11 +50,13 @@ def _message(system: str, user: str, max_tokens: int) -> str | None:
 
 
 def create_message(system: str, messages: list[dict], tools: list[dict] | None = None,
-                   max_tokens: int | None = None):
+                   max_tokens: int | None = None, tool_choice: dict | None = None):
     """Low-level call returning the full Anthropic response (or None on failure).
 
     Unlike ``chat_json``/``chat_text``, this exposes the raw response so callers
     can inspect ``stop_reason`` and ``tool_use`` blocks to drive an agent loop.
+    ``tool_choice={"type": "none"}`` forces a text answer while keeping ``tools``
+    declared — required when the transcript already contains tool blocks.
     """
     if not is_available():
         return None
@@ -66,6 +68,8 @@ def create_message(system: str, messages: list[dict], tools: list[dict] | None =
     }
     if tools:
         kwargs["tools"] = tools
+        if tool_choice is not None:
+            kwargs["tool_choice"] = tool_choice
     try:
         return _get_client().messages.create(**kwargs)
     except anthropic.APIError:
