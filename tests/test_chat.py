@@ -506,3 +506,257 @@ def test_suggest_commanders_tool_passes_requested_format(env, monkeypatch):
     # Unknown format value falls back to plain "commander".
     chat._exec_suggest_commanders({"format": "bogus"}, pid)
     assert captured["format"] == "commander"
+
+
+# --- Reflection / discussion mode ----------------------------------------
+# The chat must be able to DISCUSS an idea (viability, synergies) without
+# generating anything, grounded by the consultation tools.
+
+_RADAGAST = {
+    "name": "Radagast of Rhosgobel",
+    "mana_cost": "{3}{G}",
+    "type_line": "Legendary Creature — Avatar Wizard",
+    "power": "3", "toughness": "3",
+    "oracle_text": (
+        "Vigilance\nAt the beginning of combat on your turn, look at the top X "
+        "cards of your library, where X is Radagast's power."
+    ),
+    "color_identity": ["G"],
+    "legalities": {"commander": "legal", "duel": "legal"},
+}
+
+
+def _radagast_resolve(names, client=None):
+    return {n.lower(): dict(_RADAGAST) for n in names}, []
+
+
+_RADAGAST_PAGE = {
+    "container": {"json_dict": {
+        "card": {"num_decks": 431},
+        "cardlists": [
+            {"tag": "highsynergycards", "header": "High Synergy Cards",
+             "cardviews": [{"name": "Beorn the Fierce"}, {"name": "Elvish Piper"}]},
+        ],
+    }},
+    "panels": {"taglinks": [{"slug": "creatures"}, {"value": "flash"}]},
+}
+
+
+def test_reflection_prompt_and_tool_registered(env):
+    chat = env.chat
+    assert "PARTENAIRE DE RÉFLEXION" in chat.SYSTEM_PROMPT
+    # Every declared tool has an executor and vice versa.
+    assert set(chat._EXECUTORS) == {t["name"] for t in chat.TOOLS}
+    assert "get_commander_overview" in chat._EXECUTORS
+
+
+def test_commander_overview_tool_grounds_discussion(env, monkeypatch):
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+    db.replace_collection(pid, [_row("Beorn the Fierce")])
+
+    monkeypatch.setattr(chat.scryfall, "resolve_cards", _radagast_resolve)
+    monkeypatch.setattr(chat.edhrec, "fetch_commander",
+                        lambda name, client=None: _RADAGAST_PAGE)
+
+    text, artifact = chat._exec_commander_overview(
+        {"name": "Radagast of Rhosgobel"}, pid
+    )
+    # Consultation only: no artifact, so the UI never shows a generation result.
+    assert artifact is None
+    # Card facts (exact text) ground the discussion.
+    assert "Vigilance" in text
+    assert "Legendary Creature" in text
+    # Commander eligibility per format.
+    assert "commander" in text and "duelcommander" in text
+    # EDHREC popularity, themes and top cards.
+    assert "431 decks" in text
+    assert "creatures" in text and "flash" in text
+    # Owned top cards are flagged, unowned ones are not.
+    assert "Beorn the Fierce (possédée)" in text
+    assert "Elvish Piper (possédée)" not in text
+    assert "Elvish Piper" in text
+
+
+def test_commander_overview_handles_edhrec_sentinels(env, monkeypatch):
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+    monkeypatch.setattr(chat.scryfall, "resolve_cards", _radagast_resolve)
+
+    # _error: never cached upstream, the overview says "retry later".
+    monkeypatch.setattr(chat.edhrec, "fetch_commander",
+                        lambda name, client=None: {"_error": True})
+    text, _ = chat._exec_commander_overview({"name": "Radagast of Rhosgobel"}, pid)
+    assert "indisponibles" in text
+
+    # _not_found: an unplayed commander is flagged as original, not broken.
+    monkeypatch.setattr(chat.edhrec, "fetch_commander",
+                        lambda name, client=None: {"_not_found": True})
+    text, _ = chat._exec_commander_overview({"name": "Radagast of Rhosgobel"}, pid)
+    assert "Aucune page EDHREC" in text
+
+
+def test_commander_overview_flags_non_commander(env, monkeypatch):
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+    vanilla = {
+        "name": "Grizzly Bears", "mana_cost": "{1}{G}",
+        "type_line": "Creature — Bear", "power": "2", "toughness": "2",
+        "oracle_text": "", "color_identity": ["G"],
+        "legalities": {"commander": "legal"},
+    }
+    monkeypatch.setattr(
+        chat.scryfall, "resolve_cards",
+        lambda names, client=None: ({n.lower(): vanilla for n in names}, []),
+    )
+    monkeypatch.setattr(chat.edhrec, "fetch_commander",
+                        lambda name, client=None: {"_not_found": True})
+    text, _ = chat._exec_commander_overview({"name": "Grizzly Bears"}, pid)
+    assert "ne peut PAS être un commandant" in text
+
+
+def test_lookup_card_includes_card_text(env, monkeypatch):
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+    monkeypatch.setattr(chat.scryfall, "resolve_cards", _radagast_resolve)
+    monkeypatch.setattr(chat.prices, "buy_price_eur", lambda card: 0.5)
+
+    text, artifact = chat._exec_lookup_card({"name": "Radagast of Rhosgobel"}, pid)
+    assert artifact is None
+    assert "Vigilance" in text          # oracle text
+    assert "Legendary Creature" in text  # type line
+    assert "0.5" in text                 # price
+    assert "commander" in text           # legality
+
+
+def test_reflection_turn_discusses_without_generating(env, monkeypatch):
+    """An open question triggers consultation tools + a substantive answer,
+    never a generation tool."""
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+    cid = db.create_conversation(pid)
+
+    monkeypatch.setattr(chat.llm, "is_available", lambda: True)
+    monkeypatch.setattr(chat.scryfall, "resolve_cards", _radagast_resolve)
+    monkeypatch.setattr(chat.edhrec, "fetch_commander",
+                        lambda name, client=None: _RADAGAST_PAGE)
+
+    def boom(*a, **k):
+        raise AssertionError("no generation tool may run for an open question")
+    monkeypatch.setattr(chat.deckgen, "generate_full_deck", boom)
+    monkeypatch.setattr(chat.analysis, "analyze", boom)
+    monkeypatch.setattr(chat.analysis, "find_commanders", boom)
+
+    responses = [
+        _resp([_tool_block("t1", "get_commander_overview",
+                           {"name": "Radagast of Rhosgobel"})], "tool_use"),
+        _resp([_text_block(
+            "Oui, c'est jouable : Radagast triche des créatures en jeu et le "
+            "flash permet de réagir. Veux-tu creuser la base de créatures ?"
+        )], "end_turn"),
+    ]
+    calls = {"n": 0}
+
+    def fake_create(system, messages, tools=None, max_tokens=None, tool_choice=None):
+        r = responses[calls["n"]]
+        calls["n"] += 1
+        return r
+
+    monkeypatch.setattr(chat.llm, "create_message", fake_create)
+
+    chat.run_turn(cid, pid, "Est-ce que ça a du sens de faire un deck autour "
+                            "de Radagast of Rhosgobel et Beorn the Fierce ?")
+
+    assistant = db.get_messages(cid)[-1]
+    assert "jouable" in assistant["content"]
+    assert not assistant.get("artifacts")  # discussion leaves no artifact
+    assert calls["n"] == 2
+
+
+# --- Agent-loop robustness (the "D'accord." bug) -------------------------
+
+def test_thinking_truncation_retries_with_bigger_budget(env, monkeypatch):
+    """A response truncated inside thinking (stop_reason=max_tokens, no text)
+    is retried once with the large token budget instead of yielding an empty
+    reply."""
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+    cid = db.create_conversation(pid)
+    monkeypatch.setattr(chat.llm, "is_available", lambda: True)
+
+    budgets = []
+
+    def fake_create(system, messages, tools=None, max_tokens=None, tool_choice=None):
+        budgets.append(max_tokens)
+        if len(budgets) == 1:
+            return _resp([], "max_tokens")  # all tokens went to thinking
+        return _resp([_text_block("Réponse complète après réflexion.")], "end_turn")
+
+    monkeypatch.setattr(chat.llm, "create_message", fake_create)
+
+    chat.run_turn(cid, pid, "question difficile qui fait beaucoup réfléchir")
+    assert budgets == [None, chat.settings.anthropic_deck_max_tokens]
+    assert "Réponse complète" in db.get_messages(cid)[-1]["content"]
+
+
+def test_exhausted_tool_iterations_force_final_text(env, monkeypatch):
+    """When the tool budget runs out mid-flight, one last text-only call
+    (tool_choice none) closes the turn instead of ending in silence."""
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+    cid = db.create_conversation(pid)
+    monkeypatch.setattr(chat.llm, "is_available", lambda: True)
+
+    calls = {"n": 0, "final": None}
+
+    def fake_create(system, messages, tools=None, max_tokens=None, tool_choice=None):
+        calls["n"] += 1
+        if tool_choice == {"type": "none"}:
+            calls["final"] = tool_choice
+            return _resp([_text_block("Voilà où j'en suis pour l'instant.")], "end_turn")
+        return _resp(
+            [_tool_block(f"t{calls['n']}", "get_collection_summary", {})], "tool_use"
+        )
+
+    monkeypatch.setattr(chat.llm, "create_message", fake_create)
+
+    chat.run_turn(cid, pid, "vas-y")
+    assert calls["final"] == {"type": "none"}
+    assert calls["n"] == chat.settings.chat_max_tool_iterations + 1
+    assert "Voilà où j'en suis" in db.get_messages(cid)[-1]["content"]
+
+
+def test_empty_reply_fallback_is_explicit_not_daccord(env, monkeypatch):
+    """Even if the model persistently returns no text, the player gets an
+    honest message, never a bare "D'accord."."""
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+    cid = db.create_conversation(pid)
+    monkeypatch.setattr(chat.llm, "is_available", lambda: True)
+    monkeypatch.setattr(
+        chat.llm, "create_message",
+        lambda system, messages, tools=None, max_tokens=None, tool_choice=None:
+            _resp([], "end_turn"),
+    )
+
+    chat.run_turn(cid, pid, "Est-ce que ça a du sens ?")
+    content = db.get_messages(cid)[-1]["content"]
+    assert "D'accord" not in content
+    assert "Reformule" in content
+
+
+def test_serialize_content_preserves_thinking_blocks(env):
+    """Thinking blocks must survive serialization: adaptive thinking rejects a
+    resent tool round whose thinking was stripped."""
+    chat = env.chat
+    blocks = [
+        types.SimpleNamespace(type="thinking", thinking="hmm", signature="sig"),
+        types.SimpleNamespace(type="redacted_thinking", data="blob"),
+        types.SimpleNamespace(type="text", text="ok"),
+        types.SimpleNamespace(type="tool_use", id="t1", name="lookup_card",
+                              input={"name": "Sol Ring"}),
+    ]
+    out = chat._serialize_content(blocks)
+    assert out[0] == {"type": "thinking", "thinking": "hmm", "signature": "sig"}
+    assert out[1] == {"type": "redacted_thinking", "data": "blob"}
+    assert out[2]["type"] == "text" and out[3]["type"] == "tool_use"

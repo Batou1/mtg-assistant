@@ -6,6 +6,11 @@ archetype research, full decklist generation, card lookup). The model never
 invents cards: card data always comes from a tool, which itself goes through
 Scryfall/EDHREC.
 
+The chat is also a *thinking partner*: open questions ("does building around X
+make sense?", "is this synergy functional?") get a grounded discussion — via
+the consultation tools (lookup_card, get_commander_overview, search_cards) —
+without triggering any deck generation until the player explicitly asks.
+
 Persistence is intentionally text-only: we store each turn's display text and
 its rich *artifacts* (for rendering), but we do NOT persist the raw
 ``tool_use``/``tool_result`` transcript. Each turn we rebuild the API history as
@@ -18,7 +23,10 @@ one-shot intent → analyse pipeline and flags that the full chat needs a key.
 import logging
 import threading
 
-from . import analysis, cardsearch, commanders, db, deckgen, formats60, intent, llm, poolbuild, prices, scryfall
+from . import (
+    analysis, cardsearch, commanders, db, deckgen, edhrec, formats60, intent,
+    llm, poolbuild, prices, scryfall,
+)
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -32,7 +40,26 @@ SYSTEM_PROMPT = (
     "dialogue de façon itérative avec un joueur pour l'aider à construire un deck "
     "à partir de SA collection.\n\n"
     "Règles :\n"
-    "- DIALOGUE D'ABORD : si la demande est vague ou s'il manque une information "
+    "- PARTENAIRE DE RÉFLEXION : le joueur ne veut pas toujours un deck. S'il "
+    "pose une question OUVERTE ou ÉVALUATIVE — « est-ce que ça a du sens de "
+    "construire autour de X ? », « est-ce fonctionnel/viable ? », « quelles "
+    "synergies avec… ? », « que penses-tu de… ? », comparer des commandants, "
+    "évaluer une idée de deck ou une interaction — RÉPONDS SUR LE FOND : analyse "
+    "la stratégie (forces, faiblesses, conditions pour que ça fonctionne, à "
+    "quelle table ça joue), en t'appuyant sur les outils de CONSULTATION : "
+    "get_commander_overview pour un commandant ou une idée de deck Commander "
+    "(texte exact de la carte, popularité EDHREC, thèmes, cartes phares), "
+    "lookup_card pour lire le texte/prix/légalité d'une carte citée, "
+    "search_cards pour mesurer le support RÉEL d'une synergie dans le pool de "
+    "cartes existantes. Termine en guidant la réflexion : une question, une "
+    "piste concrète, ou la proposition de passer à la génération SI c'est la "
+    "suite logique — mais NE génère ni decklist ni suggestions de commandants "
+    "tant que le joueur ne le demande pas explicitement. Ne réponds JAMAIS à "
+    "une question de fond par une simple formule d'accord ou d'attente : chaque "
+    "réponse apporte une analyse, un fait vérifié ou une question qui fait "
+    "avancer.\n"
+    "- DIALOGUE D'ABORD : si le joueur demande une GÉNÉRATION (deck, "
+    "commandants) mais que la demande est vague ou qu'il manque une information "
     "importante (format, couleurs, budget, thème), pose UNE ou DEUX questions "
     "courtes pour préciser AVANT de lancer un outil de génération. Ne génère ni "
     "suggestions ni decklist tant que l'essentiel n'est pas clair.\n"
@@ -55,8 +82,11 @@ SYSTEM_PROMPT = (
     "(avec la raison) — appuie-toi dessus.\n"
     "- Utilise les outils pour OBTENIR des cartes ou des decks : ne cite jamais "
     "une carte que tu n'as pas obtenue via un outil ou qui ne figure pas déjà "
-    "dans le CONTEXTE ACTUEL. N'invente AUCUN nom de carte. Pour vérifier le prix "
-    "ou la légalité d'une carte précise, utilise lookup_card.\n"
+    "dans le CONTEXTE ACTUEL ou le message du joueur. N'invente AUCUN nom de "
+    "carte. Tes connaissances générales (règles du jeu, mécaniques, évaluation "
+    "stratégique, archétypes) sont bienvenues dans la discussion, mais avant de "
+    "raisonner sur une carte précise citée par le joueur, vérifie son texte réel "
+    "avec lookup_card ou get_commander_overview.\n"
     "- Respecte STRICTEMENT le format, les couleurs et le nombre de couleurs "
     "demandés. « monocouleur » => max_colors=1. Convertis les noms de "
     "guildes/shards/wedges en couleurs WUBRG quand tu appelles un outil "
@@ -365,10 +395,33 @@ TOOLS = [
     },
     {
         "name": "lookup_card",
-        "description": "Donne le prix EUR et la légalité d'une carte précise via Scryfall.",
+        "description": (
+            "Donne le texte exact (type, coût, capacités), le prix EUR et la "
+            "légalité d'une carte précise via Scryfall. Utilise-le avant de "
+            "raisonner sur une carte citée par le joueur."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {"name": {"type": "string", "description": "Nom de la carte."}},
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "get_commander_overview",
+        "description": (
+            "Fiche de CONSULTATION d'un commandant potentiel, sans rien générer : "
+            "texte exact de la carte (Scryfall), éligibilité comme commandant, "
+            "popularité EDHREC (nombre de decks), thèmes/archétypes associés et "
+            "cartes les plus recommandées (celles que le joueur possède sont "
+            "signalées). Utilise-le pour DISCUTER — évaluer une idée de deck, "
+            "juger la viabilité d'une synergie, comparer des commandants — avant "
+            "ou sans toute génération de decklist."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Nom du commandant (ou de la carte légendaire)."},
+            },
             "required": ["name"],
         },
     },
@@ -682,6 +735,36 @@ def _exec_generate_decklist(args: dict, profile_id: int, ctx: dict | None = None
     return text, artifact
 
 
+def _norm(name: str) -> str:
+    """Canonical name key (front face, lowercase) — invariant of the codebase."""
+    return name.split("//")[0].strip().lower()
+
+
+def _card_facts(card: dict) -> str:
+    """Compact factual line(s) about a card: cost, type, text, identity.
+
+    This is what grounds a *discussion* turn: the model reasons about what the
+    card actually does instead of its (possibly wrong) memory of it.
+    """
+    cost = scryfall.mana_cost(card)
+    pt = scryfall.power_toughness(card)
+    oracle = scryfall.oracle_text(card).replace("\n", " / ").strip()
+    identity = scryfall.color_identity(card)
+    bits = [card["name"]]
+    if cost:
+        bits.append(cost)
+    if card.get("type_line"):
+        bits.append(card["type_line"])
+    if pt:
+        bits.append(pt)
+    head = " — ".join(bits)
+    lines = [head]
+    if oracle:
+        lines.append(f"Texte : {oracle}")
+    lines.append(f"Identité de couleur : {_fmt_colors(identity)}.")
+    return "\n".join(lines)
+
+
 def _exec_lookup_card(args: dict, profile_id: int, ctx: dict | None = None):
     name = (args.get("name") or "").strip()
     if not name:
@@ -693,10 +776,76 @@ def _exec_lookup_card(args: dict, profile_id: int, ctx: dict | None = None):
     price = prices.buy_price_eur(card)
     legal = [f for f in _LEGALITY_FORMATS if scryfall.legal_in(card, f)]
     return (
-        f"{card['name']} — prix {price if price is not None else 'indisponible'} € ; "
+        f"{_card_facts(card)}\n"
+        f"Prix : {price if price is not None else 'indisponible'} € ; "
         f"légale en : {', '.join(legal) or 'aucun format listé'}.",
         None,
     )
+
+
+# How many top EDHREC cards the overview quotes back to the model. Enough to
+# judge what the deck actually plays, small enough to stay cheap in tokens.
+_OVERVIEW_TOP_CARDS = 30
+
+
+def _exec_commander_overview(args: dict, profile_id: int, ctx: dict | None = None):
+    """Consultation-only commander sheet: card facts + EDHREC popularity/themes.
+
+    Deliberately returns NO artifact: this tool feeds the *discussion* (viability,
+    synergies, comparisons), it must never look like a generation result. Cards
+    quoted come straight from Scryfall/EDHREC, so the model can cite them.
+    """
+    name = (args.get("name") or "").strip()
+    if not name:
+        return "Aucun nom de carte fourni.", None
+    resolved, _nf = scryfall.resolve_cards([name])
+    card = resolved.get(name.lower())
+    if not card:
+        return f"Carte « {name} » introuvable sur Scryfall.", None
+
+    lines = [_card_facts(card)]
+    eligible = [f for f in sorted(commanders.FORMATS)
+                if commanders.is_eligible_commander(card, f)]
+    if eligible:
+        lines.append("Peut être commandant en : " + ", ".join(eligible) + ".")
+    else:
+        lines.append(
+            "ATTENTION : cette carte ne peut PAS être un commandant "
+            "(ni créature légendaire, ni texte l'y autorisant)."
+        )
+
+    data = edhrec.fetch_commander(commanders.front_name(card))
+    if data.get("_error"):
+        lines.append("Données EDHREC momentanément indisponibles (réessaie plus tard).")
+    elif data.get("_not_found") or not eligible:
+        if eligible:
+            lines.append(
+                "Aucune page EDHREC : ce commandant n'est pas (ou très peu) joué — "
+                "signe d'un choix original, pas forcément mauvais."
+            )
+    else:
+        num_decks = edhrec.extract_num_decks(data)
+        lines.append(f"Popularité EDHREC : {num_decks} decks recensés.")
+        tags = edhrec.extract_tags(data)
+        if tags:
+            lines.append("Thèmes/archétypes associés : " + ", ".join(tags[:10]) + ".")
+        top = edhrec.extract_recommended_ordered(data)
+        if top:
+            owned_keys = db.owned_name_keys(profile_id)
+            shown = top[:_OVERVIEW_TOP_CARDS]
+            marked = [f"{n} (possédée)" if _norm(n) in owned_keys else n
+                      for n in shown]
+            owned_in_top = sum(1 for n in shown if _norm(n) in owned_keys)
+            lines.append(
+                f"Cartes les plus recommandées ({len(shown)} premières sur "
+                f"{len(top)}, dont {owned_in_top} possédée(s)) : "
+                + ", ".join(marked) + "."
+            )
+    lines.append(
+        "Ces données servent à la discussion : n'en déduis pas une decklist sans "
+        "demande explicite du joueur."
+    )
+    return "\n".join(lines), None
 
 
 def _search_result_line(card: dict) -> str:
@@ -813,6 +962,7 @@ _EXECUTORS = {
     "generate_decklist": _exec_generate_decklist,
     "build_pool_deck": _exec_build_pool_deck,
     "lookup_card": _exec_lookup_card,
+    "get_commander_overview": _exec_commander_overview,
     "search_cards": _exec_search_cards,
 }
 
@@ -820,13 +970,23 @@ _EXECUTORS = {
 # --- Agent loop ---------------------------------------------------------
 
 def _serialize_content(blocks) -> list[dict]:
-    """Turn an Anthropic response's content blocks into resendable dicts."""
+    """Turn an Anthropic response's content blocks into resendable dicts.
+
+    Thinking blocks must be resent verbatim with a tool round: with adaptive
+    thinking the API rejects an assistant turn whose tool_use lost its
+    preceding thinking block, which would abort the whole chat turn.
+    """
     out = []
     for b in blocks:
         if b.type == "text":
             out.append({"type": "text", "text": b.text})
         elif b.type == "tool_use":
             out.append({"type": "tool_use", "id": b.id, "name": b.name, "input": b.input})
+        elif b.type == "thinking":
+            out.append({"type": "thinking", "thinking": b.thinking,
+                        "signature": b.signature})
+        elif b.type == "redacted_thinking":
+            out.append({"type": "redacted_thinking", "data": b.data})
     return out
 
 
@@ -1090,15 +1250,29 @@ def _context_snapshot(conversation_id: int) -> str:
     )
 
 
+def _has_text(resp) -> bool:
+    return any(b.type == "text" and b.text.strip() for b in resp.content)
+
+
 def _agent_loop(api_messages: list[dict], profile_id: int, system: str,
                 conversation_id: int | None = None):
     """Run the tool-use loop. Returns (final_text, artifacts)."""
     texts: list[str] = []
     artifacts: list[dict] = []
     ctx = {"conversation_id": conversation_id}
+    retried_truncation = False
 
     for _ in range(settings.chat_max_tool_iterations):
         resp = llm.create_message(system, api_messages, tools=TOOLS)
+        if resp is not None and resp.stop_reason == "max_tokens" \
+                and not _has_text(resp) and not retried_truncation:
+            # Adaptive thinking can eat the whole token budget before any text
+            # is emitted (documented in config.py). Left alone, the turn would
+            # end with an empty reply — the "D'accord." bug. One retry with the
+            # large (deck-sized) budget gives the model room to think AND answer.
+            retried_truncation = True
+            resp = llm.create_message(system, api_messages, tools=TOOLS,
+                                      max_tokens=settings.anthropic_deck_max_tokens)
         if resp is None:
             texts.append(
                 "Désolé, le service Claude est momentanément indisponible. Réessaie."
@@ -1132,8 +1306,23 @@ def _agent_loop(api_messages: list[dict], profile_id: int, system: str,
                 {"type": "tool_result", "tool_use_id": b.id, "content": text}
             )
         api_messages.append({"role": "user", "content": tool_results})
+    else:
+        # Tool-iteration budget exhausted while the model still wanted tools:
+        # force one final text-only answer so the player never faces silence
+        # after a long turn. tool_choice "none" keeps the transcript (which
+        # contains tool blocks) valid while forbidding further calls.
+        resp = llm.create_message(system, api_messages, tools=TOOLS,
+                                  tool_choice={"type": "none"})
+        if resp is not None:
+            for b in resp.content:
+                if b.type == "text" and b.text.strip():
+                    texts.append(b.text.strip())
 
-    final = "\n\n".join(texts).strip() or "D'accord."
+    final = "\n\n".join(texts).strip() or (
+        "Je n'ai pas réussi à formuler une réponse cette fois-ci — c'est un "
+        "raté de mon côté, pas un problème avec ta question. Reformule ou "
+        "renvoie ton message, et j'y réponds."
+    )
     return final, artifacts
 
 

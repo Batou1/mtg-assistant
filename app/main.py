@@ -18,7 +18,7 @@ from . import (
 )
 from .config import settings
 
-APP_VERSION = "2.4"
+APP_VERSION = "2.5"
 
 logger = logging.getLogger(__name__)
 
