@@ -25,7 +25,7 @@ import threading
 
 from . import (
     analysis, cardsearch, commanders, db, deckgen, edhrec, formats60, intent,
-    llm, poolbuild, prices, scryfall,
+    llm, playerprofile, poolbuild, prices, scryfall,
 )
 from .config import settings
 
@@ -1352,8 +1352,15 @@ def _generate_reply(conversation_id: int, profile_id: int, user_text: str):
     if not llm.is_available():
         return _fallback_turn(profile_id, user_text)
     api_messages = _history_messages(conversation_id)
+    system = SYSTEM_PROMPT
+    # The player-style memory personalises the conversation (defaults,
+    # examples); an explicit request in the turn always overrides it.
+    style = playerprofile.style_prompt_block(profile_id)
+    if style:
+        system = f"{system}\n\n{style}"
     snapshot = _context_snapshot(conversation_id)
-    system = f"{SYSTEM_PROMPT}\n\n{snapshot}" if snapshot else SYSTEM_PROMPT
+    if snapshot:
+        system = f"{system}\n\n{snapshot}"
     return _agent_loop(api_messages, profile_id, system, conversation_id)
 
 
@@ -1370,6 +1377,8 @@ def run_turn(conversation_id: int, profile_id: int, user_text: str) -> None:
     text, artifacts = _generate_reply(conversation_id, profile_id, user_text)
     db.add_message(conversation_id, "assistant", text, artifacts=artifacts or None)
     db.touch_conversation(conversation_id, title=user_text)
+    # Every exchange feeds the player-style memory (background, coalesced).
+    playerprofile.schedule_refresh(profile_id)
 
 
 def create_pool_conversation(profile_id: int, pool_items, fmt: str, intent: dict) -> int:
@@ -1455,6 +1464,8 @@ def _worker(conversation_id: int, profile_id: int, user_text: str) -> None:
         # poll always finds the new message.
         with _inflight_lock:
             _inflight.discard(conversation_id)
+    # Every exchange feeds the player-style memory (background, coalesced).
+    playerprofile.schedule_refresh(profile_id)
 
 
 def start_turn(conversation_id: int, profile_id: int, user_text: str) -> None:
