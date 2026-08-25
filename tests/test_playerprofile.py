@@ -69,6 +69,20 @@ def test_deck_memberships_groups_by_deck_name(env):
     }
 
 
+def test_named_binder_is_not_a_deck(env):
+    """A binder can carry a name too: only Binder Type = deck makes a deck."""
+    db = env.db
+    pid = db.ensure_default_profile()
+    db.replace_collection(pid, [
+        _row("Counterspell", 4, "binder", "Mes bleues préférées"),
+        _row("Goblin Matron", 2, "list", "À vendre"),
+        _row("Krenko, Mob Boss", 1, "deck", "Gobelins"),
+    ])
+    decks = db.deck_memberships(pid)
+    assert set(decks) == {"Gobelins"}
+    assert [c["raw_name"] for c in decks["Gobelins"]] == ["Krenko, Mob Boss"]
+
+
 def test_deck_without_name_still_counts(env):
     db = env.db
     pid = db.ensure_default_profile()
