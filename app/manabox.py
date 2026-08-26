@@ -36,7 +36,9 @@ def parse_manabox_csv(text: str):
     """Return (rows, errors).
 
     rows: list of dicts ready for db.replace_collection — keys scryfall_id,
-    name_key, raw_name, set_code, foil, condition, quantity, binder_type.
+    name_key, raw_name, set_code, foil, condition, quantity, binder_type,
+    binder_name (the deck/binder the copies live in — for "deck" rows this is
+    the deck's name, which feeds the player-style memory).
     errors: list of raw lines that had no usable card name.
     """
     rows = []
@@ -75,6 +77,7 @@ def parse_manabox_csv(text: str):
                 "condition": _pick(raw, "Condition") or "near_mint",
                 "quantity": quantity,
                 "binder_type": _pick(raw, "Binder Type", "Binder type").lower(),
+                "binder_name": _pick(raw, "Binder Name", "Binder name"),
             }
         )
 

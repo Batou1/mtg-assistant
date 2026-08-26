@@ -14,11 +14,11 @@ from starlette.concurrency import run_in_threadpool
 
 from . import (
     analysis, bulk_data, chat, collection as collection_mod, commanders, db, deckgen, formats60,
-    intent, llm, manabox, nlquery, poolbuild, scryquery, textutil,
+    intent, llm, manabox, nlquery, playerprofile, poolbuild, scryquery, textutil,
 )
 from .config import settings
 
-APP_VERSION = "2.5"
+APP_VERSION = "2.6"
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +149,7 @@ def _home_context(request: Request, profile: dict, **extra) -> dict:
         source=profile.get("collection_source"),
         llm_ok=llm.is_available(),
         llm_model=settings.anthropic_model,
+        player_style=playerprofile.get_profile(profile["id"]),
         **extra,
     )
 
@@ -189,12 +190,29 @@ def delete_profile(request: Request, profile_id: str = Form(...)):
     return resp
 
 
+@app.post("/profiles/style/refresh")
+async def refresh_style(request: Request):
+    """Rebuild the player-style portrait on demand (the home-page button).
+
+    Forced (fingerprint ignored) and synchronous — the user asked for it and
+    wants to see the result on the reloaded page. One LLM call at most; runs
+    in the threadpool like every other blocking pipeline.
+    """
+    profile = current_profile(request)
+    await run_in_threadpool(playerprofile.refresh, profile["id"], True)
+    resp = RedirectResponse(url="/", status_code=303)
+    _set_cookie(resp, COOKIE, profile["id"])
+    return resp
+
+
 # --- Collection ----------------------------------------------------------
 
 def _do_import(profile_id: int, text: str, filename: str):
     """Parse + store a ManaBox CSV. Blocking; run it in a threadpool."""
     rows, errors = manabox.parse_manabox_csv(text)
     db.replace_collection(profile_id, rows, source=f"ManaBox: {filename}")
+    # The library changed: re-read the built decks and refresh the style memory.
+    playerprofile.schedule_refresh(profile_id)
     return rows, errors
 
 
@@ -325,6 +343,15 @@ def collection(request: Request):
 async def suggest(request: Request, wish: str = Form(""), beyond: str = Form("")):
     profile = current_profile(request)
     parsed = await run_in_threadpool(intent.parse_intent, wish)
+    await run_in_threadpool(
+        playerprofile.record_event, profile["id"], "analyse",
+        {
+            "wish": wish, "format": parsed.get("format"),
+            "theme": parsed.get("theme"), "colors": parsed.get("colors"),
+            "budget_eur": parsed.get("budget_eur"),
+        },
+    )
+    playerprofile.schedule_refresh(profile["id"])
 
     # "Beyond the collection": theme-first commander search (EDHREC theme pages
     # + local Scryfall pool), independent of the cards the player owns — it
@@ -381,6 +408,14 @@ async def generate(
 ):
     profile = current_profile(request)
     fmt = format if format in commanders.FORMATS else "commander"
+    await run_in_threadpool(
+        playerprofile.record_event, profile["id"], "deck généré",
+        {
+            "commander": commander, "format": fmt, "theme": theme,
+            "budget_eur": _parse_budget(budget),
+        },
+    )
+    playerprofile.schedule_refresh(profile["id"])
     deck, _data = await run_in_threadpool(
         deckgen.generate_full_deck, commander, _parse_budget(budget), theme, profile["id"],
         _parse_budget(max_card_price), fmt,
@@ -446,9 +481,17 @@ async def build_from_list(
         "max_card_price_eur": _parse_budget(max_card_price),
         "source": "build-form",
     })
+    await run_in_threadpool(
+        playerprofile.record_event, profile["id"], "deck depuis une liste",
+        {
+            "format": fmt, "theme": theme, "colors": colors,
+            "budget_eur": _parse_budget(budget),
+        },
+    )
     conv_id = await run_in_threadpool(
         chat.create_pool_conversation, profile["id"], pool_items, fmt, parsed
     )
+    playerprofile.schedule_refresh(profile["id"])
 
     resp = RedirectResponse(url="/chat", status_code=303)
     _set_cookie(resp, COOKIE, profile["id"])

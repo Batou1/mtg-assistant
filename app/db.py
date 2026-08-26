@@ -26,6 +26,7 @@ CREATE TABLE collection (
     condition   TEXT,
     quantity    INTEGER NOT NULL,
     deck_qty    INTEGER NOT NULL DEFAULT 0,
+    deck_names  TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (profile_id, name_key, set_code, foil, condition)
 )
 """
@@ -131,6 +132,12 @@ def _migrate_collection(conn) -> None:
         if "deck_qty" not in cols:
             conn.execute(
                 "ALTER TABLE collection ADD COLUMN deck_qty INTEGER NOT NULL DEFAULT 0"
+            )
+        # deck_names (which ManaBox decks the copies live in, '|'-joined) feeds
+        # the per-player style memory; rows imported before it are unnamed.
+        if "deck_names" not in cols:
+            conn.execute(
+                "ALTER TABLE collection ADD COLUMN deck_names TEXT NOT NULL DEFAULT ''"
             )
         return
 
@@ -413,7 +420,15 @@ def delete_profile(profile_id: int) -> None:
         for cid in ids:
             conn.execute("DELETE FROM messages WHERE conversation_id=?", (cid,))
         conn.execute("DELETE FROM conversations WHERE profile_id=?", (pid,))
-        conn.execute("DELETE FROM meta WHERE key=?", (f"collection_stats:{pid}",))
+        conn.execute(
+            "DELETE FROM meta WHERE key IN (?, ?, ?, ?)",
+            (
+                f"collection_stats:{pid}",
+                f"collection_prices:{pid}",
+                f"player_profile:{pid}",
+                f"profile_events:{pid}",
+            ),
+        )
         conn.execute("DELETE FROM profiles WHERE id=?", (pid,))
         _ensure_default_profile(conn)
 
@@ -424,22 +439,28 @@ def replace_collection(profile_id: int, rows, source: str | None = None) -> None
     """Replace ``profile_id``'s collection with ``rows``.
 
     Each row: scryfall_id, name_key, raw_name, set_code, foil, condition,
-    quantity, and optionally binder_type (ManaBox: "binder", "deck", "list").
-    Identical (name_key, set_code, foil, condition) rows are summed; copies
-    whose binder_type is "deck" also accumulate into deck_qty so deck
-    generation can avoid cards already sleeved in the user's decks.
+    quantity, and optionally binder_type (ManaBox: "binder", "deck", "list")
+    plus binder_name (the deck/binder the copies live in). Identical
+    (name_key, set_code, foil, condition) rows are summed; copies whose
+    binder_type is "deck" also accumulate into deck_qty so deck generation can
+    avoid cards already sleeved in the user's decks, and their binder names are
+    kept ('|'-joined) so the player-style memory can see the built decks.
     """
     pid = int(profile_id)
     merged: dict[tuple, dict] = {}
+    deck_names: dict[tuple, set] = {}
     for r in rows:
         qty = int(r["quantity"])
-        deck_qty = qty if (r.get("binder_type") or "") == "deck" else 0
+        in_deck = (r.get("binder_type") or "") == "deck"
+        deck_qty = qty if in_deck else 0
         key = (
             r["name_key"],
             r.get("set_code") or "",
             int(bool(r.get("foil"))),
             r.get("condition") or "",
         )
+        if in_deck and (r.get("binder_name") or "").strip():
+            deck_names.setdefault(key, set()).add(r["binder_name"].strip())
         if key in merged:
             merged[key]["quantity"] += qty
             merged[key]["deck_qty"] += deck_qty
@@ -457,6 +478,8 @@ def replace_collection(profile_id: int, rows, source: str | None = None) -> None
                 "quantity": qty,
                 "deck_qty": deck_qty,
             }
+    for key, r in merged.items():
+        r["deck_names"] = "|".join(sorted(deck_names.get(key) or ()))
     with get_conn() as conn:
         conn.execute("DELETE FROM collection WHERE profile_id=?", (pid,))
         # Per-profile meta caches keyed on the collection's contents: the home
@@ -468,8 +491,8 @@ def replace_collection(profile_id: int, rows, source: str | None = None) -> None
         for r in merged.values():
             conn.execute(
                 """INSERT OR REPLACE INTO collection
-                   (profile_id, scryfall_id, name_key, raw_name, set_code, foil, condition, quantity, deck_qty)
-                   VALUES (:profile_id, :scryfall_id, :name_key, :raw_name, :set_code, :foil, :condition, :quantity, :deck_qty)""",
+                   (profile_id, scryfall_id, name_key, raw_name, set_code, foil, condition, quantity, deck_qty, deck_names)
+                   VALUES (:profile_id, :scryfall_id, :name_key, :raw_name, :set_code, :foil, :condition, :quantity, :deck_qty, :deck_names)""",
                 r,
             )
         if source is not None:
@@ -557,6 +580,32 @@ def owned_quantities(profile_id: int) -> dict[str, tuple[int, int]]:
             (int(profile_id),),
         ).fetchall()
     return {r["name_key"]: (r["qty"], r["deck_qty"]) for r in rows}
+
+
+def deck_memberships(profile_id: int) -> dict[str, list[dict]]:
+    """``{deck_name: [{name_key, raw_name, qty}, …]}`` from the ManaBox decks.
+
+    Built from the copies flagged "Binder Type" = deck at import. Rows imported
+    before deck names were stored land under the "" key, so pre-existing
+    collections still produce a (single, unnamed) deck signal rather than none.
+    A printing sleeved in several decks lists the card under each of them.
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT name_key, MIN(raw_name) AS raw_name, deck_names,
+                      SUM(deck_qty) AS qty
+               FROM collection WHERE profile_id=? AND deck_qty>0
+               GROUP BY name_key, deck_names ORDER BY raw_name""",
+            (int(profile_id),),
+        ).fetchall()
+    decks: dict[str, list[dict]] = {}
+    for r in rows:
+        names = [n for n in (r["deck_names"] or "").split("|") if n] or [""]
+        for deck in names:
+            decks.setdefault(deck, []).append(
+                {"name_key": r["name_key"], "raw_name": r["raw_name"], "qty": r["qty"]}
+            )
+    return decks
 
 
 def get_meta(key: str):

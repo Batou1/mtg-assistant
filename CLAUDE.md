@@ -108,6 +108,7 @@ filtrer ne doit ni l'ouvrir ni le refermer).
 | `poolbuild.py` | Meilleur deck depuis une liste fournie (`FormatSpec` par format ; LLM + fallback). |
 | `formats60.py` | Deck 60 cartes complet par archétype (Brave → LLM → validation Scryfall, 4-of, manabase). |
 | `chat.py` | Boucle agent (tools Anthropic sur les modules ci-dessus), tours en thread. |
+| `playerprofile.py` | Mémoire du style de jeu par profil (decks ManaBox + chats + formulaires) : synthèse LLM avec repli heuristique, stockée dans `meta` (`player_profile:<pid>`), rafraîchie en thread après chaque échange/import, injectée dans le system prompt du chat et affichée sur l'accueil. |
 | `buylist.py` | Liste d'achat gloutonne sous budget, prix EUR Cardmarket. |
 | `collection.py` | Enrichissement + recherche de la collection depuis le cache local uniquement. |
 | `commanders.py` | Éligibilité commandant + variantes (`FORMATS`, `SCRYFALL_LEGALITY`). |

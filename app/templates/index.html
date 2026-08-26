@@ -96,6 +96,46 @@
   </div>
 </div>
 
+<!-- Player-style memory: how the app perceives this player -->
+<section class="card player-style-card" style="margin-top: 18px;">
+  <h2>Comment l'app te perçoit</h2>
+  {% if player_style %}
+    <p>{{ player_style.summary }}</p>
+    {% if player_style.colors %}
+      <div class="wubrg-bar" title="Couleurs de prédilection" style="max-width: 220px;">
+        {% for c in player_style.colors %}
+          <span class="wubrg-seg {{ c }}" style="width: {{ (100 / player_style.colors|length)|round(2) }}%"></span>
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% if player_style.style_tags %}
+      <ul class="chips">
+        {% for t in player_style.style_tags %}<li class="chip">{{ t }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+    {% if player_style.favorite_cards %}
+      <p class="muted small">Cartes qui te tiennent à cœur :
+        {{ player_style.favorite_cards|join(", ") }}</p>
+    {% endif %}
+    <p class="muted small">
+      Portrait déduit de {{ player_style.deck_count or 0 }} deck(s) de ta bibliothèque
+      et de {{ player_style.conversation_count or 0 }} conversation(s)
+      {% if player_style.updated_display %} · mis à jour le {{ player_style.updated_display }}{% endif %}
+      {% if player_style.source == "heuristic" %} · analyse heuristique (sans Claude){% endif %}.
+      Il s'affine à chaque échange et à chaque import de ta bibliothèque.
+    </p>
+  {% else %}
+    <p class="muted">
+      L'app ne te connaît pas encore. Importe ta collection (avec tes decks ManaBox)
+      ou discute avec l'assistant : ton style de jeu — couleurs, stratégies,
+      formats préférés — apparaîtra ici et personnalisera les suggestions.
+    </p>
+  {% endif %}
+  <form action="/profiles/style/refresh" method="post" style="margin-top: 10px;">
+    <button type="submit" class="btn-outline">Mettre à jour mon profil</button>
+  </form>
+</section>
+
 <script>
   function mtgFillWish(btn) {
     var form = btn.closest(".card").querySelector("textarea[name=wish]");
