@@ -719,8 +719,10 @@ details.buylist > .buy-grid { padding: 14px; margin-top: 0; }
   width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
   text-align: center; padding: 10px; font-size: .72rem; color: var(--muted);
 }
+/* Bottom-left corner: the top-right of a card art is where the mana cost
+   sits, so the copies badge would cover it. */
 .collection-grid .cv-qty-badge {
-  position: absolute; top: 6px; right: 6px; padding: 2px 7px; border-radius: 999px;
+  position: absolute; bottom: 6px; left: 6px; padding: 2px 7px; border-radius: 999px;
   background: rgba(0, 0, 0, .72); color: #fff; font-family: var(--font-mono); font-size: .68rem;
 }
 .collection-grid .cv-text-card { height: 100%; }
