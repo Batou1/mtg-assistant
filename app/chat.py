@@ -1255,15 +1255,22 @@ def _has_text(resp) -> bool:
 
 
 def _agent_loop(api_messages: list[dict], profile_id: int, system: str,
-                conversation_id: int | None = None):
-    """Run the tool-use loop. Returns (final_text, artifacts)."""
+                conversation_id: int | None = None, tools: list[dict] | None = None,
+                executors: dict | None = None):
+    """Run the tool-use loop. Returns (final_text, artifacts).
+
+    ``tools``/``executors`` default to the deckbuilding set; the rules judge
+    (app/judge.py) runs the same loop over its own tools.
+    """
+    tools = tools or TOOLS
+    executors = executors or _EXECUTORS
     texts: list[str] = []
     artifacts: list[dict] = []
     ctx = {"conversation_id": conversation_id}
     retried_truncation = False
 
     for _ in range(settings.chat_max_tool_iterations):
-        resp = llm.create_message(system, api_messages, tools=TOOLS)
+        resp = llm.create_message(system, api_messages, tools=tools)
         if resp is not None and resp.stop_reason == "max_tokens" \
                 and not _has_text(resp) and not retried_truncation:
             # Adaptive thinking can eat the whole token budget before any text
@@ -1271,7 +1278,7 @@ def _agent_loop(api_messages: list[dict], profile_id: int, system: str,
             # end with an empty reply — the "D'accord." bug. One retry with the
             # large (deck-sized) budget gives the model room to think AND answer.
             retried_truncation = True
-            resp = llm.create_message(system, api_messages, tools=TOOLS,
+            resp = llm.create_message(system, api_messages, tools=tools,
                                       max_tokens=settings.anthropic_deck_max_tokens)
         if resp is None:
             texts.append(
@@ -1292,7 +1299,7 @@ def _agent_loop(api_messages: list[dict], profile_id: int, system: str,
         for b in resp.content:
             if b.type != "tool_use":
                 continue
-            executor = _EXECUTORS.get(b.name)
+            executor = executors.get(b.name)
             if executor is None:
                 tool_results.append(
                     {"type": "tool_result", "tool_use_id": b.id,
@@ -1311,7 +1318,7 @@ def _agent_loop(api_messages: list[dict], profile_id: int, system: str,
         # force one final text-only answer so the player never faces silence
         # after a long turn. tool_choice "none" keeps the transcript (which
         # contains tool blocks) valid while forbidding further calls.
-        resp = llm.create_message(system, api_messages, tools=TOOLS,
+        resp = llm.create_message(system, api_messages, tools=tools,
                                   tool_choice={"type": "none"})
         if resp is not None:
             for b in resp.content:
@@ -1364,21 +1371,28 @@ def _generate_reply(conversation_id: int, profile_id: int, user_text: str):
     return _agent_loop(api_messages, profile_id, system, conversation_id)
 
 
-def run_turn(conversation_id: int, profile_id: int, user_text: str) -> None:
+def run_turn(conversation_id: int, profile_id: int, user_text: str,
+             generate=None, learn_style: bool = True) -> None:
     """Append the user message, run the agent, and store the assistant reply.
 
     Blocking (network I/O in the tools). Kept synchronous for the key-free path
     and the tests; the web app uses ``start_turn`` to run this off-request.
+    ``generate(conversation_id, profile_id, user_text) -> (text, artifacts)``
+    defaults to the deckbuilding agent; ``learn_style`` feeds the exchange to
+    the player-style memory (off for the rules judge, whose questions say
+    nothing about how the player builds decks).
     """
     user_text = (user_text or "").strip()
     if not user_text:
         return
+    generate = generate or _generate_reply
     db.add_message(conversation_id, "user", user_text)
-    text, artifacts = _generate_reply(conversation_id, profile_id, user_text)
+    text, artifacts = generate(conversation_id, profile_id, user_text)
     db.add_message(conversation_id, "assistant", text, artifacts=artifacts or None)
     db.touch_conversation(conversation_id, title=user_text)
     # Every exchange feeds the player-style memory (background, coalesced).
-    playerprofile.schedule_refresh(profile_id)
+    if learn_style:
+        playerprofile.schedule_refresh(profile_id)
 
 
 def create_pool_conversation(profile_id: int, pool_items, fmt: str, intent: dict) -> int:
@@ -1448,9 +1462,10 @@ def is_pending(conversation_id) -> bool:
         return cid in _inflight
 
 
-def _worker(conversation_id: int, profile_id: int, user_text: str) -> None:
+def _worker(conversation_id: int, profile_id: int, user_text: str,
+            generate, learn_style: bool) -> None:
     try:
-        text, artifacts = _generate_reply(conversation_id, profile_id, user_text)
+        text, artifacts = generate(conversation_id, profile_id, user_text)
     except Exception:  # never leave the conversation hanging on a spinner
         logger.exception("chat turn failed (conversation %s)", conversation_id)
         text, artifacts = (
@@ -1465,17 +1480,21 @@ def _worker(conversation_id: int, profile_id: int, user_text: str) -> None:
         with _inflight_lock:
             _inflight.discard(conversation_id)
     # Every exchange feeds the player-style memory (background, coalesced).
-    playerprofile.schedule_refresh(profile_id)
+    if learn_style:
+        playerprofile.schedule_refresh(profile_id)
 
 
-def start_turn(conversation_id: int, profile_id: int, user_text: str) -> None:
+def start_turn(conversation_id: int, profile_id: int, user_text: str,
+               generate=None, learn_style: bool = True) -> None:
     """Store the user message and process the reply in a background thread.
 
     Returns immediately so the HTTP request stays well under the proxy timeout.
+    ``generate``/``learn_style``: see ``run_turn``.
     """
     user_text = (user_text or "").strip()
     if not user_text:
         return
+    generate = generate or _generate_reply
     cid = int(conversation_id)
     with _inflight_lock:
         if cid in _inflight:
@@ -1486,7 +1505,8 @@ def start_turn(conversation_id: int, profile_id: int, user_text: str) -> None:
         db.add_message(cid, "user", user_text)
         db.touch_conversation(cid, title=user_text)
         threading.Thread(
-            target=_worker, args=(cid, profile_id, user_text), daemon=True
+            target=_worker, args=(cid, profile_id, user_text, generate, learn_style),
+            daemon=True,
         ).start()
     except BaseException:
         # If the write or thread spawn fails, the worker will never run: clear

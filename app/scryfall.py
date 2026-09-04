@@ -6,6 +6,7 @@ under both their full "Front // Back" name and their front-face name so that
 either form in a decklist resolves. Cards are also cached under "id:<uuid>" so
 ManaBox rows (which carry a Scryfall id) resolve to an exact printing.
 """
+import json
 import time
 
 import httpx
@@ -345,3 +346,51 @@ def legal_in(card: dict, fmt: str) -> bool:
 
 def color_identity(card: dict) -> list[str]:
     return card.get("color_identity", []) or []
+
+
+# --- Official rulings ----------------------------------------------------
+# Gatherer rulings, served by Scryfall per printing (they are Oracle-level, so
+# any printing's id will do). Consulted by the rules judge for card-specific
+# questions; cached in ``meta`` with the card-data TTL since they only change
+# with rules updates.
+
+_RULINGS_META_PREFIX = "rulings:"
+
+
+def rulings(card: dict, client: httpx.Client | None = None) -> list[dict] | None:
+    """``[{"published_at", "comment"}, …]`` for a resolved card, oldest first;
+    ``[]`` when the card has none, ``None`` when Scryfall is unreachable."""
+    oracle_id = card.get("oracle_id") or card.get("id")
+    if not oracle_id:
+        return None
+    key = f"{_RULINGS_META_PREFIX}{oracle_id}"
+    raw = db.get_meta(key)
+    if raw:
+        try:
+            cached = json.loads(raw)
+            if time.time() - float(cached.get("fetched_at", 0)) < settings.cache_ttl_days * 86400:
+                return cached.get("rulings") or []
+        except (ValueError, TypeError):
+            pass
+    if not card.get("id"):
+        return None
+    conn, owns = _client(client)
+    try:
+        resp = conn.get(f"{settings.scryfall_api}/cards/{card['id']}/rulings")
+        time.sleep(settings.request_delay)
+        if resp.status_code == 404:
+            data = {"data": []}
+        else:
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError:
+        return None
+    finally:
+        if owns:
+            conn.close()
+    out = [
+        {"published_at": r.get("published_at") or "", "comment": (r.get("comment") or "").strip()}
+        for r in data.get("data") or [] if r.get("comment")
+    ]
+    db.set_meta(key, json.dumps({"fetched_at": time.time(), "rulings": out}))
+    return out

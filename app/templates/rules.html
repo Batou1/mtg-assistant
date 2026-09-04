@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% import "_artifacts.html" as artifacts %}
+{% block title %}Règles · MTG Assistant{% endblock %}
+{% block body_class %}chat-page rules-page{% endblock %}
+{% block main_class %}chat-shell{% endblock %}
+{% block content %}
+
+<div class="chat-layout">
+  <!-- Questions sidebar -->
+  <aside class="chat-sidebar">
+    <div class="sidebar-top">
+      <form method="post" action="/rules/new"><button type="submit" class="new-chat"><span style="font-size: 1.05rem;">+</span> Nouvelle question</button></form>
+    </div>
+    <h4 class="sidebar-label">Questions</h4>
+    <ul class="conv-list">
+      {% for c in conversations %}
+      <li class="{{ 'active' if c.id == conversation.id else '' }}">
+        <form method="post" action="/rules/message" class="conv-open">
+          <input type="hidden" name="conversation_id" value="{{ c.id }}">
+          <button type="submit" class="conv-name">{{ c.title or "Nouvelle question" }}</button>
+        </form>
+        <form method="post" action="/rules/{{ c.id }}/delete"
+              onsubmit="return confirm('Supprimer cette question ?');">
+          <button type="submit" class="conv-del" title="Supprimer">✕</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <div class="sidebar-bottom rules-status">
+      <h4 class="sidebar-label" style="padding: 0;">Comprehensive Rules</h4>
+      {% if rules_status.loaded %}
+        <p class="small">
+          <span class="badge {{ 'warn' if rules_status.stale else 'ok' }}">{{ 'à vérifier' if rules_status.stale else 'à jour' }}</span>
+          En vigueur au <strong>{{ rules_status.effective_fr or rules_status.effective or 'date inconnue' }}</strong>
+          · {{ rules_status.count }} règles
+        </p>
+        <p class="small muted">
+          {% if rules_status.checked_days_ago is not none %}
+            Dernière vérification : {% if rules_status.checked_days_ago == 0 %}aujourd'hui{% else %}il y a {{ rules_status.checked_days_ago }} jour(s){% endif %}
+            (contrôle mensuel automatique).
+          {% endif %}
+        </p>
+      {% else %}
+        <p class="small"><span class="badge warn">non chargées</span> Les règles officielles n'ont pas encore été importées : le juge ne peut rien citer.</p>
+      {% endif %}
+      {% if refresh_result %}
+        <p class="small {{ 'muted' if refresh_result.status != 'error' else '' }}">
+          {% if refresh_result.status == 'updated' %}✅ Règles importées ({{ refresh_result.rules }} règles, en vigueur au {{ rules_date_fr(refresh_result.effective) or '?' }}).
+          {% elif refresh_result.status == 'current' %}✅ Déjà à jour.
+          {% else %}⚠️ Échec : {{ refresh_result.error }}{% endif %}
+        </p>
+      {% endif %}
+      <form method="post" action="/rules/refresh" class="rules-refresh">
+        <button type="submit" class="btn-outline small">↻ Mettre à jour depuis wizards.com</button>
+      </form>
+      <form class="rule-jump" onsubmit="return mtgOpenRuleFromForm(this);">
+        <input name="number" placeholder="Voir une règle : 702.19b" aria-label="Numéro de règle" pattern="\s*\d{3}(\.\d{1,3}[a-z]?)?\s*" title="Ex. 702.19b, 903.8 ou 704">
+        <button type="submit" class="btn-outline small">Voir</button>
+      </form>
+    </div>
+  </aside>
+
+  <!-- Question thread -->
+  <section class="chat-main">
+    <div class="chat-thread">
+      <div class="status-pill">
+        <span class="status-dot {{ 'on' if llm_ok else '' }}"></span>
+        {% if llm_ok %}Juge Claude · {{ llm_model }}
+        {% else %}mode recherche simple — ajoute ANTHROPIC_API_KEY pour un vrai juge{% endif %}
+        {% if rules_status.loaded %} · CR du {{ rules_status.effective_fr or rules_status.effective }}{% endif %}
+      </div>
+
+      {% if not messages %}
+        <div class="chat-empty muted">
+          <p>⚖️ Pose n'importe quelle question de règles : générale, ou sur une
+             situation précise en nommant les cartes en jeu. Le juge répond
+             d'abord directement, puis explique en citant les Comprehensive
+             Rules officielles — chaque numéro de règle est cliquable.</p>
+          <ul>
+            <li>« Comment fonctionne le piétinement (trample) contre un bloqueur avec contact mortel ? »</li>
+            <li>« Si mon Mulldrifter est copié par Phantasmal Image, est-ce que la copie pioche ? »</li>
+            <li>« Un commandant qui meurt : peut-on le remettre dans la zone de commandement après un Reanimate ? »</li>
+            <li>« Que se passe-t-il si deux joueurs ont 0 point de vie en même temps ? »</li>
+            <li>« Est-ce que Blood Moon désactive les capacités des terrains-créatures ? »</li>
+          </ul>
+          <p class="small">Les cartes doivent être nommées en anglais (nom Scryfall) pour que le juge lise leur texte Oracle exact et leurs rulings officiels.</p>
+        </div>
+      {% endif %}
+
+      {% for m in messages %}
+      <div class="msg msg-{{ m.role }}">
+        {% if m.role == 'assistant' %}<span class="msg-avatar">⚖</span>{% endif %}
+        <div class="msg-content">
+          {% set ruling = (m.artifacts or [])|selectattr("type", "equalto", "ruling")|first %}
+          {% if m.role == 'assistant' and ruling %}
+            <div class="msg-artifacts">{{ artifacts.ruling(ruling) }}</div>
+          {% else %}
+          <div class="bubble">
+            {% if m.role == 'assistant' %}{{ rules_html(m.content) }}
+            {% else %}{% for para in m.content.split("\n") %}{% if para.strip() %}<p>{{ para }}</p>{% endif %}{% endfor %}{% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+
+      {% if pending %}
+      <div class="msg msg-assistant" id="pending-bubble">
+        <span class="msg-avatar">⚖</span>
+        <div class="bubble typing">
+          <span class="typing-dots"><span></span><span></span><span></span></span>
+          <span class="muted small">Le juge consulte les règles… (recherche dans les CR, texte des cartes, rulings)</span>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <form method="post" action="/rules/message" class="chat-input" id="chat-input">
+      <input type="hidden" name="conversation_id" value="{{ conversation.id }}">
+      <div class="input-pill">
+        <textarea name="message" rows="1" required autofocus
+                  placeholder="Ta question de règles…  « mon adversaire bloque avec une créature 1/1 deathtouch, mon 5/5 trample… »"
+                  {{ 'disabled' if pending }}
+                  onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit();}"></textarea>
+        <button type="submit" class="send-btn" {{ 'disabled' if pending }} aria-label="Envoyer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>
+        </button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<!-- Rule drawer: the full text of a cited rule, with its context, loaded from
+     /rules/r/<number>. Cross-references inside it are links too. -->
+<div class="rule-drawer-backdrop" id="rule-drawer-backdrop" hidden onclick="mtgCloseRule()"></div>
+<aside class="rule-drawer" id="rule-drawer" hidden aria-label="Détail d'une règle">
+  <div class="rule-drawer-bar">
+    <button type="button" class="btn-outline small" id="rule-drawer-back" onclick="mtgRuleBack()" hidden>← Précédente</button>
+    <span class="rule-drawer-title" id="rule-drawer-title">Règle</span>
+    <button type="button" class="conv-del" onclick="mtgCloseRule()" aria-label="Fermer">✕</button>
+  </div>
+  <div class="rule-drawer-body" id="rule-drawer-body"></div>
+</aside>
+
+<script>
+  (function () {
+    var convId = {{ conversation.id }};
+
+    var thread = document.querySelector('.chat-thread');
+    if (thread) thread.scrollTop = thread.scrollHeight;
+
+    var form = document.getElementById('chat-input');
+    var ta = form && form.querySelector('textarea');
+    var sendBtn = form && form.querySelector('.send-btn');
+
+    function setBusy(busy) {
+      if (ta) ta.disabled = busy;
+      if (sendBtn) sendBtn.disabled = busy;
+      if (!busy && ta) ta.focus();
+    }
+
+    function appendUserBubble(text) {
+      if (!thread) return;
+      var bubble = document.createElement('div');
+      bubble.className = 'msg msg-user';
+      bubble.innerHTML = '<div class="bubble"></div>';
+      bubble.querySelector('.bubble').textContent = text;
+      thread.appendChild(bubble);
+      thread.scrollTop = thread.scrollHeight;
+    }
+
+    function appendPendingBubble() {
+      if (!thread || document.getElementById('pending-bubble')) return;
+      var el = document.createElement('div');
+      el.className = 'msg msg-assistant';
+      el.id = 'pending-bubble';
+      el.innerHTML = '<span class="msg-avatar">⚖</span>'
+        + '<div class="bubble typing">'
+        + '<span class="typing-dots"><span></span><span></span><span></span></span>'
+        + '<span class="muted small">Le juge consulte les règles… (recherche dans les CR, texte des cartes, rulings)</span>'
+        + '</div>';
+      thread.appendChild(el);
+      thread.scrollTop = thread.scrollHeight;
+    }
+
+    function refreshThread() {
+      fetch('/rules', { cache: 'no-store' })
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+          var doc = new DOMParser().parseFromString(html, 'text/html');
+          var newThread = doc.querySelector('.chat-thread');
+          var newSidebar = doc.querySelector('.chat-sidebar');
+          if (newThread && thread) thread.innerHTML = newThread.innerHTML;
+          var sidebar = document.querySelector('.chat-sidebar');
+          if (newSidebar && sidebar) sidebar.innerHTML = newSidebar.innerHTML;
+          if (thread) thread.scrollTop = thread.scrollHeight;
+          setBusy(false);
+        })
+        .catch(function () { window.location.reload(); });
+    }
+
+    function poll() {
+      fetch('/rules/status?conversation_id=' + convId, { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.pending) { setTimeout(poll, 1500); }
+          else { refreshThread(); }
+        })
+        .catch(function () { setTimeout(poll, 3000); });
+    }
+
+    if (form) {
+      form.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var text = (ta && ta.value || '').trim();
+        if (!text || (ta && ta.disabled)) return;
+        appendUserBubble(text);
+        appendPendingBubble();
+        var data = new FormData(form);
+        if (ta) ta.value = '';
+        setBusy(true);
+        fetch('/rules/message', {
+          method: 'POST',
+          body: data,
+          headers: { 'X-Requested-With': 'fetch' },
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (!d || d.conversation_id !== convId) { window.location.reload(); return; }
+            setTimeout(poll, 1500);
+          })
+          .catch(function () { window.location.reload(); });
+      });
+    }
+
+    {% if pending %}
+    setBusy(true);
+    setTimeout(poll, 1500);
+    {% endif %}
+  })();
+
+  // --- Rule drawer ------------------------------------------------------
+  var mtgRuleStack = [];
+  function mtgShowRule(number, push) {
+    var drawer = document.getElementById('rule-drawer');
+    var body = document.getElementById('rule-drawer-body');
+    var title = document.getElementById('rule-drawer-title');
+    var back = document.getElementById('rule-drawer-back');
+    var backdrop = document.getElementById('rule-drawer-backdrop');
+    if (!drawer || !body) return;
+    if (push && title.dataset.number && title.dataset.number !== number) {
+      mtgRuleStack.push(title.dataset.number);
+    }
+    title.textContent = 'Règle ' + number;
+    title.dataset.number = number;
+    back.hidden = mtgRuleStack.length === 0;
+    body.innerHTML = '<p class="muted small">Chargement…</p>';
+    drawer.hidden = false;
+    backdrop.hidden = false;
+    fetch('/rules/r/' + encodeURIComponent(number), { cache: 'no-store' })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { body.innerHTML = html; body.scrollTop = 0; })
+      .catch(function () { body.innerHTML = '<p class="muted">Impossible de charger cette règle.</p>'; });
+  }
+  function mtgRuleBack() {
+    var prev = mtgRuleStack.pop();
+    if (prev) mtgShowRule(prev, false);
+  }
+  function mtgCloseRule() {
+    var drawer = document.getElementById('rule-drawer');
+    var backdrop = document.getElementById('rule-drawer-backdrop');
+    if (drawer) drawer.hidden = true;
+    if (backdrop) backdrop.hidden = true;
+    mtgRuleStack = [];
+    var title = document.getElementById('rule-drawer-title');
+    if (title) delete title.dataset.number;
+  }
+  function mtgOpenRuleFromForm(form) {
+    var raw = (form.number.value || '').trim().toLowerCase().replace(/\.$/, '');
+    if (raw) { mtgRuleStack = []; mtgShowRule(raw, false); }
+    return false;
+  }
+  // Every citation (in answers, and inside the drawer itself) opens the drawer
+  // instead of navigating; the href still works for a middle-click / no JS.
+  document.addEventListener('click', function (ev) {
+    var a = ev.target.closest && ev.target.closest('a.rule-ref');
+    if (!a || ev.metaKey || ev.ctrlKey || ev.button !== 0) return;
+    ev.preventDefault();
+    mtgShowRule(a.dataset.rule, true);
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') mtgCloseRule();
+  });
+</script>
+
+{% endblock %}

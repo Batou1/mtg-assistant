@@ -27,6 +27,8 @@ MTG_DB_PATH=/tmp/test.db MTG_BULK_AUTO_REFRESH=0 .venv/bin/uvicorn app.main:app 
 .venv/bin/python -m app.bulk_data        # import bulk Scryfall forcé (long, ~2.7 GB)
 .venv/bin/python -m app.bulk_data data/all-cards-*.jsonl  # bootstrap depuis un fichier local
 .venv/bin/python -m app.prices   # reconstruit l'index « édition la moins chère » (~20 s)
+.venv/bin/python -m app.rules    # (ré)importe les Comprehensive Rules depuis wizards.com (~1 Mo)
+.venv/bin/python -m app.rules "MagicCompRules 20260819.txt"  # import depuis un .txt local
 ./deploy/install-service.sh   # installe le service launchd macOS (prod perso)
 ```
 
@@ -88,6 +90,24 @@ rendu précédent, pour distinguer une modification manuelle d'un simple écho) 
 `panel` (l'ouverture du `<details>`, qui est une décision de l'utilisateur :
 filtrer ne doit ni l'ouvrir ni le refermer).
 
+### Onglet Règles (`/rules`)
+
+```
+question FR → judge.generate_reply (même boucle agent que le chat, tools du juge)
+  search_rules / get_rule / lookup_glossary → rules.py (corpus CR local, en anglais)
+  lookup_card → Scryfall (texte Oracle + rulings Gatherer)
+  → texte « Réponse : … / Explication : … » → judge.build_artifact
+     (artefact `ruling` : réponse, explication, citations VÉRIFIÉES dans le corpus)
+  → rendu : rules_html() transforme [702.19b] en lien vers /rules/r/702.19b
+     (drawer dans la page) ; un numéro absent du corpus est affiché barré « non vérifié »
+```
+
+Les conversations du juge partagent les tables `conversations`/`messages` avec
+le chat, distinguées par la colonne `kind` (`deck` | `rules`) et un cookie
+séparé (`rules_conversation_id`) ; `db.list_conversations(pid, kind)` ne
+mélange jamais les deux onglets, et la mémoire du style de jeu n'est pas
+alimentée par les questions de règles.
+
 ### Modules (`app/`)
 
 | Module | Rôle |
@@ -98,7 +118,7 @@ filtrer ne doit ni l'ouvrir ni le refermer).
 | `intent.py` | Wish FR → intent structuré. LLM d'abord, heuristique en secours, backfill croisé. |
 | `analysis.py` | Suggestions de commandants (possédés + discovery + finder par thème). |
 | `edhrec.py` | Client EDHREC (endpoints json.edhrec.com non officiels) + extraction défensive. |
-| `scryfall.py` | Résolution nom/id → carte (batch `/cards/collection`), accesseurs (prix **de ce printing**, image…). |
+| `scryfall.py` | Résolution nom/id → carte (batch `/cards/collection`), accesseurs (prix **de ce printing**, image…), rulings officiels (`rulings`, cachés dans `meta`). |
 | `prices.py` | Index « édition la moins chère » par nom (prix d'ACHAT), construit depuis le bulk. |
 | `bulk_data.py` | Import des exports bulk Scryfall + rafraîchissement auto en thread démon. |
 | `cardsearch.py` | Recherche dans le pool Scryfall local en mémoire (type/keyword/texte oracle). |
@@ -107,7 +127,9 @@ filtrer ne doit ni l'ouvrir ni le refermer).
 | `deckgen.py` | Decklist Commander 100 cartes depuis la page EDHREC (déterministe). |
 | `poolbuild.py` | Meilleur deck depuis une liste fournie (`FormatSpec` par format ; LLM + fallback). |
 | `formats60.py` | Deck 60 cartes complet par archétype (Brave → LLM → validation Scryfall, 4-of, manabase). |
-| `chat.py` | Boucle agent (tools Anthropic sur les modules ci-dessus), tours en thread. |
+| `chat.py` | Boucle agent (tools Anthropic sur les modules ci-dessus), tours en thread. `_agent_loop`/`start_turn` acceptent d'autres outils et un autre générateur : c'est ce que réutilise le juge. |
+| `rules.py` | Comprehensive Rules officielles : téléchargement du `.txt` lié sur magic.wizards.com/en/rules, parsing (règles numérotées, exemples, glossaire) en SQLite, index mémoire pour la recherche par mots-clés, `get_rule` (parent/chapitre/sous-règles), vérification mensuelle en thread. |
+| `judge.py` | Onglet Règles : agent « juge » (tools `search_rules`, `get_rule`, `lookup_glossary`, `lookup_card` + rulings Scryfall), réponse directe puis explication, citations `[702.19b]` re-vérifiées dans le corpus, rendu HTML des citations cliquables. Repli sans clé : recherche par mots-clés. |
 | `playerprofile.py` | Mémoire du style de jeu par profil (decks ManaBox + chats + formulaires) : synthèse LLM avec repli heuristique, stockée dans `meta` (`player_profile:<pid>`), rafraîchie en thread après chaque échange/import, injectée dans le system prompt du chat et affichée sur l'accueil. |
 | `buylist.py` | Liste d'achat gloutonne sous budget, prix EUR Cardmarket. |
 | `collection.py` | Enrichissement + recherche de la collection depuis le cache local uniquement. |
@@ -238,6 +260,20 @@ filtrer ne doit ni l'ouvrir ni le refermer).
     (`eur`, `price`, `is:priced`, `s:`) passent par le dict `extra` fourni par
     `collection.search`, pour filtrer sur le printing possédé — celui-là même
     que la page affiche — et non sur le choix canonique de Scryfall.
+
+15. **Le juge cite les Comprehensive Rules, pas sa mémoire.** Le corpus
+    (`rules`/`rules_glossary`) est la seule source des citations : le modèle
+    doit passer par `search_rules`/`get_rule`, et chaque numéro de règle du
+    texte final est re-vérifié (`judge.citations`) — un numéro inconnu est
+    affiché comme non vérifié, jamais rendu cliquable. Les règles changent
+    à chaque sortie : `rules.needs_check` relit la page wizards.com tous les
+    `rules_refresh_days` (30 par défaut, contrôle mensuel) et ré-importe si le
+    lien `.txt` a changé ; la date d'entrée en vigueur est affichée dans
+    l'onglet et injectée dans le system prompt. Sans corpus (premier
+    démarrage hors ligne), les outils répondent explicitement « règles non
+    chargées » et l'onglet propose un import manuel — rien ne bloque.
+    `MTG_BULK_AUTO_REFRESH=0` coupe TOUS les threads réseau de fond (bulk
+    Scryfall et règles) : c'est ce que font les tests.
 
 ## Conventions
 

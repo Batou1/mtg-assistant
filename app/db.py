@@ -105,9 +105,23 @@ def init_db() -> None:
                 artifacts_json TEXT,
                 created_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS rules (
+                number   TEXT PRIMARY KEY,
+                kind     TEXT NOT NULL,
+                chapter  TEXT NOT NULL DEFAULT '',
+                text     TEXT NOT NULL,
+                examples TEXT NOT NULL DEFAULT '',
+                position INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS rules_glossary (
+                term       TEXT PRIMARY KEY,
+                definition TEXT NOT NULL,
+                position   INTEGER NOT NULL
+            );
             """
         )
         _migrate_collection(conn)
+        _migrate_conversations(conn)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_collection_name ON collection(name_key)")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_collection_profile ON collection(profile_id)"
@@ -117,6 +131,16 @@ def init_db() -> None:
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)"
+        )
+
+
+def _migrate_conversations(conn) -> None:
+    """Conversations carry a ``kind`` since the rules tab: ``deck`` (the
+    deckbuilding chat) or ``rules`` (the judge). Pre-existing rows are all
+    deckbuilding conversations, hence the default."""
+    if "kind" not in _table_columns(conn, "conversations"):
+        conn.execute(
+            "ALTER TABLE conversations ADD COLUMN kind TEXT NOT NULL DEFAULT 'deck'"
         )
 
 
@@ -628,23 +652,31 @@ def delete_meta_prefix(prefix: str) -> None:
 
 # --- Chat: conversations + messages (per profile) ------------------------
 
-def create_conversation(profile_id: int, title: str = "") -> int:
+# Conversation kinds: the deckbuilding chat and the rules judge share the
+# conversations/messages tables (same async-turn machinery, same rendering
+# of a thread) but are listed on separate tabs.
+CONVERSATION_KINDS = ("deck", "rules")
+
+
+def create_conversation(profile_id: int, title: str = "", kind: str = "deck") -> int:
+    if kind not in CONVERSATION_KINDS:
+        raise ValueError(f"unknown conversation kind: {kind!r}")
     now = time.time()
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO conversations (profile_id, title, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?)",
-            (int(profile_id), (title or "").strip()[:80], now, now),
+            "INSERT INTO conversations (profile_id, title, kind, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (int(profile_id), (title or "").strip()[:80], kind, now, now),
         )
         return cur.lastrowid
 
 
-def list_conversations(profile_id: int) -> list[dict]:
+def list_conversations(profile_id: int, kind: str = "deck") -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT id, title, created_at, updated_at FROM conversations "
-            "WHERE profile_id=? ORDER BY updated_at DESC",
-            (int(profile_id),),
+            "SELECT id, title, kind, created_at, updated_at FROM conversations "
+            "WHERE profile_id=? AND kind=? ORDER BY updated_at DESC",
+            (int(profile_id), kind),
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -656,7 +688,7 @@ def get_conversation(conversation_id) -> dict | None:
         return None
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, profile_id, title, created_at, updated_at "
+            "SELECT id, profile_id, title, kind, created_at, updated_at "
             "FROM conversations WHERE id=?",
             (cid,),
         ).fetchone()
@@ -741,3 +773,46 @@ def touch_conversation(conversation_id: int, title: str | None = None) -> None:
             conn.execute(
                 "UPDATE conversations SET updated_at=? WHERE id=?", (time.time(), cid)
             )
+
+
+# --- Comprehensive Rules (the rules tab's corpus) -------------------------
+# One row per numbered rule (``100.1``, ``100.1a``…), section (``1``) and
+# chapter (``100``), in document order (``position``), plus the glossary.
+# Replaced wholesale when a newer document is imported — see app/rules.py.
+
+def replace_rules(rules, glossary) -> None:
+    """``rules``: iterable of (number, kind, chapter, text, examples);
+    ``glossary``: iterable of (term, definition). Atomic swap."""
+    with get_conn() as conn:
+        conn.execute("DELETE FROM rules")
+        conn.execute("DELETE FROM rules_glossary")
+        conn.executemany(
+            "INSERT INTO rules (number, kind, chapter, text, examples, position) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [(n, k, c, t, e, i) for i, (n, k, c, t, e) in enumerate(rules)],
+        )
+        conn.executemany(
+            "INSERT INTO rules_glossary (term, definition, position) VALUES (?, ?, ?)",
+            [(t, d, i) for i, (t, d) in enumerate(glossary)],
+        )
+
+
+def all_rules() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT number, kind, chapter, text, examples FROM rules ORDER BY position"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def all_glossary() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT term, definition FROM rules_glossary ORDER BY position"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def rules_count() -> int:
+    with get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) FROM rules WHERE kind='rule'").fetchone()[0]
