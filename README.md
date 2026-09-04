@@ -120,6 +120,21 @@ and a budget-constrained buylist priced in EUR.
    its own training knowledge. Every result is an actual card, safe to name
    directly in the reply.
 
+10. **Rules judge** (`/rules`) — ask any rules question in French, general
+   ("comment fonctionne le piétinement contre un bloqueur deathtouch ?") or
+   about a precise board state naming the cards involved. The judge answers
+   **directly first, then explains step by step**, citing the official
+   [Comprehensive Rules](https://magic.wizards.com/en/rules): every `[702.19b]`
+   is a link opening the full rule (with its parent rule, chapter, subrules and
+   official examples) in a side drawer. Citations are **verified** against the
+   stored rules — a number the model made up is flagged, never linked. Card
+   questions go through Scryfall for the exact Oracle text and Gatherer
+   rulings. The rules document is downloaded from wizards.com (the `.txt`
+   edition), re-checked **monthly** in the background (`MTG_RULES_REFRESH_DAYS`)
+   and re-imported when a new version is published; the tab shows the
+   effective date and has a manual refresh button (`python -m app.rules` from
+   the CLI, or `python -m app.rules <file.txt>` to import a downloaded copy).
+
 Card data comes from Scryfall's [bulk-data exports](https://scryfall.com/docs/api/bulk-data)
 (`app/bulk_data.py`), refreshed automatically in the background every 24h —
 see below. EDHREC pages are still resolved **on demand and cached** in SQLite.
@@ -289,6 +304,8 @@ app/
   formats60.py  60-card archetype pipeline (research + Scryfall validation)
   poolbuild.py  build-from-a-list engine (Limited/Commander/60-card) + bonus
   chat.py       iterative chat: agent loop + tools over the pipeline
+  rules.py      Comprehensive Rules: download/parse/store/search + monthly check
+  judge.py      "Règles" tab: rules judge (CR citations verified, card rulings)
   main.py       FastAPI routes + templates
 deploy/         launchd service + Cloudflare tunnel snippet
 tests/          pytest

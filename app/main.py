@@ -10,15 +10,16 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import escape as escape_html
 from starlette.concurrency import run_in_threadpool
 
 from . import (
     analysis, bulk_data, chat, collection as collection_mod, commanders, db, deckgen, formats60,
-    intent, llm, manabox, nlquery, playerprofile, poolbuild, scryquery, textutil,
+    intent, judge, llm, manabox, nlquery, playerprofile, poolbuild, rules, scryquery, textutil,
 )
 from .config import settings
 
-APP_VERSION = "2.7"
+APP_VERSION = "2.8"
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ async def _unhandled_error(request: Request, exc: Exception):
     """Friendly 500 page instead of a bare "Internal Server Error" (details go
     to the log). Poll endpoints get JSON so the chat page's poller stops cleanly."""
     logger.exception("unhandled error on %s %s", request.method, request.url.path)
-    if request.url.path.startswith("/chat/status"):
+    if request.url.path.startswith(("/chat/status", "/rules/status")):
         return JSONResponse({"pending": False}, status_code=500)
     return HTMLResponse(_ERROR_PAGE, status_code=500)
 
@@ -77,6 +78,10 @@ templates.env.filters["paragraphs"] = textutil.paragraphs
 # collection.card_text_info. Used by _cardview.html to render the text
 # alternative to the card image, toggled globally via the navbar switch.
 templates.env.globals["card_info"] = collection_mod.card_text_info
+# Judge answers: plain text with [702.19b] citations rendered as links to the
+# rule drawer — only for numbers verified against the stored rules.
+templates.env.globals["rules_html"] = judge.render_rules_text
+templates.env.globals["rules_date_fr"] = rules.format_date_fr
 
 db.init_db()
 # Keeps the local card cache filled from Scryfall's bulk-data exports, checked
@@ -85,9 +90,12 @@ db.init_db()
 # never blocks server startup; until it lands, resolve_cards/resolve_ids fall
 # back to the live API on cache misses as before.
 bulk_data.start_background_refresh()
+# Same idea for the Comprehensive Rules (monthly check of the rules page).
+rules.start_background_refresh()
 
 COOKIE = "profile_id"
 CONV_COOKIE = "conversation_id"
+RULES_CONV_COOKIE = "rules_conversation_id"
 COLOR_NAMES = {"W": "Blanc", "U": "Bleu", "B": "Noir", "R": "Rouge", "G": "Vert"}
 templates.env.globals["COLOR_NAMES"] = COLOR_NAMES
 # French display label per format slug (e.g. "duelcommander" -> "Duel Commander"),
@@ -501,17 +509,22 @@ async def build_from_list(
 
 # --- Iterative chat (Phase 3) --------------------------------------------
 
-def _active_conversation(request: Request, profile: dict) -> dict:
-    """Resolve the active conversation for this profile, creating one if needed."""
-    conv = db.get_conversation(request.cookies.get(CONV_COOKIE))
+def _active_conversation(request: Request, profile: dict, kind: str = "deck",
+                         cookie: str = CONV_COOKIE) -> dict:
+    """Resolve the active conversation for this profile, creating one if needed.
+
+    ``kind`` separates the deckbuilding chat from the rules judge: each tab
+    has its own cookie and only ever lands on a conversation of its kind.
+    """
+    conv = db.get_conversation(request.cookies.get(cookie))
     # The cookie must point to a conversation owned by the active profile.
-    if conv is None or conv["profile_id"] != profile["id"]:
+    if conv is None or conv["profile_id"] != profile["id"] or conv["kind"] != kind:
         conv = None
-        existing = db.list_conversations(profile["id"])
+        existing = db.list_conversations(profile["id"], kind)
         if existing:
             conv = db.get_conversation(existing[0]["id"])
     if conv is None:
-        conv = db.get_conversation(db.create_conversation(profile["id"]))
+        conv = db.get_conversation(db.create_conversation(profile["id"], kind=kind))
     return conv
 
 
@@ -540,7 +553,7 @@ async def chat_message(
 ):
     profile = current_profile(request)
     conv = db.get_conversation(conversation_id)
-    if conv is None or conv["profile_id"] != profile["id"]:
+    if conv is None or conv["profile_id"] != profile["id"] or conv["kind"] != "deck":
         conv = _active_conversation(request, profile)
 
     if message.strip():
@@ -587,3 +600,110 @@ def chat_delete(request: Request, conversation_id: int):
     resp = RedirectResponse(url="/chat", status_code=303)
     resp.delete_cookie(CONV_COOKIE)
     return resp
+
+
+# --- Rules judge (the "Règles" tab) --------------------------------------
+# Same shape as the chat tab (thread + background turns + polling), its own
+# conversation kind and cookie, and a rule drawer fed by /rules/r/<number>.
+
+def _rules_context(request: Request, profile: dict, conv: dict, **extra) -> dict:
+    return _base_context(
+        request,
+        profile,
+        conversation=conv,
+        conversations=db.list_conversations(profile["id"], "rules"),
+        messages=db.get_messages(conv["id"]),
+        pending=chat.is_pending(conv["id"]),
+        llm_ok=llm.is_available(),
+        llm_model=settings.anthropic_model,
+        rules_status=rules.status(),
+        **extra,
+    )
+
+
+@app.get("/rules", response_class=HTMLResponse)
+def rules_page(request: Request):
+    profile = current_profile(request)
+    conv = _active_conversation(request, profile, "rules", RULES_CONV_COOKIE)
+    resp = _render(request, profile, "rules.html", _rules_context(request, profile, conv))
+    _set_cookie(resp, RULES_CONV_COOKIE, conv["id"])
+    return resp
+
+
+@app.post("/rules/message")
+async def rules_message(
+    request: Request, message: str = Form(""), conversation_id: str = Form("")
+):
+    profile = current_profile(request)
+    conv = db.get_conversation(conversation_id)
+    if conv is None or conv["profile_id"] != profile["id"] or conv["kind"] != "rules":
+        conv = _active_conversation(request, profile, "rules", RULES_CONV_COOKIE)
+
+    if message.strip():
+        # Background turn, like the chat: several tool rounds + Scryfall.
+        judge.start_turn(conv["id"], profile["id"], message)
+
+    if request.headers.get("x-requested-with") == "fetch":
+        resp = JSONResponse({"ok": True, "conversation_id": conv["id"]})
+    else:
+        resp = RedirectResponse(url="/rules", status_code=303)
+    _set_cookie(resp, RULES_CONV_COOKIE, conv["id"])
+    return resp
+
+
+@app.get("/rules/status")
+def rules_status(request: Request, conversation_id: str = ""):
+    profile = current_profile(request)
+    conv = db.get_conversation(conversation_id)
+    if conv is None or conv["profile_id"] != profile["id"]:
+        return JSONResponse({"pending": False})
+    return JSONResponse({"pending": chat.is_pending(conv["id"])})
+
+
+@app.post("/rules/new")
+def rules_new(request: Request):
+    profile = current_profile(request)
+    new_id = db.create_conversation(profile["id"], kind="rules")
+    resp = RedirectResponse(url="/rules", status_code=303)
+    _set_cookie(resp, RULES_CONV_COOKIE, new_id)
+    return resp
+
+
+@app.post("/rules/{conversation_id}/delete")
+def rules_delete(request: Request, conversation_id: int):
+    profile = current_profile(request)
+    conv = db.get_conversation(conversation_id)
+    if conv and conv["profile_id"] == profile["id"] and conv["kind"] == "rules":
+        db.delete_conversation(conversation_id)
+    resp = RedirectResponse(url="/rules", status_code=303)
+    resp.delete_cookie(RULES_CONV_COOKIE)
+    return resp
+
+
+@app.post("/rules/refresh")
+async def rules_refresh(request: Request):
+    """Manual re-import of the Comprehensive Rules (forced, synchronous: the
+    document is ~1 MB and the user is waiting for the reloaded page)."""
+    profile = current_profile(request)
+    result = await run_in_threadpool(rules.refresh, True)
+    conv = _active_conversation(request, profile, "rules", RULES_CONV_COOKIE)
+    ctx = _rules_context(request, profile, conv, refresh_result=result)
+    resp = _render(request, profile, "rules.html", ctx)
+    _set_cookie(resp, RULES_CONV_COOKIE, conv["id"])
+    return resp
+
+
+@app.get("/rules/r/{number}", response_class=HTMLResponse)
+def rule_detail(request: Request, number: str):
+    """One rule with its context, as a fragment for the in-page drawer (or a
+    bare page when opened directly)."""
+    profile = current_profile(request)
+    found = rules.get_rule(number)
+    if found is None:
+        return HTMLResponse(
+            f"<div class=\"rule-detail\"><p class=\"muted\">Aucune règle numérotée "
+            f"« {escape_html(number)} » dans les Comprehensive Rules chargées.</p></div>",
+            status_code=404,
+        )
+    ctx = _base_context(request, profile, found=found, rules_status=rules.status())
+    return templates.TemplateResponse(request, "_rule_detail.html", ctx)

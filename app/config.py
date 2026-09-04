@@ -125,6 +125,24 @@ class Settings:
     bonus_owned_max: int = int(os.environ.get("MTG_BONUS_OWNED_MAX", "12"))
     bonus_buy_max: int = int(os.environ.get("MTG_BONUS_BUY_MAX", "10"))
 
+    # --- Comprehensive Rules (the "Règles" tab) -----------------------------
+    # The rules page links the current Comprehensive Rules in several formats;
+    # the .txt one is the machine-readable source we parse (see app/rules.py).
+    rules_page_url: str = os.environ.get("MTG_RULES_PAGE", "https://magic.wizards.com/en/rules")
+    # Wizards publishes a new document with most set releases (roughly every
+    # 2-3 months) and the answers must cite the CURRENT rules: re-check the
+    # rules page for a newer file this often. 30 days = the monthly check the
+    # feature was specified with; lower it if you want it sooner.
+    rules_refresh_days: float = float(os.environ.get("MTG_RULES_REFRESH_DAYS", "30"))
+    # Background thread that performs the check (also gated by
+    # bulk_auto_refresh, the master switch for background network access,
+    # which the tests turn off).
+    rules_auto_refresh: bool = os.environ.get("MTG_RULES_AUTO_REFRESH", "1").lower() not in (
+        "0", "false", "no", "off", ""
+    )
+    # How many rules a search tool call may return to the model.
+    rules_search_limit: int = int(os.environ.get("MTG_RULES_SEARCH_LIMIT", "12"))
+
     # --- Web research (Phase 2b; Brave Search complements curated sources) --
     brave_api_key: str = os.environ.get("MTG_BRAVE_API_KEY", "")
 

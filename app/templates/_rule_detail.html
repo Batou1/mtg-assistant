@@ -1,0 +1,43 @@
+{# One Comprehensive Rule with its context, for the rule drawer of the rules
+   tab. Cross-references in the text ("See rule 702.19") become links too. #}
+{% set r = found.rule %}
+<div class="rule-detail">
+  <div class="rule-crumbs">
+    {% if found.chapter %}
+      <a class="rule-ref" href="/rules/r/{{ found.chapter.number }}" data-rule="{{ found.chapter.number }}">{{ found.chapter.number }}</a>
+      <span class="muted">{{ found.chapter.text }}</span>
+    {% endif %}
+    {% if found.parent and found.parent.kind == 'rule' %}
+      <span class="muted">›</span>
+      <a class="rule-ref" href="/rules/r/{{ found.parent.number }}" data-rule="{{ found.parent.number }}">{{ found.parent.number }}</a>
+      <span class="muted">{{ found.parent.text[:70] }}{% if found.parent.text|length > 70 %}…{% endif %}</span>
+    {% endif %}
+  </div>
+
+  <h3 class="rule-number">{{ r.number }}{% if r.kind != 'rule' %} · {{ r.text }}{% endif %}</h3>
+  {% if r.kind == 'rule' %}
+    <div class="rule-text">{{ rules_html(r.text) }}</div>
+    {% if r.examples %}
+      {% for ex in r.examples.split("\n") %}
+        <p class="rule-example"><span class="muted">Exemple officiel —</span> {{ rules_html(ex) }}</p>
+      {% endfor %}
+    {% endif %}
+  {% endif %}
+
+  {% if found.children %}
+    <h4 class="sidebar-label" style="padding: 12px 0 6px;">{{ 'Sous-règles' if r.kind == 'rule' else 'Règles' }} · {{ found.children|length }}</h4>
+    <ol class="rule-children">
+      {% for c in found.children %}
+        <li>
+          <a class="rule-ref" href="/rules/r/{{ c.number }}" data-rule="{{ c.number }}">{{ c.number }}</a>
+          <span>{{ c.text[:220] }}{% if c.text|length > 220 %}…{% endif %}</span>
+        </li>
+      {% endfor %}
+    </ol>
+  {% endif %}
+
+  <p class="small muted rule-source">
+    Magic: The Gathering Comprehensive Rules{% if rules_status.effective_fr %}, en vigueur au {{ rules_status.effective_fr }}{% endif %}
+    · <a href="https://magic.wizards.com/en/rules" target="_blank" rel="noopener">wizards.com</a>
+  </p>
+</div>

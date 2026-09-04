@@ -1129,3 +1129,87 @@ details.buylist > .buy-grid { padding: 14px; margin-top: 0; }
   .chip { padding: 3px 11px; font-size: .8rem; }
   .footer { padding: 20px 16px; }
 }
+
+
+/* ==========================================================================
+   Rules tab (the judge): answer blocks, rule citations, rule drawer
+   ========================================================================== */
+.ruling { display: flex; flex-direction: column; gap: 14px; }
+.ruling-label {
+  display: block; margin-bottom: 4px; font-size: .6875rem; text-transform: uppercase;
+  letter-spacing: .12em; color: var(--muted); font-weight: 700;
+}
+.ruling-answer {
+  padding: 14px 18px; border-radius: 14px;
+  background: color-mix(in oklch, var(--accent) 12%, var(--bg2));
+  border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
+  border-left: 4px solid var(--accent);
+  font-size: 1rem; font-weight: 600; line-height: 1.5;
+}
+.ruling-answer .ruling-label { color: var(--accent); }
+.ruling-explanation { line-height: 1.6; font-size: .92rem; }
+.ruling-explanation p, .ruling-answer p { margin: 0 0 8px; }
+.ruling-explanation p:last-child, .ruling-answer p:last-child { margin-bottom: 0; }
+.ruling-explanation ul { margin: 6px 0 8px; padding-left: 20px; }
+.ruling-explanation li { margin: 4px 0; }
+.ruling-cites { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ruling-warn { color: var(--warn); }
+
+/* A rule number in running text: a small mono chip that opens the drawer. */
+.rule-ref {
+  display: inline-block; padding: 0 6px; border-radius: 6px; line-height: 1.5;
+  font-family: var(--font-mono); font-size: .82em; font-weight: 600;
+  color: var(--accent); background: color-mix(in oklch, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
+  text-decoration: none; white-space: nowrap;
+}
+a.rule-ref:hover { background: var(--accent); color: var(--accent-ink); }
+.rule-ref.missing {
+  color: var(--warn); background: color-mix(in oklch, var(--warn) 14%, transparent);
+  border-color: color-mix(in oklch, var(--warn) 40%, transparent); text-decoration: line-through;
+  cursor: help;
+}
+
+/* Sidebar block: corpus status, refresh, direct lookup. */
+.rules-status p { margin: 4px 0; }
+.rules-refresh { margin: 8px 0 6px; }
+.rules-refresh button, .rule-jump button { height: 32px; padding: 0 12px; font-size: .8rem; }
+.rule-jump { display: flex; gap: 6px; margin: 0; }
+.rule-jump input { flex: 1; min-width: 0; height: 32px; padding: 0 10px; font-size: .82rem; font-family: var(--font-mono); }
+
+/* Rule drawer: a right-hand panel over the page, scrollable on its own. */
+.rule-drawer-backdrop {
+  position: fixed; inset: 0; z-index: 40;
+  background: color-mix(in oklch, var(--bg) 55%, transparent);
+}
+.rule-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 41;
+  width: min(480px, 100vw); display: flex; flex-direction: column;
+  background: var(--bg2); border-left: 1px solid var(--line);
+  box-shadow: -12px 0 40px color-mix(in oklch, black 25%, transparent);
+  animation: slideIn .25s ease both;
+}
+@keyframes slideIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.rule-drawer-bar {
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+  border-bottom: 1px solid var(--line); flex-shrink: 0;
+}
+.rule-drawer-bar button { height: 30px; padding: 0 10px; font-size: .78rem; }
+.rule-drawer-title { flex: 1; font-family: var(--font-mono); font-weight: 700; font-size: .95rem; }
+.rule-drawer-body { flex: 1; overflow-y: auto; padding: 16px 18px 24px; scrollbar-width: thin; }
+.rule-detail .rule-crumbs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .82rem; margin-bottom: 10px; }
+.rule-detail .rule-number { margin: 0 0 10px; font-family: var(--font-mono); font-size: 1.1rem; }
+.rule-detail .rule-text { line-height: 1.6; font-size: .95rem; }
+.rule-detail .rule-text p { margin: 0 0 8px; }
+.rule-detail .rule-example {
+  margin: 10px 0; padding: 10px 12px; border-radius: 10px; font-size: .88rem; line-height: 1.5;
+  background: var(--bg3); border: 1px solid var(--line); font-style: italic;
+}
+.rule-detail .rule-example p { display: inline; margin: 0; }
+.rule-children { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.rule-children li { display: flex; gap: 8px; align-items: flex-start; font-size: .86rem; line-height: 1.45; }
+.rule-children .rule-ref { flex-shrink: 0; margin-top: 1px; }
+.rule-source { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--line); }
+/* The display rules above would otherwise beat the [hidden] attribute. */
+.rule-drawer[hidden], .rule-drawer-backdrop[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .rule-drawer { animation: none; } }

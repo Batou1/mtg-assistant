@@ -21,7 +21,43 @@
     <span class="art-ico">🎴</span>
     <span class="art-title">{{ art.data.archetype.name }}</span>
     <span class="art-meta">{% for c in art.data.archetype.colors %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %} · {{ art.data.counts.total }} cartes{% if art.data.format_label %} · {{ art.data.format_label }}{% endif %}</span>
+  {%- elif art.type == "ruling" -%}
+    <span class="art-ico">⚖</span>
+    <span class="art-title">Réponse de règles</span>
+    <span class="art-meta">{{ art.citations|selectattr("found")|list|length }} règle(s) citée(s)</span>
   {%- endif -%}
+{% endmacro %}
+
+
+{# Rules judge answer: the direct answer first, the detailed explanation
+   below. Rule numbers are links to the rule drawer only when verified against
+   the stored Comprehensive Rules (art.citations[].found) — an invented number
+   is shown flagged, never as a link. #}
+{% macro ruling(art) %}
+  <div class="ruling">
+    <div class="ruling-answer">
+      <span class="ruling-label">Réponse</span>
+      {{ rules_html(art.answer, art.citations) }}
+    </div>
+    {% if art.explanation %}
+    <div class="ruling-explanation">
+      <span class="ruling-label">Explication</span>
+      {{ rules_html(art.explanation, art.citations) }}
+    </div>
+    {% endif %}
+    {% set cited = art.citations|selectattr("found")|list %}
+    {% if cited or art.unverified %}
+    <div class="ruling-cites small">
+      {% if cited %}
+        <span class="muted">Règles citées :</span>
+        {% for c in cited %}<a class="rule-ref" href="/rules/r/{{ c.number }}" data-rule="{{ c.number }}" title="{{ c.title }}">{{ c.number }}</a>{% endfor %}
+      {% endif %}
+      {% if art.unverified %}
+        <span class="ruling-warn">⚠ Non trouvée(s) dans les règles chargées : {{ art.unverified|join(", ") }} — à vérifier.</span>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
 {% endmacro %}
 
 {% macro commanders(art) %}
@@ -413,5 +449,6 @@
   {% elif art.type == "archetype" %}{{ archetype(art.data) }}
   {% elif art.type == "decklist" %}{{ decklist(art) }}
   {% elif art.type == "pool_deck" or art.type == "limited_deck" %}{{ pool_deck(art.data) }}
+  {% elif art.type == "ruling" %}{{ ruling(art) }}
   {% endif %}
 {% endmacro %}
