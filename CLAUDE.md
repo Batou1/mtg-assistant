@@ -60,6 +60,12 @@ wish (texte FR) → intent.parse_intent (LLM + fallback heuristique, backfill cr
                            exemplaire ; deck chiffré aux vrais prix puis RECONSTRUIT
                            par le LLM tant qu'il dépasse le budget (2 passes max) ;
                            decklist_text exportable)
+                           budget 0 € ou owned_only → mode 100 % COLLECTION : le
+                           LLM reçoit le pool des cartes POSSÉDÉES (légales, dans
+                           les couleurs, copies libres, cache local) et choisit
+                           dedans ; chaque count est borné aux exemplaires
+                           possédés, une carte hors pool est ÉCARTÉE (not_owned),
+                           jamais achetée ; repli heuristique sans clé)
 Résultats → buylist.build (glouton, ordre EDHREC, budget + plafond/carte en EUR ;
                            accepte nom seul ou (nom, qté))
 ```
@@ -168,6 +174,12 @@ alimentée par les questions de règles.
    comme « le prix du deck » (c'est ce qui faisait passer un deck Vintage à
    4 000 € pour un deck à 190 €). Le coût réel des exemplaires manquants est un
    champ distinct (`deck_cost_eur` + `budget_exceeded`), toujours annoncé.
+   **Un budget de 0 € n'est pas un petit budget** : aucune commande Cardmarket
+   n'est gratuite, donc « rabaisser » une liste du métagame ne converge jamais.
+   `formats60.owned_only(intent)` (budget ≤ 0 ou flag `owned_only`) bascule
+   la génération 60 cartes sur la collection (pool possédé → LLM → clamp aux
+   exemplaires possédés) : le deck coûte 0 € par construction. Seule une
+   carte imposée par le joueur (`include_cards`) peut encore manquer.
 
 6. **Persistance du chat = texte + artefacts uniquement.** Le transcript
    `tool_use`/`tool_result` est éphémère (intra-tour). Le contexte inter-tours est

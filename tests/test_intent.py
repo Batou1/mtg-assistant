@@ -200,3 +200,29 @@ def test_coerce_max_card_price_eur():
     assert intent.coerce({"max_card_price_eur": "x"})["max_card_price_eur"] is None
     assert intent.coerce({})["max_card_price_eur"] is None
     assert intent.coerce({})["max_colors"] is None
+
+
+def test_heuristic_owned_only_phrasings():
+    for text in (
+        "un deck pauper goblins uniquement avec les cartes que j'ai",
+        "deck modern que des cartes que je possède, sans rien acheter",
+        "un deck standard avec ma collection uniquement",
+        "deck pauper aggro rouge, budget 0 €",
+    ):
+        parsed = intent._heuristic(text)
+        assert parsed["owned_only"] is True, text
+
+
+def test_heuristic_zero_budget_is_kept_as_zero():
+    parsed = intent._heuristic("deck pauper rouge budget 0€")
+    assert parsed["budget_eur"] == 0.0
+
+
+def test_heuristic_owned_only_not_triggered_by_default():
+    parsed = intent._heuristic("un deck pauper goblins rouge budget 20€")
+    assert parsed["owned_only"] is False
+
+
+def test_coerce_owned_only():
+    assert intent.coerce({"owned_only": True})["owned_only"] is True
+    assert intent.coerce({})["owned_only"] is False

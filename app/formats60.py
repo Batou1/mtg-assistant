@@ -20,7 +20,16 @@ are Cloudflare-blocked), so we research the *archetype* instead:
    is stated as such instead of being silently mispriced.
 5. Gap analysis vs the active profile's collection (per COPY, not per name:
    owning 2 of a 4-of leaves 2 to buy) + a budget buylist in EUR.
+6. A budget of 0 € (or an explicit "only my cards" wish) is a different
+   problem: there is no such thing as a free Cardmarket order, so asking the
+   model for a cheaper metagame list can never converge — it kept proposing
+   28 owned / 32 to buy. ``owned_only`` mode instead hands the model the
+   player's own legal, on-colour cards (the same pool-deck idea as
+   ``poolbuild``) and clamps every copy count to what is actually owned, so
+   the deck costs 0 € by construction and the model only decides *which* of
+   the owned cards make the best 60.
 """
+import re
 from dataclasses import dataclass, field
 
 import httpx
@@ -58,6 +67,75 @@ _PRICE_REPORT_LINES = 25
 _BASIC_BY_KEY = {n.lower(): n for n in poolbuild._BASIC_NAMES}
 
 _norm = scryfall.norm_name
+
+
+def owned_only(intent: dict) -> bool:
+    """True when the deck must come entirely from the collection.
+
+    A zero budget means it: "0 €" is not a small budget to optimise towards
+    but a refusal to buy anything, and no metagame rewrite can reach it. The
+    explicit ``owned_only`` flag covers wishes that never mention money ("que
+    des cartes que j'ai").
+    """
+    budget = intent.get("budget_eur")
+    return bool(intent.get("owned_only")) or (budget is not None and budget <= 0)
+
+
+def _relevance_terms(intent: dict) -> list[str]:
+    terms = [str(k).lower() for k in (intent.get("keywords") or [])]
+    terms += [w for w in re.findall(r"[a-zà-ÿ]{4,}", (intent.get("theme") or "").lower())]
+    return [t for t in dict.fromkeys(terms) if t]
+
+
+def _owned_pool(profile_id: int, fmt: str, intent: dict, free_qty: dict[str, int],
+                excluded: frozenset[str]) -> tuple[list[dict], int]:
+    """The player's cards a ``fmt`` deck may be built from: ``(pool, skipped)``.
+
+    Reads the local card cache only (like the collection page): a card the
+    cache has not resolved yet has no legality or colours, so it is skipped
+    rather than guessed — ``skipped`` counts those. Copies sleeved in other
+    decks are already removed from ``free_qty`` (invariant 13). Basic lands
+    are left out: they are free and added by the manabase step anyway.
+
+    The pool is capped at ``settings.owned_pool_max`` lines to keep the prompt
+    bounded on large collections; when it overflows, cards whose type or text
+    mentions the wish's keywords are kept first so the theme survives the cut.
+    """
+    names = db.collection_names(profile_id)
+    cards = db.get_cards(key for _, key, _ in names)
+    wanted = {c for c in (intent.get("colors") or []) if c in _COLOR_WORDS}
+    pool: list[dict] = []
+    skipped = 0
+    for _raw, key, _qty in names:
+        qty = free_qty.get(key, 0)
+        if qty <= 0 or key in excluded or key in _BASIC_BY_KEY:
+            continue
+        card = cards.get(key)
+        if card is None:
+            skipped += 1
+            continue
+        if not scryfall.legal_in(card, fmt):
+            continue
+        if wanted and not set(scryfall.color_identity(card)) <= wanted:
+            continue
+        pool.append({"name": card["name"], "key": key,
+                     "qty": min(qty, _MAX_COPIES), "card": card})
+
+    cap = settings.owned_pool_max
+    if len(pool) > cap:
+        terms = _relevance_terms(intent)
+
+        def score(entry: dict) -> int:
+            card = entry["card"]
+            text = " ".join(str(card.get(f) or "") for f in ("type_line", "oracle_text"))
+            faces = card.get("card_faces") or []
+            text += " " + " ".join(str(f.get("oracle_text") or "") for f in faces)
+            text = text.lower()
+            return sum(1 for t in terms if t in text)
+
+        pool.sort(key=lambda e: (-score(e), e["name"]))
+        pool = pool[:cap]
+    return pool, skipped
 
 
 def _query(fmt: str, intent: dict) -> str:
@@ -135,6 +213,9 @@ class _BuildContext:
     include_cards: list[str] = field(default_factory=list)
     excluded: frozenset[str] = frozenset()
     max_card_price: float | None = None
+    # Every copy must come from the collection: counts are clamped to the
+    # owned (free) copies and cards the player has none of are dropped.
+    owned_only: bool = False
 
 
 def _price_report(items: list[dict], max_card_price: float | None) -> str:
@@ -216,6 +297,24 @@ def _build_deck(archetype: dict, ctx: _BuildContext) -> dict:
             order.append(key)
         merged[key]["forced"] = True
 
+    # Collection-only build: the model was shown the owned pool, but a name
+    # outside it (or more copies than owned) must not turn into a purchase.
+    # Player-forced cards are the one exception — an explicit ask wins and
+    # its cost is reported like any other missing copy.
+    not_owned: list[str] = []
+    if ctx.owned_only:
+        for key in list(order):
+            entry = merged[key]
+            if entry.get("forced"):
+                continue
+            have = ctx.owned_qty.get(key, 0)
+            if have <= 0:
+                not_owned.append(entry["name"])
+                del merged[key]
+                order.remove(key)
+            else:
+                entry["count"] = min(entry["count"], have)
+
     chosen = [merged[k] for k in order]
     spells = [c for c in chosen if not poolbuild._is_land(c["card"])]
     nonbasic_lands = [c for c in chosen if poolbuild._is_land(c["card"])]
@@ -291,6 +390,7 @@ def _build_deck(archetype: dict, ctx: _BuildContext) -> dict:
         "basics": basics,
         "all_items": all_items,
         "dropped": dropped,
+        "not_owned": not_owned,
         "rejected_includes": rejected_includes,
         "nonbasic_total": sum(c["qty"] for c in all_items),
         "cost_eur": round(cost_eur, 2),
@@ -319,19 +419,39 @@ def _usable(candidate: dict, current: dict) -> bool:
     return candidate["nonbasic_total"] >= floor
 
 
+def _empty_pool_result(fmt: str, intent: dict, results: list, skipped: int) -> dict:
+    """Collection-only wish with nothing to build from: say so, build nothing.
+
+    Padding 60 basic lands would be a "deck" costing 0 € — and useless. The
+    result keeps the archetype header so the artifact template renders.
+    """
+    colors = [c for c in (intent.get("colors") or []) if c in _COLOR_WORDS]
+    return {
+        "format": fmt,
+        "archetype": {"name": "Deck 100 % collection", "colors": colors,
+                      "strategy": ""},
+        "owned_only": True,
+        "owned_pool_empty": True,
+        "owned_pool_size": 0,
+        "owned_pool_unresolved": skipped,
+        "sources": results[:6],
+        "budget_eur": intent.get("budget_eur"),
+        "max_card_price_eur": intent.get("max_card_price_eur"),
+        "llm_unavailable": False,
+    }
+
+
 def analyze(intent: dict, profile_id: int) -> dict:
     fmt = intent.get("format")
+    only_owned = owned_only(intent)
     results = research.brave_search(_query(fmt, intent))
     context = research.context_block(results)
-
-    archetype = llm.archetype_research(fmt, intent, context)
-    if not archetype:
-        return {"format": fmt, "llm_unavailable": True, "sources": results}
 
     # Only copies not already sleeved in another of the user's decks count as
     # available; the rest is surfaced separately (in_deck_qty) so the user
     # knows buying replaces borrowing.
     quantities = db.owned_quantities(profile_id)
+    free_qty = {k: max(0, qty - deck_qty) for k, (qty, deck_qty) in quantities.items()}
     budget = intent.get("budget_eur")
     max_card_price = intent.get("max_card_price_eur")
 
@@ -339,24 +459,46 @@ def analyze(intent: dict, profile_id: int) -> dict:
                      if isinstance(n, str) and n.strip()]
     exclude_cards = [n.strip() for n in (intent.get("exclude_cards") or [])
                      if isinstance(n, str) and n.strip()]
+    excluded = frozenset(_norm(n) for n in exclude_cards)
+
+    pool: list[dict] = []
+    pool_skipped = 0
+    if only_owned:
+        # The deck is chosen FROM the collection, not researched then priced:
+        # the model sees the owned pool and nothing else, and a key-free
+        # install falls back to the same curve-filling heuristic as the
+        # "from a list" page.
+        pool, pool_skipped = _owned_pool(profile_id, fmt, intent, free_qty, excluded)
+        if not pool:
+            return _empty_pool_result(fmt, intent, results, pool_skipped)
+        archetype = llm.archetype_from_collection(
+            fmt, intent, [poolbuild._pool_line(e) for e in pool], context)
+        if not archetype:
+            archetype = poolbuild._heuristic_select(
+                pool, poolbuild.SPECS[fmt], intent)
+    else:
+        archetype = llm.archetype_research(fmt, intent, context)
+        if not archetype:
+            return {"format": fmt, "llm_unavailable": True, "sources": results}
 
     with httpx.Client(timeout=30, headers={"User-Agent": settings.user_agent}) as client:
         ctx = _BuildContext(
             fmt=fmt, client=client,
-            owned_qty={k: max(0, qty - deck_qty)
-                       for k, (qty, deck_qty) in quantities.items()},
+            owned_qty=free_qty,
             in_deck_qty={k: deck_qty for k, (_qty, deck_qty) in quantities.items()},
             include_cards=include_cards,
-            excluded=frozenset(_norm(n) for n in exclude_cards),
+            excluded=excluded,
             max_card_price=max_card_price,
+            owned_only=only_owned,
         )
 
         build = _build_deck(archetype, ctx)
         # The model priced the deck from memory; now that it has real prices,
         # give it a chance to rebuild under budget. Keep the cheapest usable
-        # answer and stop as soon as a pass fails to improve on it.
+        # answer and stop as soon as a pass fails to improve on it. A
+        # collection-only build costs 0 € by construction, so it never loops.
         budget_passes = 0
-        while (budget is not None and not _fits_budget(build, budget)
+        while (budget is not None and not only_owned and not _fits_budget(build, budget)
                and budget_passes < _MAX_BUDGET_PASSES and llm.is_available()):
             budget_passes += 1
             revised = llm.archetype_revise(
@@ -419,6 +561,13 @@ def analyze(intent: dict, profile_id: int) -> dict:
         "rejected_includes": build["rejected_includes"],
         "excluded_cards": exclude_cards,
         "dropped": build["dropped"],
+        # Collection-only mode: names the model picked outside the owned pool
+        # (dropped rather than bought) and the size of the pool it chose from.
+        "owned_only": only_owned,
+        "owned_pool_empty": False,
+        "owned_pool_size": len(pool),
+        "owned_pool_unresolved": pool_skipped,
+        "not_owned": build["not_owned"],
         "sources": results[:6],
         "budget_eur": budget,
         "max_card_price_eur": max_card_price,

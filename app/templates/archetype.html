@@ -28,6 +28,15 @@
     {% for s in data.sources %}<li><a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.title }}</a></li>{% endfor %}
   </ul>
   {% endif %}
+{% elif data.owned_pool_empty %}
+  <div class="notice warn">
+    Deck 100 % collection impossible : aucune carte de ta collection (hors
+    terrains de base) n'est légale en {{ data.format }}{% if data.archetype.colors %}
+    dans ces couleurs{% endif %}. Élargis les couleurs, ou autorise un budget d'achat.
+    {% if data.owned_pool_unresolved %}<br>{{ data.owned_pool_unresolved }} carte(s)
+    de la collection ne sont pas encore résolues dans le cache local : réessaie
+    après le prochain rafraîchissement.{% endif %}
+  </div>
 {% else %}
   {% set deck = data.deck %}
 
@@ -38,15 +47,29 @@
     {% for p in data.archetype.strategy|paragraphs %}<p>{{ p }}</p>{% endfor %}
 
     <ul class="chips">
+      {% if data.owned_only %}<li class="chip owned-tag">100 % collection</li>{% endif %}
       <li class="chip">{{ deck.counts.total }} cartes</li>
       <li class="chip">{{ deck.counts.lands }} terrains</li>
       <li class="chip">{{ deck.counts.owned }} possédées</li>
       <li class="chip">{{ deck.counts.to_buy }} à acheter</li>
+      {% if data.owned_only %}
+      <li class="chip">Rien à acheter</li>
+      {% else %}
       <li class="chip {{ 'warn' if data.budget_exceeded }}">Coût des manquantes :
         <strong>{{ "%.2f"|format(data.deck_cost_eur) }} €</strong>
         {% if data.budget_eur is not none %} / {{ "%.0f"|format(data.budget_eur) }} € budget{% endif %}
       </li>
+      {% endif %}
     </ul>
+    {% if data.owned_only %}
+    <p class="notice info">
+      Deck choisi parmi {{ data.owned_pool_size }} carte(s) possédée(s) légale(s)
+      en {{ data.format }} : rien à acheter, les terrains de base complètent.
+      {% if deck.counts.spells < 30 %}<br>La collection est mince pour cet archétype
+      dans ces couleurs : élargir les couleurs ou le thème donnera un deck plus dense.{% endif %}
+      {% if data.not_owned %}<br>Écartées (hors collection) : {{ data.not_owned|join(", ") }}.{% endif %}
+    </p>
+    {% endif %}
 
     {% if data.budget_exceeded %}
     <p class="notice warn">

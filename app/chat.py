@@ -103,6 +103,13 @@ SYSTEM_PROMPT = (
     "pas plus de 5€ par carte »), passe TOUJOURS les deux paramètres — aucune "
     "carte individuelle ne doit dépasser max_card_price_eur même s'il reste du "
     "budget total.\n"
+    "- DECK 100 % COLLECTION : si le joueur veut un deck 60 cartes construit "
+    "UNIQUEMENT avec ses cartes (« que des cartes que j'ai », « sans rien "
+    "acheter », « budget 0 € »), appelle research_archetype avec "
+    "owned_only=true (ou budget_eur=0, équivalent) : le deck est alors choisi "
+    "PARMI sa collection et ne coûte rien, au lieu d'être une liste du "
+    "métagame à compléter. Ne propose jamais « d'accepter un petit "
+    "dépassement » à la place — c'est le mode prévu pour ce cas.\n"
     "- Si le joueur veut un commandant qu'il NE possède PAS (« que je n'ai pas », "
     "« à acquérir », « un nouveau commandant »), appelle suggest_commanders avec "
     "unowned_only=true.\n"
@@ -285,6 +292,14 @@ TOOLS = [
                     "description": "Format 60 cartes visé.",
                 },
                 **_INTENT_PROPS,
+                "owned_only": {
+                    "type": "boolean",
+                    "description": (
+                        "true si le deck doit être construit UNIQUEMENT avec les "
+                        "cartes que le joueur possède (aucun achat) : « que des "
+                        "cartes que j'ai », « sans rien acheter », budget 0 €."
+                    ),
+                },
                 "include_cards": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -517,6 +532,7 @@ def _intent_from(args: dict, fmt: str | None) -> dict:
             "max_card_price_eur": args.get("max_card_price_eur"),
             "include_low_decks": args.get("include_low_decks"),
             "unowned_only": args.get("unowned_only"),
+            "owned_only": args.get("owned_only"),
             "source": "llm",
         }
     )
@@ -655,6 +671,17 @@ def _exec_research_archetype(args: dict, profile_id: int, ctx: dict | None = Non
     buy = data.get("buylist") or {}
     counts = (data.get("deck") or {}).get("counts") or {}
     artifact = {"type": "archetype", "intent": parsed, "data": data}
+    if data.get("owned_pool_empty"):
+        text = (
+            f"Deck {fmt} 100 % collection impossible : aucune carte possédée "
+            f"(hors terrains de base) n'est légale en {fmt}"
+            + (" dans ces couleurs" if parsed.get("colors") else "") + "."
+        )
+        if data.get("owned_pool_unresolved"):
+            text += (f" {data['owned_pool_unresolved']} carte(s) de la collection "
+                     "ne sont pas encore résolues dans le cache local.")
+        text += " Propose au joueur d'élargir les couleurs ou d'autoriser un budget."
+        return text, artifact
     text = (
         f"Deck {fmt} : {arch.get('name')} "
         f"({'/'.join(arch.get('colors') or []) or 'incolore'}). "
@@ -662,7 +689,21 @@ def _exec_research_archetype(args: dict, profile_id: int, ctx: dict | None = Non
         f"{counts.get('owned', 0)} possédées, {counts.get('to_buy', 0)} manquantes ; "
         f"coût réel des cartes manquantes {data.get('deck_cost_eur', 0)} €"
     )
-    if data.get("budget_eur") is not None:
+    if data.get("owned_only"):
+        spells = counts.get("spells", 0)
+        text += (
+            f". Deck 100 % COLLECTION : choisi parmi {data.get('owned_pool_size', 0)} "
+            f"cartes possédées légales, rien à acheter ({spells} sorts, le reste en "
+            "terrains de base)"
+        )
+        if spells < 30:
+            text += (" — la collection est mince pour cet archétype dans ces "
+                     "couleurs : dis-le au joueur et propose d'élargir les "
+                     "couleurs ou le thème")
+        if data.get("not_owned"):
+            text += (" ; cartes proposées hors collection, écartées : "
+                     + ", ".join(data["not_owned"][:8]))
+    if data.get("budget_eur") is not None and not data.get("owned_only"):
         text += (f" (dont {buy.get('total_eur', 0)} € tenant dans le budget, "
                  f"{buy.get('bought_count', 0)} cartes)")
     text += f"{_cap_suffix(buy.get('max_card_price_eur'))}."
