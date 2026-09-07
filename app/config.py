@@ -124,6 +124,9 @@ class Settings:
     bonus_owned_scan: int = int(os.environ.get("MTG_BONUS_OWNED_SCAN", "200"))
     bonus_owned_max: int = int(os.environ.get("MTG_BONUS_OWNED_MAX", "12"))
     bonus_buy_max: int = int(os.environ.get("MTG_BONUS_BUY_MAX", "10"))
+    # Collection-only 60-card decks (budget 0 €): at most this many owned
+    # cards are shown to the model, keyword-relevant ones first (formats60).
+    owned_pool_max: int = int(os.environ.get("MTG_OWNED_POOL_MAX", "500"))
 
     # --- Comprehensive Rules (the "Règles" tab) -----------------------------
     # The rules page links the current Comprehensive Rules in several formats;

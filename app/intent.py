@@ -123,6 +123,9 @@ _SYSTEM_PROMPT = (
     "UNIQUEMENT si l'utilisateur precise un plafond individuel distinct du "
     'budget total (ex: "budget 30 euros mais pas plus de 5 euros par carte" '
     "=> budget_eur=30, max_card_price_eur=5), sinon null.\n"
+    '- "owned_only": true si l\'utilisateur veut un deck construit UNIQUEMENT '
+    'avec les cartes qu\'il possede deja, sans rien acheter ("que des cartes que '
+    'j\'ai", "sans achat", "avec ma collection uniquement", "budget 0"), sinon false.\n'
     "RESPECTE STRICTEMENT les couleurs, le nombre de couleurs et le theme "
     'demandes. Pour "noir OU blanc monocouleur", colors=["B","W"] et '
     "max_colors=1 (chaque deck propose sera mono-noir OU mono-blanc). "
@@ -204,6 +207,10 @@ def coerce(data: dict) -> dict:
         "max_card_price_eur": max_card_price,
         "include_low_decks": bool(data.get("include_low_decks")),
         "unowned_only": bool(data.get("unowned_only")),
+        # Deck from the collection only, nothing bought. A zero budget means
+        # the same thing downstream (formats60.owned_only) — kept as an
+        # explicit flag so a wish that never mentions money still works.
+        "owned_only": bool(data.get("owned_only")),
         "source": data.get("source", "llm"),
     }
 
@@ -266,6 +273,17 @@ def _heuristic(text: str) -> dict:
                   r"que je ne d[ée]tiens pas)", low)
     )
 
+    # Build from the collection only, no purchase at all.
+    owned_only = bool(
+        re.search(r"(?:(?:uniquement|seulement|que|rien qu[e'])\s+(?:avec\s+|des\s+|les\s+)?"
+                  r"(des\s+|les\s+|mes\s+)?cartes\s+que\s+j[e' ]+(ai|poss[èe]de)|"
+                  r"sans\s+(rien\s+)?achet|sans\s+achat|"
+                  r"(avec|dans|depuis)\s+ma\s+collection\s+(uniquement|seulement)|"
+                  r"uniquement\s+(avec|depuis)\s+ma\s+collection|"
+                  r"que\s+je\s+poss[èe]de\s+d[ée]j[àa]|"
+                  r"budget\s*(de\s*)?(0|z[ée]ro)\b)", low)
+    )
+
     # A per-card price cap ("max 5€ par carte", "chaque carte à 5€ max", "pas
     # plus de 5 euros par carte") is looked for FIRST and removed from the text
     # before the general budget regex runs below — otherwise "budget 30€ max
@@ -306,6 +324,7 @@ def _heuristic(text: str) -> dict:
             "max_card_price_eur": max_card_price,
             "include_low_decks": include_low_decks,
             "unowned_only": unowned_only,
+            "owned_only": owned_only,
             "source": "heuristic",
         }
     )

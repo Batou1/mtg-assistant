@@ -760,3 +760,47 @@ def test_serialize_content_preserves_thinking_blocks(env):
     assert out[0] == {"type": "thinking", "thinking": "hmm", "signature": "sig"}
     assert out[1] == {"type": "redacted_thinking", "data": "blob"}
     assert out[2]["type"] == "text" and out[3]["type"] == "tool_use"
+
+
+def test_research_archetype_tool_passes_owned_only(env, monkeypatch):
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+    captured = {}
+
+    def fake_analyze(intent, profile_id):
+        captured.update(intent)
+        return {
+            "format": "pauper", "owned_only": True, "owned_pool_empty": False,
+            "owned_pool_size": 42, "not_owned": ["Lightning Bolt"],
+            "archetype": {"name": "Goblins", "colors": ["R"], "strategy": ""},
+            "deck": {"counts": {"total": 60, "lands": 24, "owned": 60,
+                                "to_buy": 0, "spells": 36}},
+            "buylist": {"to_buy": [], "total_eur": 0, "bought_count": 0},
+            "deck_cost_eur": 0.0, "budget_eur": 0.0, "budget_exceeded": False,
+            "llm_unavailable": False,
+        }
+
+    monkeypatch.setattr(chat.formats60, "analyze", fake_analyze)
+    text, artifact = chat._exec_research_archetype(
+        {"format": "pauper", "owned_only": True, "budget_eur": 0}, pid)
+    assert captured["owned_only"] is True
+    assert captured["budget_eur"] == 0.0
+    assert artifact["type"] == "archetype"
+    assert "100 % COLLECTION" in text
+    assert "Lightning Bolt" in text
+    assert "ATTENTION" not in text
+
+
+def test_research_archetype_tool_reports_an_empty_owned_pool(env, monkeypatch):
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+    monkeypatch.setattr(chat.formats60, "analyze", lambda intent, pid_: {
+        "format": "pauper", "owned_only": True, "owned_pool_empty": True,
+        "owned_pool_size": 0, "owned_pool_unresolved": 0,
+        "archetype": {"name": "Deck 100 % collection", "colors": ["R"], "strategy": ""},
+        "llm_unavailable": False,
+    })
+    text, artifact = chat._exec_research_archetype(
+        {"format": "pauper", "colors": ["R"], "budget_eur": 0}, pid)
+    assert "impossible" in text
+    assert artifact["data"]["owned_pool_empty"] is True

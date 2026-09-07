@@ -311,6 +311,49 @@ def archetype_revise(fmt: str, intent: dict, previous: dict, price_report: str,
                      max_tokens=settings.anthropic_deck_max_tokens)
 
 
+def archetype_from_collection(fmt: str, intent: dict, pool_lines: list[str],
+                              context: str = "") -> dict | None:
+    """Propose a 60-card deck using ONLY the player's own cards.
+
+    The zero-budget counterpart of ``archetype_research``: the model gets the
+    owned pool (name, available copies, cost, type, text) instead of a
+    shopping licence, and picks the best 60 from it. Same JSON shape as the
+    other archetype calls; ``formats60`` re-checks every name against the
+    collection and clamps copies to what is owned, so a card named outside
+    the pool is dropped rather than bought.
+    """
+    system = (
+        f"Tu es un expert Magic: the Gathering, format {fmt}. Le joueur veut un "
+        "deck construit UNIQUEMENT avec les cartes qu'il possède déjà : il "
+        "n'achètera RIEN. Choisis, parmi les cartes de sa collection listées "
+        "ci-dessous (toutes légales dans le format), le MEILLEUR deck de 60 "
+        "cartes EXACTEMENT, cohérent avec l'envie, les couleurs et la stratégie "
+        "demandées. Réponds UNIQUEMENT en JSON avec ces clés :\n"
+        '- "archetype": nom court de l\'archétype.\n'
+        '- "colors": liste de symboles parmi "W","U","B","R","G".\n'
+        '- "strategy": 2-3 phrases en français décrivant le plan de jeu, en texte brut (pas de Markdown).\n'
+        '- "main_deck": liste d\'objets {"name","count"} — TOUS les sorts ET les '
+        "terrains non-basiques du deck. Chaque name est recopié EXACTEMENT depuis "
+        "la liste fournie, et count ne dépasse JAMAIS le nombre d'exemplaires "
+        "indiqué (x2 => au plus 2 ; sans mention => 1), ni 4.\n"
+        '- "basic_lands": objet {"Plains":n,"Island":n,"Swamp":n,"Mountain":n,'
+        '"Forest":n} — les terrains de base, disponibles sans limite.\n'
+        "Le deck complet (main_deck + basic_lands) fait EXACTEMENT 60 cartes, avec "
+        "20 à 26 terrains adaptés à la courbe de mana. N'ajoute AUCUNE carte "
+        "absente de la liste, même une carte évidente de l'archétype : elle "
+        "serait retirée. Si la collection ne permet pas l'archétype idéal, "
+        "construis le meilleur deck possible avec ce qui est là et explique le "
+        'compromis dans "strategy".'
+    )
+    parts = _archetype_user(fmt, intent)
+    if context:
+        parts.append(f"\nExtraits web récents (métagame, pour t'inspirer) :\n{context}")
+    parts.append("\nCartes possédées disponibles (nom | coût | type | texte) :\n"
+                 + "\n".join(pool_lines))
+    return chat_json(system, "\n".join(parts),
+                     max_tokens=settings.anthropic_deck_max_tokens)
+
+
 def pool_deck(spec, intent: dict, pool_lines: list[str]) -> dict | None:
     """Pick the best deck from a fixed card pool, per a format spec.
 

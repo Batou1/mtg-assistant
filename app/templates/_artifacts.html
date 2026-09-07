@@ -176,14 +176,26 @@
       <span class="pips">{% for c in data.archetype.colors %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}</span>
     </h3>
     {% for p in data.archetype.strategy|paragraphs %}<p>{{ p }}</p>{% endfor %}
+    {% if data.owned_pool_empty %}
+    <p class="notice warn small">
+      Aucune carte de ta collection (hors terrains de base) n'est légale en
+      {{ data.format }}{% if data.archetype.colors %} dans ces couleurs{% endif %} :
+      impossible de construire un deck sans rien acheter.
+      {% if data.owned_pool_unresolved %}<br>{{ data.owned_pool_unresolved }} carte(s)
+      de la collection ne sont pas encore résolues dans le cache local.{% endif %}
+    </p>
+    {% endif %}
     {% if data.deck %}{# current shape: full 60-card deck with manabase #}
     {% set deck = data.deck %}
     <ul class="chips">
+      {% if data.owned_only %}<li class="chip owned-tag">100 % collection</li>{% endif %}
       <li class="chip">{{ deck.counts.total }} cartes</li>
       <li class="chip">{{ deck.counts.lands }} terrains</li>
       <li class="chip">{{ deck.counts.owned }} possédées</li>
       <li class="chip">{{ deck.counts.to_buy }} à acheter</li>
-      {% if data.deck_cost_eur is defined and data.deck_cost_eur is not none %}
+      {% if data.owned_only %}
+      <li class="chip">Rien à acheter</li>
+      {% elif data.deck_cost_eur is defined and data.deck_cost_eur is not none %}
       {# Current shape: the FULL price of the missing copies. The buylist total
          stops at the budget, so showing it alone made an unaffordable deck
          look affordable. #}
@@ -209,6 +221,15 @@
     {% if data.unpriced_missing %}
     <p class="notice info small">{{ data.unpriced_missing }} exemplaire(s) manquant(s)
       sans prix Cardmarket : le coût affiché est un minimum.</p>
+    {% endif %}
+    {% if data.owned_only %}
+    <p class="notice info small">
+      Deck choisi parmi {{ data.owned_pool_size }} carte(s) possédée(s) légale(s)
+      en {{ data.format }} : rien à acheter, les terrains de base complètent.
+      {% if deck.counts.spells < 30 %}<br>La collection est mince pour cet archétype
+      dans ces couleurs : élargir les couleurs ou le thème donnera un deck plus dense.{% endif %}
+      {% if data.not_owned %}<br>Écartées (hors collection) : {{ data.not_owned|join(", ") }}.{% endif %}
+    </p>
     {% endif %}
     <div class="completion">
       <div class="bar"><span style="width: {{ (100 * deck.counts.owned / deck.counts.total) if deck.counts.total else 0 }}%"></span></div>

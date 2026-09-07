@@ -296,3 +296,131 @@ def test_groups_are_sorted_alphabetically(monkeypatch):
     data = _analyze(monkeypatch, archetype=arch)
     creatures = data["deck"]["groups"][0]["cards"]
     assert [c["name"] for c in creatures] == ["Card A", "Card B"]
+
+
+# --- Collection-only mode (budget 0 € / owned_only) -----------------------
+
+def _analyze_owned_only(monkeypatch, owned, selection, budget=0.0, extra=None,
+                        llm_available=True):
+    """Run ``analyze`` in collection-only mode.
+
+    ``selection`` is what the collection-aware LLM call returns (None = no key,
+    the heuristic pool selection takes over). The metagame research calls
+    must never run in this mode, so they fail loudly if reached.
+    """
+    def never(*_a, **_k):
+        raise AssertionError("metagame research must not run in owned-only mode")
+
+    calls = {}
+    monkeypatch.setattr(research, "brave_search", lambda q, count=8: [])
+    monkeypatch.setattr(llm, "archetype_research", never)
+    monkeypatch.setattr(llm, "archetype_revise", never)
+    monkeypatch.setattr(llm, "is_available", lambda: llm_available)
+
+    def from_collection(fmt, intent, pool_lines, context=""):
+        calls["pool_lines"] = pool_lines
+        return selection
+
+    monkeypatch.setattr(llm, "archetype_from_collection", from_collection)
+    monkeypatch.setattr(scryfall, "resolve_cards", _fake_resolve)
+    quantities = {e[0].lower(): (e[1], e[2] if len(e) > 2 else 0) for e in owned}
+    monkeypatch.setattr(db, "owned_quantities", lambda pid: quantities)
+    monkeypatch.setattr(db, "collection_names",
+                        lambda pid: [(e[0], e[0].lower(), e[1]) for e in owned])
+    monkeypatch.setattr(db, "get_cards",
+                        lambda keys, ttl_days=None: {k: RESOLVED[k] for k in keys
+                                                     if k in RESOLVED})
+    intent = {"format": "pauper", "keywords": ["aggro"], "colors": ["R"],
+              "budget_eur": budget, **(extra or {})}
+    return formats60.analyze(intent, profile_id=1), calls
+
+
+OWNED = [("Card A", 4), ("Card B", 2), ("Card C", 4), ("Card E", 3),
+         ("Dual Land", 2), ("Mountain", 20)]
+
+
+def test_zero_budget_builds_from_the_collection_only(monkeypatch):
+    # The model was shown the owned pool but still names a card the player
+    # doesn't have (Power Card) and asks for more Card B than owned: neither
+    # may become a purchase — the deck costs 0 € by construction.
+    data, calls = _analyze_owned_only(monkeypatch, OWNED, _deck_of(
+        ("Card A", 4), ("Card B", 4), ("Power Card", 4), ("Dual Land", 2)))
+
+    assert data["owned_only"] is True
+    assert data["owned_pool_empty"] is False
+    deck = data["deck"]
+    cards = {c["name"]: c for g in deck["groups"] for c in g["cards"]}
+    assert "Power Card" not in cards
+    assert data["not_owned"] == ["Power Card"]
+    assert cards["Card A"]["qty"] == 4
+    assert cards["Card B"]["qty"] == 2           # clamped to the owned copies
+    assert deck["counts"]["to_buy"] == 0
+    assert deck["counts"]["total"] == 60
+    assert data["deck_cost_eur"] == 0
+    assert data["budget_exceeded"] is False
+    assert data["budget_passes"] == 0
+    assert data["buylist"]["to_buy"] == []
+
+
+def test_owned_pool_is_legal_free_copies_only(monkeypatch):
+    # Card C is illegal in pauper and basics are handled by the manabase:
+    # neither reaches the model. Copies sleeved in other decks don't either.
+    owned = OWNED + [("Cheap Card", 3, 3)]
+    data, calls = _analyze_owned_only(monkeypatch, owned, _deck_of(("Card A", 4)))
+    lines = "\n".join(calls["pool_lines"])
+    assert "Card A (x4)" in lines
+    assert "Card B (x2)" in lines
+    assert "Card C" not in lines
+    assert "Mountain" not in lines
+    assert "Cheap Card" not in lines
+    assert data["owned_pool_size"] == 4      # A, B, E, Dual Land
+
+
+def test_owned_only_flag_works_without_a_budget(monkeypatch):
+    data, _calls = _analyze_owned_only(
+        monkeypatch, OWNED, _deck_of(("Card A", 4), ("Card B", 2)),
+        budget=None, extra={"owned_only": True})
+    assert data["owned_only"] is True
+    assert data["deck"]["counts"]["to_buy"] == 0
+    assert data["budget_exceeded"] is False
+
+
+def test_owned_only_falls_back_to_the_heuristic_without_llm(monkeypatch):
+    data, _calls = _analyze_owned_only(monkeypatch, OWNED, None, llm_available=False)
+    assert data.get("llm_unavailable") is False
+    deck = data["deck"]
+    cards = {c["name"]: c for g in deck["groups"] for c in g["cards"]}
+    assert set(cards) <= {"Card A", "Card B", "Card E"}
+    assert cards["Card A"]["qty"] == 4
+    assert deck["counts"]["to_buy"] == 0
+    assert deck["counts"]["total"] == 60
+
+
+def test_owned_only_with_nothing_playable_says_so(monkeypatch):
+    # Only an illegal card and basics: no deck is padded out of basic lands.
+    data, _calls = _analyze_owned_only(
+        monkeypatch, [("Card C", 4), ("Mountain", 20)], _deck_of(("Card A", 4)))
+    assert data["owned_pool_empty"] is True
+    assert "deck" not in data
+    assert data["archetype"]["colors"] == ["R"]
+
+
+def test_owned_only_keeps_a_forced_card_even_if_not_owned(monkeypatch):
+    # An explicit player request wins over the "nothing bought" rule, and its
+    # cost is reported honestly rather than hidden.
+    data, _calls = _analyze_owned_only(
+        monkeypatch, OWNED, _deck_of(("Card A", 4)),
+        extra={"include_cards": ["Cheap Card"]})
+    cards = {c["name"]: c for g in data["deck"]["groups"] for c in g["cards"]}
+    assert cards["Cheap Card"]["forced"] is True
+    assert cards["Cheap Card"]["missing_qty"] == 1
+    assert data["deck_cost_eur"] == 0.05
+    assert data["forced_cards"] == ["Cheap Card"]
+
+
+def test_owned_only_helper():
+    assert formats60.owned_only({"budget_eur": 0}) is True
+    assert formats60.owned_only({"budget_eur": 0.0}) is True
+    assert formats60.owned_only({"owned_only": True}) is True
+    assert formats60.owned_only({"budget_eur": 5.0}) is False
+    assert formats60.owned_only({"budget_eur": None}) is False
