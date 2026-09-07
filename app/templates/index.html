@@ -92,6 +92,14 @@
         </label>
         <button type="submit">Importer</button>
       </form>
+      {% if scryfall_freshness %}
+        <p class="small freshness{% if scryfall_freshness.stale %} stale{% else %} muted{% endif %}"
+           title="Âge des données Scryfall locales (cartes et prix). Rafraîchies automatiquement chaque jour ; en rouge au-delà de 7 jours.">
+          Dernière update Scryfall :
+          {% if scryfall_freshness.synced_at is none %}jamais{% else %}il y a {{ scryfall_freshness.age_label }}{% endif %}
+          {% if scryfall_freshness.stale %}<span class="freshness-flag">⚠ données périmées</span>{% endif %}
+        </p>
+      {% endif %}
     </section>
   </div>
 </div>

@@ -85,7 +85,7 @@ def _deck_signals(profile_id: int) -> list[dict]:
     if not decks:
         return []
     all_keys = {c["name_key"] for cards in decks.values() for c in cards}
-    cached = db.get_cards(all_keys)
+    cached = db.get_cards(all_keys, ttl_days=db.ANY_AGE)
     out = []
     for deck_name, cards in sorted(decks.items()):
         colors: set[str] = set()

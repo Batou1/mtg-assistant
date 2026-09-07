@@ -19,7 +19,7 @@ from . import (
 )
 from .config import settings
 
-APP_VERSION = "2.9"
+APP_VERSION = "2.10"
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +158,7 @@ def _home_context(request: Request, profile: dict, **extra) -> dict:
         llm_ok=llm.is_available(),
         llm_model=settings.anthropic_model,
         player_style=playerprofile.get_profile(profile["id"]),
+        scryfall_freshness=bulk_data.freshness(),
         **extra,
     )
 

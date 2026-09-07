@@ -6,6 +6,11 @@ network — so this stays fast even for large collections and works offline.
 Cards Scryfall hasn't resolved yet (e.g. just imported, before the background
 bulk-data refresh has caught up) simply show up with no image/price.
 
+Because nothing here re-fetches, the cache TTL is irrelevant and every read
+passes ``db.ANY_AGE``: a stale entry is still the card (text, colours, type
+never change; a slightly old price beats "worthless"). Keeping the bulk data
+fresh is the scheduler's job (``app.bulk_data``), not this module's.
+
 Searching goes through ``app.scryquery`` (Scryfall's own syntax). The
 structured filter controls of the collection page are *compiled* into that
 same syntax by ``build_query`` rather than filtering through a second code
@@ -69,14 +74,14 @@ def _compute_owned_prices(profile_id: int) -> dict[str, list]:
     """
     rows = db.collection_printings(profile_id)
     by_id = db.printing_prices(
-        f"id:{r['scryfall_id']}" for r in rows if r["scryfall_id"]
+        (f"id:{r['scryfall_id']}" for r in rows if r["scryfall_id"]), ttl_days=db.ANY_AGE,
     )
     # Three ways an owned printing can fail to answer: no Scryfall id in the
     # import, an id the bulk cache doesn't have yet, and — the common one, a
     # foreign-language or promo-only printing — an id whose Cardmarket price is
     # simply null. All three fall back to the canonical by-name entry: an
     # approximate price beats reporting a card the user owns as worthless.
-    by_name = db.printing_prices({r["name_key"] for r in rows})
+    by_name = db.printing_prices({r["name_key"] for r in rows}, ttl_days=db.ANY_AGE)
 
     totals: dict[str, list] = {}
     for r in rows:
@@ -132,7 +137,7 @@ def _owned(profile_id: int):
     printings actually owned (``owned_prices``).
     """
     names = db.collection_names(profile_id)
-    cards = db.get_cards(name_key for _, name_key, _ in names)
+    cards = db.get_cards((name_key for _, name_key, _ in names), ttl_days=db.ANY_AGE)
     quantities = db.owned_quantities(profile_id)
     priced = owned_prices(profile_id)
     for raw_name, name_key, qty in names:
@@ -157,7 +162,7 @@ def card_text_info(name: str) -> dict | None:
     key = (name or "").strip().lower()
     info = _text_cache.get(key)
     if info is None:
-        card = db.get_card(key)
+        card = db.get_card(key, ttl_days=db.ANY_AGE)
         if card is None:
             return None
         info = {

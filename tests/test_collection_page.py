@@ -168,3 +168,21 @@ def test_an_invalid_query_reports_instead_of_filtering(client):
     body = c.get("/collection?q=foo%3Abar").text
     assert "Filtre inconnu" in body
     assert re.findall(r'"name": "([^"]+)"', body) == []
+
+
+def test_home_shows_scryfall_freshness_and_reddens_past_a_week(client):
+    import time
+    tc, db = client
+    html = tc.get("/").text
+    assert "Dernière update Scryfall" in html and "jamais" in html
+    assert 'freshness stale' in html
+
+    db.set_meta("bulk_oracle_cards_synced_at", str(time.time() - 2 * 3600))
+    db.set_meta("bulk_all_cards_synced_at", str(time.time() - 2 * 3600))
+    html = tc.get("/").text
+    assert "il y a 2 heures" in html
+    assert 'freshness stale' not in html
+
+    db.set_meta("bulk_all_cards_synced_at", str(time.time() - 9 * 86400))
+    html = tc.get("/").text
+    assert "il y a 9 jours" in html and 'freshness stale' in html
