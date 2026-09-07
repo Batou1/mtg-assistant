@@ -188,6 +188,16 @@ def _fresh(fetched_at: float, ttl_days: float) -> bool:
     return (time.time() - fetched_at) < ttl_days * 86400
 
 
+#: TTL meaning "any cached entry, however old". The default TTL exists so that
+#: ``scryfall.resolve_*`` re-fetch a card from the live API once it is stale;
+#: it must NOT be applied by readers that only ever look at the local cache
+#: (collection page, owned pool, style memory): for them a card is either
+#: resolved or not, and a 40-day-old entry is still that card. Treating stale
+#: entries as missing made a whole collection "unresolved" — invisible to every
+#: type/colour/text filter — the day the bulk refresh stopped running.
+ANY_AGE = float("inf")
+
+
 # --- Scryfall card cache -------------------------------------------------
 
 def get_card(name_key: str, ttl_days: float | None = None):

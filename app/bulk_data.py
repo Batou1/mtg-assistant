@@ -233,7 +233,15 @@ def refresh(force: bool = False, types=BULK_TYPES) -> dict:
             stored = db.get_meta(updated_key)
             if not force and _same_version(stored, meta.get("updated_at")):
                 continue
-            logger.info("bulk_data: importing %s (%.0f MB)", bulk_type, meta["size"] / 1e6)
+            # The size is cosmetic: Scryfall renamed ``size`` to
+            # ``compressed_size`` in 2026 and a KeyError here froze every
+            # refresh for weeks (stale cache, wrong prices). Never let a
+            # log line's decoration break the import.
+            size = meta.get("compressed_size") or meta.get("size")
+            logger.info(
+                "bulk_data: importing %s (%s)", bulk_type,
+                f"{size / 1e6:.0f} MB" if size else "size unknown",
+            )
             count = _IMPORTERS[bulk_type](
                 _iter_remote_jsonl(client, meta["jsonl_download_uri"])
             )
@@ -254,6 +262,50 @@ def refresh(force: bool = False, types=BULK_TYPES) -> dict:
         db.delete_meta_prefix(collection.STATS_META_PREFIX)
         db.delete_meta_prefix(collection.PRICES_META_PREFIX)
     return imported
+
+
+#: Past this age the home page shows the Scryfall sync in red. The scheduler
+#: runs daily (``bulk_refresh_hours``), so a week of silence means it is
+#: broken, not merely late — exactly what went unnoticed for 40 days when
+#: Scryfall renamed a field and every refresh died on a KeyError.
+STALE_AFTER_DAYS = 7
+
+
+def _age_label(seconds: float) -> str:
+    """French, coarse: « 3 heures », « 12 jours »… (« moins d'une heure »)."""
+    hours = int(seconds // 3600)
+    if hours < 1:
+        return "moins d'une heure"
+    if hours < 48:
+        return f"{hours} heure{'s' if hours > 1 else ''}"
+    days = int(seconds // 86400)
+    return f"{days} jour{'s' if days > 1 else ''}"
+
+
+def freshness(now: float | None = None) -> dict:
+    """How old the local Scryfall data is, for display.
+
+    Card data comes from ``oracle_cards`` and prices from ``all_cards``, so the
+    OLDER of the two syncs is what counts: a stuck all_cards import must show
+    even when oracle_cards went through. Returns ``{synced_at, age_label,
+    stale}``; ``synced_at`` is None (and ``stale`` True) when either export
+    has never been imported.
+    """
+    now = time.time() if now is None else now
+    stamps = []
+    for bulk_type in BULK_TYPES:
+        raw = db.get_meta(f"bulk_{bulk_type}_synced_at")
+        try:
+            stamps.append(float(raw))
+        except (TypeError, ValueError):
+            return {"synced_at": None, "age_label": "jamais", "stale": True}
+    synced = min(stamps)
+    age = max(0.0, now - synced)
+    return {
+        "synced_at": synced,
+        "age_label": _age_label(age),
+        "stale": age >= STALE_AFTER_DAYS * 86400,
+    }
 
 
 def needs_refresh() -> bool:
