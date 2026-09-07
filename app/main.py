@@ -19,7 +19,7 @@ from . import (
 )
 from .config import settings
 
-APP_VERSION = "2.9"
+APP_VERSION = "3.0"
 
 logger = logging.getLogger(__name__)
 

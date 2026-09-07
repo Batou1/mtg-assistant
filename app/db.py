@@ -38,17 +38,47 @@ def _ensure_dir() -> None:
         os.makedirs(directory, exist_ok=True)
 
 
+_BUSY_TIMEOUT_SECONDS = 15.0
+_WAL_RETRIES = 20
+_WAL_RETRY_DELAY = 0.05
+
+
+def _enable_wal(conn: sqlite3.Connection) -> None:
+    """Switch the connection's database to WAL, tolerating a concurrent switch.
+
+    Changing the journal mode needs an exclusive lock, and SQLite does NOT
+    consult the busy handler for that particular lock: when two connections
+    open a brand-new file at the same time (first start-up: the web app and
+    the bulk-data thread; the test-suite: a lingering thread and the next
+    fixture) the loser fails *immediately* with "database is locked" even
+    though a 15 s busy timeout is set. Retry briefly instead — once the other
+    side has finished, the pragma is a cheap no-op on an already-WAL file.
+    """
+    for attempt in range(_WAL_RETRIES):
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            return
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower() or attempt == _WAL_RETRIES - 1:
+                raise
+            time.sleep(_WAL_RETRY_DELAY)
+
+
 @contextmanager
 def get_conn():
     _ensure_dir()
-    conn = sqlite3.connect(settings.db_path)
-    conn.row_factory = sqlite3.Row
     # Several threads write concurrently (web requests, chat turns, the bulk-data
     # refresh and its huge import transactions). WAL lets readers proceed during
     # a write, and the busy timeout waits out a competing writer instead of
-    # failing immediately with "database is locked".
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=15000")
+    # failing immediately with "database is locked". The timeout is installed
+    # by connect() so it already covers the very first statement.
+    conn = sqlite3.connect(settings.db_path, timeout=_BUSY_TIMEOUT_SECONDS)
+    conn.row_factory = sqlite3.Row
+    try:
+        _enable_wal(conn)
+    except BaseException:
+        conn.close()
+        raise
     try:
         yield conn
         conn.commit()
