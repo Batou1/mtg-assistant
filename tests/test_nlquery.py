@@ -45,6 +45,9 @@ def _answers(nlquery, monkeypatch, *replies):
     ("les cartes déjà en deck", "is:indeck"),
     ("mes terrains légaux en modern", "t:land f:modern"),
     ("les mythiques à plus de 20 €", "r:mythic eur>=20"),
+    ("les cartes de mon deck Krenko", "indeck:Krenko"),
+    ("les créatures du deck Krenko, Mob Boss", 't:creature indeck:"Krenko, Mob Boss"'),
+    ("mes cartes en deck vertes", "id<=g is:indeck"),
 ])
 def test_heuristic_translates_common_asks(fresh, question, expected):
     nlquery, _db = fresh

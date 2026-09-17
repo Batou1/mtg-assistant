@@ -616,6 +616,39 @@ def owned_quantities(profile_id: int) -> dict[str, tuple[int, int]]:
     return {r["name_key"]: (r["qty"], r["deck_qty"]) for r in rows}
 
 
+def owned_deck_names(profile_id: int) -> dict[str, list[str]]:
+    """``{name_key: [deck names]}`` for every card with at least one copy in a
+    ManaBox deck.
+
+    This is what lets the collection page answer "show me my Krenko deck":
+    ``owned_quantities`` only says *how many* copies are sleeved, not where.
+    Rows imported before deck names were stored contribute no name (the copies
+    still count as in-deck via ``deck_qty``), so such a card matches
+    ``is:indeck`` but no ``indeck:<name>`` filter — better than inventing one.
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT DISTINCT name_key, deck_names FROM collection
+               WHERE profile_id=? AND deck_qty>0 AND deck_names != ''""",
+            (int(profile_id),),
+        ).fetchall()
+    out: dict[str, set[str]] = {}
+    for r in rows:
+        out.setdefault(r["name_key"], set()).update(
+            n for n in r["deck_names"].split("|") if n
+        )
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def deck_names(profile_id: int) -> list[str]:
+    """The distinct ManaBox deck names of a profile, sorted case-insensitively
+    (feeds the "Deck" selector of the collection filter panel)."""
+    names: set[str] = set()
+    for decks in owned_deck_names(profile_id).values():
+        names.update(decks)
+    return sorted(names, key=str.casefold)
+
+
 def deck_memberships(profile_id: int) -> dict[str, list[dict]]:
     """``{deck_name: [{name_key, raw_name, qty}, …]}`` from the ManaBox decks.
 

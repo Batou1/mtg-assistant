@@ -99,6 +99,26 @@ def test_collection_keys_read_the_extra_mapping():
     assert match("is:spare", extra={"qty": 1, "deck_qty": 1}) is False
 
 
+def test_indeck_filters_on_the_manabox_deck_names():
+    """`indeck:` reads the decks the copies sit in from ``extra`` — substring
+    with `:`, exact with `=`, and it is answerable for an unresolved card."""
+    extra = {"qty": 2, "deck_qty": 1, "deck_names": ["Krenko, Mob Boss", "Gobelins v2"]}
+    assert match("indeck:krenko", extra=extra) is True
+    assert match("indeck:gobelins", extra=extra) is True
+    assert match('indeck="Krenko, Mob Boss"', extra=extra) is True
+    assert match("indeck=gobelins", extra=extra) is False       # exact: "Gobelins v2"
+    assert match("-indeck:krenko", extra=extra) is False
+    assert match("indeck!=Krenko", extra=extra) is True
+    assert match("deckname:krenko", extra=extra) is True
+    # No named deck (older export, or copies in a binder only): never matches.
+    assert match("indeck:krenko", extra={"qty": 1, "deck_qty": 1, "deck_names": []}) is False
+    assert match("indeck:krenko", extra={"qty": 1, "deck_qty": 0}) is False
+    unresolved = dict(extra, resolved=False)
+    assert match("indeck:krenko", card={"name": "Goblin Matron"}, extra=unresolved) is True
+    with pytest.raises(sq.QueryError):
+        sq.parse("indeck>2")
+
+
 def test_unresolved_cards_are_findable():
     """A just-imported card has no Scryfall data yet — it must still show up."""
     extra = {"qty": 1, "deck_qty": 0, "resolved": False}

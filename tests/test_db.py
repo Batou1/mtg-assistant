@@ -62,6 +62,24 @@ def test_deck_binder_copies_are_tracked_separately(fresh_db):
     assert fresh_db.collection_count(pid) == (3, 5)
 
 
+def test_owned_deck_names_lists_the_decks_a_card_sits_in(fresh_db):
+    pid = fresh_db.ensure_default_profile()
+    fresh_db.replace_collection(pid, [
+        dict(_row("Sol Ring", qty=1, binder_type="deck"), binder_name="Krenko"),
+        dict(_row("Sol Ring", set_code="C21", qty=1, binder_type="deck"),
+             binder_name="Atraxa"),
+        dict(_row("Goblin Matron", qty=1, binder_type="deck"), binder_name="Krenko"),
+        # A named binder is not a deck; an unnamed deck row has no name to give.
+        dict(_row("Llanowar Elves", qty=1, binder_type="binder"), binder_name="Trade"),
+        _row("Counterspell", qty=1, binder_type="deck"),
+    ])
+    assert fresh_db.owned_deck_names(pid) == {
+        "sol ring": ["Atraxa", "Krenko"],
+        "goblin matron": ["Krenko"],
+    }
+    assert fresh_db.deck_names(pid) == ["Atraxa", "Krenko"]
+
+
 def test_deck_qty_column_added_to_existing_profile_schema(tmp_path, monkeypatch):
     """A DB created before deck_qty existed gets the column in place."""
     db_path = tmp_path / "noqty.db"

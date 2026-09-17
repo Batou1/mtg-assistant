@@ -7,7 +7,7 @@ import logging
 import os
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import escape as escape_html
@@ -19,7 +19,7 @@ from . import (
 )
 from .config import settings
 
-APP_VERSION = "2.10"
+APP_VERSION = "2.11"
 
 logger = logging.getLogger(__name__)
 
@@ -63,10 +63,13 @@ def _static_version() -> str:
     changes, forcing the edge to fetch the fresh copy. Computed at startup — the
     service is restarted on every deploy anyway.
     """
-    try:
-        return str(int(os.path.getmtime(os.path.join(STATIC_DIR, "style.css"))))
-    except OSError:
-        return "0"
+    stamps = []
+    for name in ("style.css", "favicon.svg"):
+        try:
+            stamps.append(int(os.path.getmtime(os.path.join(STATIC_DIR, name))))
+        except OSError:
+            pass
+    return str(max(stamps)) if stamps else "0"
 
 
 templates.env.globals["static_v"] = _static_version()
@@ -257,6 +260,13 @@ async def import_collection(request: Request, file: UploadFile = File(...)):
     )
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    """Browsers and bookmark tools still probe ``/favicon.ico`` on their own;
+    serve the SVG there rather than a 404 on every page load."""
+    return FileResponse(os.path.join(STATIC_DIR, "favicon.svg"), media_type="image/svg+xml")
+
+
 @app.get("/collection", response_class=HTMLResponse)
 def collection(request: Request):
     """Collection browser with Scryfall-syntax filtering.
@@ -335,6 +345,7 @@ def collection(request: Request):
         type_choices=collection_mod.TYPE_CHOICES,
         rarity_choices=collection_mod.RARITY_CHOICES,
         copies_choices=collection_mod.COPIES_CHOICES,
+        deck_choices=db.deck_names(profile["id"]),
         color_mode_choices=collection_mod.COLOR_MODE_CHOICES,
         mana_symbols=collection_mod.MANA_SYMBOLS,
         distinct=len(cards),
