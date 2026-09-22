@@ -188,6 +188,17 @@
             {% endfor %}
           </select>
         </label>
+        {% if deck_choices %}
+          <label class="field">
+            <span class="flabel">Deck</span>
+            <select name="deck">
+              <option value="">Deck · Tous</option>
+              {% for name in deck_choices %}
+                <option value="{{ name }}" {% if name == filters.deck %}selected{% endif %}>{{ name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        {% endif %}
       </div>
       <div class="filter-actions">
         <button type="submit">Appliquer les filtres</button>
@@ -236,6 +247,7 @@
       <li><code>f:commander</code> · <code>banned:legacy</code> — légalité</li>
       <li><code>is:commander</code> · <code>is:legendary</code> · <code>is:dfc</code> · <code>is:reserved</code> · <code>is:vanilla</code></li>
       <li><code>eur&lt;=5</code> · <code>qty&gt;=4</code> · <code>deck&gt;0</code> · <code>is:spare</code> · <code>is:indeck</code> — prix et exemplaires possédés</li>
+      <li><code>indeck:krenko</code> · <code>indeck="Krenko, Mob Boss"</code> (nom exact) — cartes d'un deck ManaBox</li>
       <li>Combinaisons : <code>-t:land</code> (exclusion), <code>or</code>, <code>and</code>, parenthèses, <code>!"Sol Ring"</code> (nom exact)</li>
     </ul>
   </details>
@@ -303,7 +315,10 @@
         var meta = [];
         if (c.set_code) meta.push(c.set_code);
         if (c.rarity) meta.push(c.rarity);
-        if (c.deck_qty) meta.push(c.deck_qty + " en deck");
+        if (c.deck_qty) {
+          meta.push(c.deck_qty + " en deck" + (c.deck_names && c.deck_names.length
+                    ? " (" + c.deck_names.join(", ") + ")" : ""));
+        }
         if (meta.length) text.appendChild(el("div", "cv-set mono", meta.join(" · ")));
         if (c.price_eur !== null && c.price_eur !== undefined) {
           text.appendChild(el("div", "cv-price mono", c.price_eur.toFixed(2) + " €"));

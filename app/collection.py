@@ -33,12 +33,13 @@ _text_cache: dict[str, dict] = {}
 
 def _row(raw_name: str, name_key: str, qty: int, deck_qty: int, card: dict | None,
          price: float | None = None, line_total: float | None = None,
-         set_code: str = "") -> dict:
+         set_code: str = "", deck_names: list[str] | None = None) -> dict:
     return {
         "name": raw_name,
         "name_key": name_key,
         "qty": qty,
         "deck_qty": deck_qty,
+        "deck_names": list(deck_names or []),
         "image": scryfall.image(card) if card else None,
         "image_small": scryfall.image_small(card) if card else None,
         "price_eur": price,
@@ -129,21 +130,24 @@ def owned_prices(profile_id: int) -> dict[str, list]:
 
 
 def _owned(profile_id: int):
-    """Yield ``(raw_name, name_key, qty, deck_qty, card, unit, line, set_code)``
-    per owned card.
+    """Yield ``(raw_name, name_key, qty, deck_qty, card, unit, line, set_code,
+    deck_names)`` per owned card.
 
     ``card`` is Scryfall's canonical entry for the name (text, image, colours —
     all printing-independent), while the price and the edition come from the
-    printings actually owned (``owned_prices``).
+    printings actually owned (``owned_prices``). ``deck_names`` lists the
+    ManaBox decks the in-deck copies sit in (``db.owned_deck_names``).
     """
     names = db.collection_names(profile_id)
     cards = db.get_cards((name_key for _, name_key, _ in names), ttl_days=db.ANY_AGE)
     quantities = db.owned_quantities(profile_id)
     priced = owned_prices(profile_id)
+    decks = db.owned_deck_names(profile_id)
     for raw_name, name_key, qty in names:
         deck_qty = quantities.get(name_key, (qty, 0))[1] or 0
         unit, line, set_code = priced.get(name_key) or (None, None, "")
-        yield raw_name, name_key, qty, deck_qty, cards.get(name_key), unit, line, set_code
+        yield (raw_name, name_key, qty, deck_qty, cards.get(name_key), unit, line,
+               set_code, decks.get(name_key) or [])
 
 
 def enrich(profile_id: int) -> list[dict]:
@@ -278,10 +282,11 @@ def search(profile_id: int, query: scryquery.Query,
     """
     out = []
     for owned in _owned(profile_id):
-        raw_name, name_key, qty, deck_qty, card, price, line_total, set_code = owned
+        raw_name, name_key, qty, deck_qty, card, price, line_total, set_code, decks = owned
         extra = {
             "qty": qty,
             "deck_qty": deck_qty,
+            "deck_names": decks,
             # The owned printing's price and edition: the query box must filter
             # on exactly what the page displays (see app/scryquery.py).
             "unit_price": price,
@@ -300,7 +305,7 @@ def search(profile_id: int, query: scryquery.Query,
 FILTER_FIELDS = (
     "q", "name", "oracle", "type", "subtype", "rarity", "kw", "set", "format",
     "mana", "mv_min", "mv_max", "pow_min", "pow_max", "tou_min", "tou_max",
-    "price_min", "price_max", "qty_min", "copies", "color_mode",
+    "price_min", "price_max", "qty_min", "copies", "deck", "color_mode",
 )
 
 #: Mana symbols offered as click-to-insert chips under the "Symboles de mana"
@@ -425,6 +430,11 @@ def panel_query(params) -> str:
     copies = _clean(params, "copies")
     if copies in ("spare", "indeck"):
         parts.append(f"is:{copies}")
+    # The selector offers the profile's actual deck names, so this is an exact
+    # match (`=`): "Krenko" must not also pull in "Krenko v2".
+    deck = _clean(params, "deck")
+    if deck:
+        parts.append(f"indeck={quote(deck)}")
 
     return " ".join(parts)
 

@@ -14,9 +14,10 @@ wrong result set. Keys that only make sense server-side on Scryfall
 (``lang:``, ``game:``, ``unique:``…) are accepted and ignored, so a query
 pasted from scryfall.com still runs.
 
-Collection-specific keys (``qty``, ``deck``, ``total``) read from the ``extra``
-mapping the caller passes to ``Query.match`` — owned quantities are not part of
-a Scryfall card object. ``extra`` also overrides the price and the set code
+Collection-specific keys (``qty``, ``deck``, ``total``, ``indeck:<name>``) read
+from the ``extra`` mapping the caller passes to ``Query.match`` — owned
+quantities and the ManaBox decks the copies sit in are not part of a Scryfall
+card object. ``extra`` also overrides the price and the set code
 (``eur``, ``price``, ``is:priced``, ``s:``) when the caller knows which
 printing is actually owned, so the query box filters on exactly the numbers the
 collection page displays.
@@ -66,7 +67,7 @@ _DIR_KEYS = {"direction", "dir"}
 
 # Keys answerable without any Scryfall data — the card's name and what the
 # collection itself knows (see ``_Term.match``).
-_CARDLESS_KEYS = {"name", "n", "qty", "nb", "deck", "total"}
+_CARDLESS_KEYS = {"name", "n", "qty", "nb", "deck", "total", "indeck", "deckname"}
 _CARDLESS_IS = {"indeck", "spare", "unresolved"}
 
 
@@ -424,6 +425,18 @@ def _h_is(term, card, extra):
     return not found if term.key == "not" else found
 
 
+def _h_deck_name(term, card, extra):
+    """``indeck:krenko`` — the copies sit in a ManaBox deck whose name contains
+    the value (``indeck="Krenko, Mob Boss"`` for the exact name, which is what
+    the filter panel's deck selector emits). ``extra["deck_names"]`` is the
+    list of decks the card belongs to, see app/collection.py; a card with no
+    named deck matches nothing but ``indeck!=``."""
+    names = [n for n in (extra.get("deck_names") or []) if n]
+    if term.op == "!=":
+        return all(_text_result(term, n) for n in names)
+    return any(_text_result(term, n) for n in names)
+
+
 def _h_year(term, card, extra):
     released = card.get("released_at") or ""
     if len(released) < 4 or not released[:4].isdigit():
@@ -479,6 +492,7 @@ _KEYS = {
     "nb": _number_handler(_extra_number("qty")),
     "deck": _number_handler(_extra_number("deck_qty")),
     "total": _number_handler(_extra_number("line_total")),
+    "indeck": _h_deck_name, "deckname": _h_deck_name,
 }
 
 #: Human-readable list of supported keys, for the UI's syntax help.
@@ -612,6 +626,11 @@ def _validate(term: _Term) -> None:
         want = _RARITY_ALIASES.get(term.value.lower(), term.value.lower())
         if want not in _RARITY_ORDER:
             raise QueryError(f"Rareté inconnue : « {term.value} ».")
+    if term.key in ("indeck", "deckname") and term.op not in (":", "=", "!="):
+        raise QueryError(
+            f"L'opérateur « {term.op} » ne s'applique pas à « {term.key} » "
+            "(un nom de deck se cherche avec « : » ou « = »)."
+        )
     if term.key in ("is", "not", "has") and term.value.lower() not in _IS_CHECKS:
         raise QueryError(
             f"Critère « {term.key}:{term.value} » inconnu. Exemples : "

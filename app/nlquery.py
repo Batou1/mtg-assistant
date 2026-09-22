@@ -28,9 +28,10 @@ CACHE_META_PREFIX = "nlquery:"
 
 # Bumped whenever the prompt or the supported syntax changes, so cached
 # translations from an older vocabulary are not reused.
-_PROMPT_VERSION = "1"
+_PROMPT_VERSION = "2"
 
 _NONE_ANSWER = "NONE"
+_DECK_NAME_RE = re.compile(r"\bdeck\s+([A-Z][\w'’-]*(?:,?\s+[A-Z][\w'’-]*)*)")
 _FENCE_RE = re.compile(r"^```[a-z]*\s*|\s*```$", re.IGNORECASE)
 
 _NO_LLM_MESSAGE = (
@@ -183,7 +184,13 @@ def _heuristic(question: str) -> str:
 
     if _has(text, "commandant") or _has(text, "commander"):
         parts.append("is:commander")
-    if "en deck" in text or "dans un deck" in text or "dans mes decks" in text:
+    # "mon deck Krenko, Mob Boss": the deck name is whatever capitalised words
+    # follow "deck" in the ORIGINAL text — capitals are the one cue that tells
+    # a name from "mon deck vert" without knowing the profile's decks.
+    named = _DECK_NAME_RE.search(question or "")
+    if named:
+        parts.append(f"indeck:{scryquery.quote(named.group(1).strip(' ,'))}")
+    elif "en deck" in text or "dans un deck" in text or "dans mes decks" in text:
         parts.append("is:indeck")
     elif _has(text, "disponible") or _has(text, "libre") or "pas dans un deck" in text:
         parts.append("is:spare")

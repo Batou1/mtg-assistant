@@ -84,6 +84,12 @@ GET /collection?ask=…&q=…&qgen=…&panel=…&type=…&colors=…&mana=…&so
   → collection.search       (filtrage puis tri côté serveur, cache local uniquement)
 ```
 
+Les clés propres à la collection (`qty`, `deck`, `total`, `is:indeck`,
+`is:spare`, `indeck:<nom de deck ManaBox>`) lisent le dict `extra` de
+`collection.search`, jamais la carte Scryfall ; le sélecteur « Deck » du
+panneau émet `indeck="<nom>"` (correspondance exacte), la boîte en français
+`indeck:<sous-chaîne>`.
+
 Le filtrage est **entièrement côté serveur** : la page n'embarque que les cartes
 qui matchent.
 

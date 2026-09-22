@@ -6,6 +6,7 @@ state (hidden ``qgen`` / ``panel`` fields round-tripping), not about a single
 function. No network: the DB is a throwaway file and the bulk-data thread is
 disabled before ``app.main`` is imported.
 """
+import html
 import importlib
 import re
 
@@ -48,10 +49,10 @@ def _card(name, cost, cmc, type_line, colors, rarity):
     }
 
 
-def _row(name, qty):
+def _row(name, qty, binder_type="binder", binder_name=""):
     return {"scryfall_id": "", "name_key": name.lower(), "raw_name": name,
             "set_code": "ABC", "foil": 0, "condition": "nm", "quantity": qty,
-            "binder_type": "binder"}
+            "binder_type": binder_type, "binder_name": binder_name}
 
 
 def _page(client, url):
@@ -60,7 +61,7 @@ def _page(client, url):
     query = re.search(r'name="qgen" value="([^"]*)"', body)
     panel = re.search(r'<details class="filter-panel"([^>]*)>', body)
     return {
-        "query": (query.group(1) if query else "").replace("&lt;", "<").replace("&gt;", ">"),
+        "query": html.unescape(query.group(1) if query else ""),
         "names": re.findall(r'"name": "([^"]+)"', body),
         "panel_open": "open" in (panel.group(1) if panel else ""),
         "warned": "prioritaire" in body,
@@ -96,6 +97,32 @@ def test_panel_fields_are_compiled_into_the_query_box_and_cleared(client):
     body = c.get("/collection?type=creature&rarity=uncommon").text
     assert 'value="creature" selected' not in body
     assert 'value="uncommon" selected' not in body
+
+
+def test_deck_selector_lists_the_manabox_decks_and_filters_on_one(client):
+    c, db = client
+    # No deck in the collection: the selector is not offered at all.
+    assert 'name="deck"' not in c.get("/collection").text
+
+    pid = db.ensure_default_profile()
+    db.replace_collection(pid, [
+        _row("Goblin Matron", 2, "deck", "Krenko, Mob Boss"),
+        _row("Sol Ring", 3), _row("Sol Ring", 1, "deck", "Atraxa"),
+        _row("Counterspell", 1, "deck", "Atraxa"),
+    ])
+    body = c.get("/collection").text
+    assert body.index('value="Atraxa"') < body.index('value="Krenko, Mob Boss"')
+
+    page = _page(c, "/collection?deck=Krenko%2C+Mob+Boss")
+    assert page["query"] == 'indeck="Krenko, Mob Boss"'
+    assert page["names"] == ["Goblin Matron"]
+    page = _page(c, "/collection?deck=Atraxa&type=artifact")
+    assert page["query"] == "t:artifact indeck=Atraxa"
+    assert page["names"] == ["Sol Ring"]
+    # Like every other panel field, the choice lives in the query box only.
+    assert 'value="Atraxa" selected' not in c.get("/collection?deck=Atraxa").text
+    # The tiles carry the deck names so the page can show where copies sit.
+    assert '"deck_names": ["Atraxa"]' in c.get("/collection?deck=Atraxa").text
 
 
 def test_panel_terms_refine_the_current_query(client):

@@ -128,6 +128,8 @@ _QUERY_SYNTAX = """\
 - qty, deck — exemplaires POSSÉDÉS et exemplaires déjà rangés dans un deck :
   qty>=4, deck>0 ; is:indeck (au moins une copie en deck),
   is:spare (au moins une copie libre)
+- indeck:<nom> — cartes rangées dans le deck ManaBox dont le nom contient ce
+  texte : « mon deck Krenko » → indeck:krenko ; guillemets si plusieurs mots
 - name:<texte> — nom de la carte ; !"Nom Exact" pour une correspondance exacte
 Combinaisons : espace = ET, `or` = OU, `-` devant un filtre = exclusion,
 parenthèses pour grouper. Ex. `t:creature id<=g mv<=3 -o:defender`."""
