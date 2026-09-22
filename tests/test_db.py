@@ -160,3 +160,36 @@ def test_migration_from_pre_profiles_schema(tmp_path, monkeypatch):
     pid = profiles[0]["id"]
     assert db.collection_count(pid) == (1, 2)
     assert profiles[0]["collection_source"] == "ManaBox: old.csv"
+
+
+def test_get_conn_survives_concurrent_first_open(tmp_path, monkeypatch):
+    """Regression: several threads opening a brand-new database at once used to
+    fail instantly with "database is locked" on ``PRAGMA journal_mode=WAL``
+    (SQLite skips the busy handler for the journal-mode lock)."""
+    import threading
+    monkeypatch.setenv("MTG_DB_PATH", str(tmp_path / "race.db"))
+    import app.config as config
+    importlib.reload(config)
+    import app.db as db
+    importlib.reload(db)
+    errors = []
+
+    def open_and_write():
+        try:
+            with db.get_conn() as conn:
+                conn.execute("CREATE TABLE IF NOT EXISTS t (a)")
+                conn.execute("INSERT INTO t VALUES (1)")
+        except Exception as exc:  # noqa: BLE001 - collected for the assertion
+            errors.append(repr(exc))
+
+    for _ in range(30):
+        for suffix in ("", "-wal", "-shm"):
+            path = tmp_path / f"race.db{suffix}"
+            if path.exists():
+                path.unlink()
+        threads = [threading.Thread(target=open_and_write) for _ in range(6)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    assert errors == []

@@ -16,6 +16,9 @@ def env(tmp_path, monkeypatch):
     importlib.reload(db)
     import app.chat as chat
     importlib.reload(chat)
+    # Every turn schedules a player-style refresh in a daemon thread that reads
+    # and writes the DB; disable it so no thread outlives the test (conftest.py).
+    monkeypatch.setattr(chat.playerprofile, "schedule_refresh", lambda pid: None)
     db.init_db()
     return types.SimpleNamespace(db=db, chat=chat)
 
