@@ -201,7 +201,14 @@ alimentée par les questions de règles.
    EDHREC 7 j. Le cache `cards` est partagé entre profils ; les stats de la page
    d'accueil (`collection_stats:<pid>`) et les prix des printings possédés
    (`collection_prices:<pid>`) sont cachés dans `meta` et invalidés à l'import
-   de collection et après un refresh bulk.
+   de collection et après un refresh bulk. **Le TTL ne sert qu'à déclencher un
+   re-fetch** (`scryfall.resolve_*`) : un lecteur qui ne consulte QUE le cache
+   local (page collection, pool possédé de `formats60`, mémoire du style de
+   jeu, `card_text_info`) passe `ttl_days=db.ANY_AGE` — pour lui une carte est
+   résolue ou non, jamais « périmée ». Sinon, le jour où le refresh bulk
+   s'arrête (ça s'est produit : Scryfall a renommé `size` en
+   `compressed_size` et le scheduler a planté 40 jours), toute la collection
+   devient « non résolue » et disparaît de chaque filtre par type/couleur.
 
 10. **Deux prix différents pour deux questions différentes.** « Combien vaut ma
     carte ? » et « combien va me coûter cette carte ? » n'ont pas la même

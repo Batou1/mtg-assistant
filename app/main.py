@@ -158,6 +158,7 @@ def _home_context(request: Request, profile: dict, **extra) -> dict:
         llm_ok=llm.is_available(),
         llm_model=settings.anthropic_model,
         player_style=playerprofile.get_profile(profile["id"]),
+        scryfall_freshness=bulk_data.freshness(),
         **extra,
     )
 

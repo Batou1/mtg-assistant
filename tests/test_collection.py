@@ -342,3 +342,27 @@ def test_card_text_info_memoizes_but_not_misses(fresh):
         "oracle_text": "Haste",
         "power_toughness": "1/1",
     }
+
+
+def _age_cache(db, days):
+    """Backdate every cached card, as if the bulk refresh had stopped running."""
+    import time
+    with db.get_conn() as conn:
+        conn.execute("UPDATE cards SET fetched_at = ?", (time.time() - days * 86400,))
+
+
+def test_search_and_prices_ignore_the_cache_ttl(fresh):
+    """The collection only ever reads the local cache, so a stale entry is
+    still the card: when the bulk refresh broke for 40 days, every type/colour
+    filter suddenly matched nothing and the collection value collapsed."""
+    db, collection, pid = _stocked(fresh)
+    _age_cache(db, days=40)
+    db.delete_meta_prefix(collection.PRICES_META_PREFIX)
+
+    assert _names(collection, pid, "t:creature") == ["Goblin Matron"]
+    assert _names(collection, pid, "id<=u") == ["Counterspell", "Sol Ring"]
+    assert _names(collection, pid, "is:unresolved") == ["Mystery Card"]
+    rows = {r["name"]: r for r in collection.enrich(pid)}
+    assert rows["Sol Ring"]["price_eur"] is not None
+    assert rows["Sol Ring"]["image"]
+    assert collection.card_text_info("Sol Ring")["type_line"]

@@ -980,6 +980,9 @@ details.buylist > .buy-grid { padding: 14px; margin-top: 0; }
 }
 .dropzone:hover { border-color: var(--accent); color: var(--text); background: color-mix(in oklch, var(--accent) 6%, transparent); }
 .dropzone input[type=file] { display: none; }
+.freshness { margin: 8px 0 0; }
+.freshness.stale { color: var(--danger); font-weight: 600; }
+.freshness-flag { margin-left: 6px; }
 .dropzone .dz-ico { font-size: 1.25rem; color: var(--accent); }
 .dropzone.has-file { border-color: var(--mg); color: var(--mg); border-style: solid;
   background: color-mix(in oklch, var(--mg) 8%, transparent); }

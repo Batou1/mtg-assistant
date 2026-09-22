@@ -134,3 +134,53 @@ def test_import_local_all_cards_file_sets_meta(fresh, tmp_path):
     assert db.get_card("id:abc-1") is not None
     assert db.get_meta("bulk_all_cards_updated_at") == "2026-07-01T09:27:49+00:00"
     assert db.get_meta("bulk_all_cards_synced_at") is not None
+
+
+def test_refresh_survives_bulk_object_without_size(fresh, monkeypatch):
+    """Scryfall renamed ``size`` to ``compressed_size`` in 2026: the refresh
+    must import regardless of which (if any) size field the API sends — a
+    KeyError here silently froze the whole cache for weeks."""
+    bulk_data, db = fresh
+    meta = {
+        "type": "oracle_cards",
+        "updated_at": "2026-09-07T09:01:54.556+00:00",
+        "jsonl_download_uri": "https://data.scryfall.io/oracle-cards/x.jsonl.gz",
+        "compressed_size": 24535585,
+    }
+    monkeypatch.setattr(bulk_data, "_bulk_object", lambda client, bulk_type: meta)
+    monkeypatch.setattr(bulk_data, "_iter_remote_jsonl", lambda client, uri: iter([SOL_RING]))
+
+    imported = bulk_data.refresh(types=("oracle_cards",))
+
+    assert imported == {"oracle_cards": 1}
+    assert db.get_card("sol ring")["id"] == "abc-1"
+    assert db.get_meta("bulk_oracle_cards_updated_at") == meta["updated_at"]
+
+    # No size field at all is equally fine.
+    del meta["compressed_size"]
+    assert bulk_data.refresh(force=True, types=("oracle_cards",)) == {"oracle_cards": 1}
+
+
+def test_freshness_reports_the_oldest_sync_and_flags_a_week(fresh):
+    bulk_data, db = fresh
+    assert bulk_data.freshness() == {"synced_at": None, "age_label": "jamais", "stale": True}
+
+    now = 1_800_000_000.0
+    db.set_meta("bulk_oracle_cards_synced_at", str(now - 3 * 3600))
+    db.set_meta("bulk_all_cards_synced_at", str(now - 3 * 3600))
+    info = bulk_data.freshness(now=now)
+    assert (info["age_label"], info["stale"]) == ("3 heures", False)
+
+    # Prices lag behind card data: the stale one is what the user must see.
+    db.set_meta("bulk_all_cards_synced_at", str(now - 12 * 86400))
+    info = bulk_data.freshness(now=now)
+    assert (info["age_label"], info["stale"]) == ("12 jours", True)
+    assert info["synced_at"] == now - 12 * 86400
+
+    db.set_meta("bulk_all_cards_synced_at", str(now - 7 * 86400 + 60))
+    assert bulk_data.freshness(now=now)["stale"] is False
+    db.set_meta("bulk_all_cards_synced_at", str(now - 7 * 86400))
+    assert bulk_data.freshness(now=now)["stale"] is True
+    for bulk_type in ("oracle_cards", "all_cards"):
+        db.set_meta(f"bulk_{bulk_type}_synced_at", str(now - 20 * 60))
+    assert bulk_data.freshness(now=now)["age_label"] == "moins d'une heure"

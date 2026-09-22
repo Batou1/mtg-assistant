@@ -102,7 +102,9 @@ def _owned_pool(profile_id: int, fmt: str, intent: dict, free_qty: dict[str, int
     mentions the wish's keywords are kept first so the theme survives the cut.
     """
     names = db.collection_names(profile_id)
-    cards = db.get_cards(key for _, key, _ in names)
+    # Local cache only, whatever its age: a stale card is still a card, and
+    # dropping it would silently shrink the pool (see ``db.ANY_AGE``).
+    cards = db.get_cards((key for _, key, _ in names), ttl_days=db.ANY_AGE)
     wanted = {c for c in (intent.get("colors") or []) if c in _COLOR_WORDS}
     pool: list[dict] = []
     skipped = 0
