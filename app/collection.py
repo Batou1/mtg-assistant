@@ -33,11 +33,15 @@ _text_cache: dict[str, dict] = {}
 
 def _row(raw_name: str, name_key: str, qty: int, deck_qty: int, card: dict | None,
          price: float | None = None, line_total: float | None = None,
-         set_code: str = "", deck_names: list[str] | None = None) -> dict:
+         set_code: str = "", deck_names: list[str] | None = None,
+         owned_qty: int | None = None) -> dict:
     return {
         "name": raw_name,
         "name_key": name_key,
         "qty": qty,
+        # Every copy owned; differs from ``qty`` when the view is scoped to a
+        # deck (``search``), where ``qty`` is the copies in that deck.
+        "owned_qty": qty if owned_qty is None else owned_qty,
         "deck_qty": deck_qty,
         "deck_names": list(deck_names or []),
         "image": scryfall.image(card) if card else None,
@@ -135,24 +139,25 @@ def _owned(profile_id: int):
 
     ``card`` is Scryfall's canonical entry for the name (text, image, colours —
     all printing-independent), while the price and the edition come from the
-    printings actually owned (``owned_prices``). ``deck_names`` lists the
-    ManaBox decks the in-deck copies sit in (``db.owned_deck_names``).
+    printings actually owned (``owned_prices``). ``deck_names`` maps the
+    ManaBox decks the in-deck copies sit in to their copy count
+    (``db.owned_deck_quantities``).
     """
     names = db.collection_names(profile_id)
     cards = db.get_cards((name_key for _, name_key, _ in names), ttl_days=db.ANY_AGE)
     quantities = db.owned_quantities(profile_id)
     priced = owned_prices(profile_id)
-    decks = db.owned_deck_names(profile_id)
+    decks = db.owned_deck_quantities(profile_id)
     for raw_name, name_key, qty in names:
         deck_qty = quantities.get(name_key, (qty, 0))[1] or 0
         unit, line, set_code = priced.get(name_key) or (None, None, "")
         yield (raw_name, name_key, qty, deck_qty, cards.get(name_key), unit, line,
-               set_code, decks.get(name_key) or [])
+               set_code, decks.get(name_key) or {})
 
 
 def enrich(profile_id: int) -> list[dict]:
     """Owned cards for ``profile_id``, each with image/price/type/colors."""
-    return [_row(*owned) for owned in _owned(profile_id)]
+    return [_row(*owned[:8], sorted(owned[8])) for owned in _owned(profile_id)]
 
 
 def card_text_info(name: str) -> dict | None:
@@ -277,16 +282,22 @@ def search(profile_id: int, query: scryquery.Query,
     they are matched on their name only (and found by ``is:unresolved``) so
     they never silently vanish from the collection view.
 
+    A query scoped to decks (``indeck="Dandan"``, see ``Query.deck_scope``)
+    shows the copies in those decks: the row's ``qty`` and value count them,
+    not the 200 Islands owned overall (``owned_qty`` keeps that total).
+
     Matching happens before the display row is built: on a 10k-card collection
     that skips thousands of image/oracle-text lookups per filtered view.
     """
+    in_scope = query.deck_scope()
     out = []
     for owned in _owned(profile_id):
         raw_name, name_key, qty, deck_qty, card, price, line_total, set_code, decks = owned
+        deck_names = sorted(decks)
         extra = {
             "qty": qty,
             "deck_qty": deck_qty,
-            "deck_names": decks,
+            "deck_names": deck_names,
             # The owned printing's price and edition: the query box must filter
             # on exactly what the page displays (see app/scryquery.py).
             "unit_price": price,
@@ -294,8 +305,15 @@ def search(profile_id: int, query: scryquery.Query,
             "line_total": line_total or 0.0,
             "resolved": card is not None,
         }
-        if query.match(card if card is not None else {"name": raw_name}, extra):
-            out.append(_row(*owned))
+        if not query.match(card if card is not None else {"name": raw_name}, extra):
+            continue
+        shown = qty
+        if in_scope is not None:
+            shown = sum(n for deck, n in decks.items() if in_scope(deck))
+            # The owned printings' average price, applied to the deck's copies.
+            line_total = round(price * shown, 2) if price is not None else None
+        out.append(_row(raw_name, name_key, shown, deck_qty, card, price, line_total,
+                        set_code, deck_names, owned_qty=qty))
     return sort_rows(out, sort, direction)
 
 

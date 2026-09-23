@@ -211,3 +211,59 @@ def test_get_conn_survives_concurrent_first_open(tmp_path, monkeypatch):
         for t in threads:
             t.join()
     assert errors == []
+
+
+def test_deck_quantities_keep_each_decks_own_copies(fresh_db):
+    """Regression: identical printings in two decks merge into one collection
+    row; the copies each deck holds must survive that merge."""
+    pid = fresh_db.ensure_default_profile()
+    fresh_db.replace_collection(pid, [
+        dict(_row("Island", qty=20, binder_type="deck"), binder_name="Dandan"),
+        dict(_row("Island", qty=15, binder_type="deck"), binder_name="Mono-U"),
+        _row("Island", qty=200, binder_type="binder"),
+        dict(_row("Dandan", qty=4, binder_type="deck"), binder_name="Dandan"),
+        _row("Counterspell", qty=1, binder_type="deck"),
+    ])
+    assert fresh_db.owned_quantities(pid)["island"] == (235, 35)
+    assert fresh_db.owned_deck_quantities(pid) == {
+        "island": {"Dandan": 20, "Mono-U": 15},
+        "dandan": {"Dandan": 4},
+    }
+    decks = fresh_db.deck_memberships(pid)
+    assert {c["raw_name"]: c["qty"] for c in decks["Dandan"]} == {"Dandan": 4, "Island": 20}
+    assert decks[""] == [{"name_key": "counterspell", "raw_name": "Counterspell", "qty": 1}]
+
+
+def test_deck_quantities_backfilled_from_a_db_without_the_table(tmp_path, monkeypatch):
+    """A single-deck row splits exactly; a row naming several decks only knows
+    its total, credited to each until the next import."""
+    db_path = tmp_path / "nodecks.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE collection (
+            profile_id INTEGER NOT NULL, scryfall_id TEXT, name_key TEXT NOT NULL,
+            raw_name TEXT NOT NULL, set_code TEXT, foil INTEGER NOT NULL DEFAULT 0,
+            condition TEXT, quantity INTEGER NOT NULL,
+            deck_qty INTEGER NOT NULL DEFAULT 0, deck_names TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (profile_id, name_key, set_code, foil, condition)
+        );
+        INSERT INTO collection VALUES (1, '', 'dandan', 'Dandan', 'ABC', 0, 'nm', 4, 4, 'Dandan');
+        INSERT INTO collection VALUES (1, '', 'island', 'Island', 'ABC', 0, 'nm', 50, 30, 'Dandan|Mono-U');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setenv("MTG_DB_PATH", str(db_path))
+    import app.config as config
+    importlib.reload(config)
+    import app.db as db
+    importlib.reload(db)
+    db.init_db()
+    db.init_db()  # idempotent: no double backfill
+
+    assert db.owned_deck_quantities(1) == {
+        "dandan": {"Dandan": 4},
+        "island": {"Dandan": 30, "Mono-U": 30},
+    }

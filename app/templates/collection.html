@@ -315,6 +315,7 @@
         var meta = [];
         if (c.set_code) meta.push(c.set_code);
         if (c.rarity) meta.push(c.rarity);
+        if (c.owned_qty && c.owned_qty !== c.qty) meta.push(c.owned_qty + " possédées");
         if (c.deck_qty) {
           meta.push(c.deck_qty + " en deck" + (c.deck_names && c.deck_names.length
                     ? " (" + c.deck_names.join(", ") + ")" : ""));

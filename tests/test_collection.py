@@ -265,6 +265,35 @@ def test_search_filters_on_owned_quantities(fresh):
     assert "Goblin Matron" in _names(collection, pid, "is:spare")
 
 
+def test_deck_filter_counts_the_copies_in_that_deck(fresh):
+    """Regression: `indeck="Dandan"` listed the right cards with every copy
+    owned (200+ Islands) instead of the ones sleeved in Dandan."""
+    db, collection = fresh
+    pid = db.ensure_default_profile()
+    db.set_card("island", _card("Island", eur="0.10", colors=()))
+    db.replace_collection(pid, [
+        dict(_row("Island", qty=20, binder_type="deck"), binder_name="Dandan"),
+        dict(_row("Island", qty=15, binder_type="deck"), binder_name="Mono-U"),
+        _row("Island", qty=200),
+        dict(_row("Dandan", qty=4, binder_type="deck"), binder_name="Dandan"),
+    ])
+
+    import app.scryquery as scryquery
+
+    def rows(query):
+        return {r["name"]: r for r in collection.search(pid, scryquery.parse(query))}
+
+    dandan = rows('indeck="Dandan"')
+    assert {n: r["qty"] for n, r in dandan.items()} == {"Island": 20, "Dandan": 4}
+    assert dandan["Island"]["owned_qty"] == 235
+    assert dandan["Island"]["line_total"] == 2.0
+    # Substring match over several decks sums their copies.
+    assert rows("indeck:n")["Island"]["qty"] == 35
+    # Not scoped to a deck: every copy owned.
+    assert rows("is:indeck")["Island"]["qty"] == 235
+    assert rows("t:creature or indeck=Dandan")["Island"]["qty"] == 235
+
+
 def test_search_keeps_cards_the_cache_has_not_resolved(fresh):
     _db, collection, pid = _stocked(fresh)
     assert _names(collection, pid, "is:unresolved") == ["Mystery Card"]
