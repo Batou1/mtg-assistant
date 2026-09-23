@@ -89,6 +89,12 @@ Les clés propres à la collection (`qty`, `deck`, `total`, `is:indeck`,
 `collection.search`, jamais la carte Scryfall ; le sélecteur « Deck » du
 panneau émet `indeck="<nom>"` (correspondance exacte), la boîte en français
 `indeck:<sous-chaîne>`.
+Quand la requête EXIGE un deck (terme `indeck` positif, hors `or`/`-` —
+`Query.deck_scope`), la quantité affichée et la valeur sont celles des copies
+DANS ce(s) deck(s), lues dans la table `collection_decks` (copies par deck,
+remplie à l'import) ; `owned_qty` garde le total possédé. La ligne
+`collection` ne suffit pas : l'import fusionne les printings identiques de
+plusieurs decks et perd la répartition.
 
 Le filtrage est **entièrement côté serveur** : la page n'embarque que les cartes
 qui matchent.

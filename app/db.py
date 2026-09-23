@@ -32,6 +32,22 @@ CREATE TABLE collection (
 """
 
 
+# How many copies of a card sit in each ManaBox deck. The ``collection`` row
+# can't carry it: identical printings are merged at import, so twenty Islands
+# in "Dandan" and forty in "Mono-U" end up as one row with deck_qty=60 and
+# deck_names="Dandan|Mono-U" — the per-deck split is gone. Deck name '' holds
+# in-deck copies whose deck ManaBox didn't name.
+_CREATE_COLLECTION_DECKS_SQL = """
+CREATE TABLE collection_decks (
+    profile_id INTEGER NOT NULL,
+    name_key   TEXT NOT NULL,
+    deck_name  TEXT NOT NULL,
+    qty        INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, name_key, deck_name)
+)
+"""
+
+
 def _ensure_dir() -> None:
     directory = os.path.dirname(settings.db_path)
     if directory:
@@ -151,6 +167,7 @@ def init_db() -> None:
             """
         )
         _migrate_collection(conn)
+        _migrate_collection_decks(conn)
         _migrate_conversations(conn)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_collection_name ON collection(name_key)")
         conn.execute(
@@ -172,6 +189,31 @@ def _migrate_conversations(conn) -> None:
         conn.execute(
             "ALTER TABLE conversations ADD COLUMN kind TEXT NOT NULL DEFAULT 'deck'"
         )
+
+
+def _migrate_collection_decks(conn) -> None:
+    """Create ``collection_decks`` and backfill it from pre-existing rows.
+
+    The backfill is exact for a row whose copies sit in a single deck. A row
+    naming several decks only knows its total: each deck is credited with it
+    (an upper bound, the pre-table behaviour) until the next import, which
+    records the real split.
+    """
+    if _table_columns(conn, "collection_decks"):
+        return
+    conn.execute(_CREATE_COLLECTION_DECKS_SQL)
+    rows = conn.execute(
+        "SELECT profile_id, name_key, deck_qty, deck_names FROM collection WHERE deck_qty>0"
+    ).fetchall()
+    per_deck: dict[tuple, int] = {}
+    for r in rows:
+        for deck in [n for n in (r["deck_names"] or "").split("|") if n] or [""]:
+            key = (r["profile_id"], r["name_key"], deck)
+            per_deck[key] = per_deck.get(key, 0) + r["deck_qty"]
+    conn.executemany(
+        "INSERT INTO collection_decks (profile_id, name_key, deck_name, qty) VALUES (?, ?, ?, ?)",
+        [(*key, qty) for key, qty in per_deck.items()],
+    )
 
 
 def _migrate_collection(conn) -> None:
@@ -475,6 +517,7 @@ def delete_profile(profile_id: int) -> None:
     pid = int(profile_id)
     with get_conn() as conn:
         conn.execute("DELETE FROM collection WHERE profile_id=?", (pid,))
+        conn.execute("DELETE FROM collection_decks WHERE profile_id=?", (pid,))
         ids = [
             r["id"]
             for r in conn.execute(
@@ -513,6 +556,7 @@ def replace_collection(profile_id: int, rows, source: str | None = None) -> None
     pid = int(profile_id)
     merged: dict[tuple, dict] = {}
     deck_names: dict[tuple, set] = {}
+    per_deck: dict[tuple, int] = {}
     for r in rows:
         qty = int(r["quantity"])
         in_deck = (r.get("binder_type") or "") == "deck"
@@ -525,6 +569,9 @@ def replace_collection(profile_id: int, rows, source: str | None = None) -> None
         )
         if in_deck and (r.get("binder_name") or "").strip():
             deck_names.setdefault(key, set()).add(r["binder_name"].strip())
+        if in_deck and qty > 0:
+            deck_key = (r["name_key"], (r.get("binder_name") or "").strip())
+            per_deck[deck_key] = per_deck.get(deck_key, 0) + qty
         if key in merged:
             merged[key]["quantity"] += qty
             merged[key]["deck_qty"] += deck_qty
@@ -546,6 +593,12 @@ def replace_collection(profile_id: int, rows, source: str | None = None) -> None
         r["deck_names"] = "|".join(sorted(deck_names.get(key) or ()))
     with get_conn() as conn:
         conn.execute("DELETE FROM collection WHERE profile_id=?", (pid,))
+        conn.execute("DELETE FROM collection_decks WHERE profile_id=?", (pid,))
+        conn.executemany(
+            """INSERT INTO collection_decks (profile_id, name_key, deck_name, qty)
+               VALUES (?, ?, ?, ?)""",
+            [(pid, name_key, deck, qty) for (name_key, deck), qty in per_deck.items()],
+        )
         # Per-profile meta caches keyed on the collection's contents: the home
         # page stats (value, colors) and the owned-printing price map.
         conn.execute(
@@ -646,28 +699,31 @@ def owned_quantities(profile_id: int) -> dict[str, tuple[int, int]]:
     return {r["name_key"]: (r["qty"], r["deck_qty"]) for r in rows}
 
 
-def owned_deck_names(profile_id: int) -> dict[str, list[str]]:
-    """``{name_key: [deck names]}`` for every card with at least one copy in a
-    ManaBox deck.
+def owned_deck_quantities(profile_id: int) -> dict[str, dict[str, int]]:
+    """``{name_key: {deck name: copies}}`` for every card with at least one
+    copy in a named ManaBox deck.
 
-    This is what lets the collection page answer "show me my Krenko deck":
-    ``owned_quantities`` only says *how many* copies are sleeved, not where.
-    Rows imported before deck names were stored contribute no name (the copies
-    still count as in-deck via ``deck_qty``), so such a card matches
-    ``is:indeck`` but no ``indeck:<name>`` filter — better than inventing one.
+    This is what lets the collection page answer "show me my Dandan deck" with
+    the copies that are IN it — not the 200 Islands owned overall, nor the
+    in-deck total across every deck (``owned_quantities``). Copies in an
+    unnamed deck still count as in-deck via ``deck_qty`` but match no
+    ``indeck:<name>`` filter — better than inventing a name.
     """
     with get_conn() as conn:
         rows = conn.execute(
-            """SELECT DISTINCT name_key, deck_names FROM collection
-               WHERE profile_id=? AND deck_qty>0 AND deck_names != ''""",
+            """SELECT name_key, deck_name, qty FROM collection_decks
+               WHERE profile_id=? AND deck_name != '' AND qty>0""",
             (int(profile_id),),
         ).fetchall()
-    out: dict[str, set[str]] = {}
+    out: dict[str, dict[str, int]] = {}
     for r in rows:
-        out.setdefault(r["name_key"], set()).update(
-            n for n in r["deck_names"].split("|") if n
-        )
-    return {k: sorted(v) for k, v in out.items()}
+        out.setdefault(r["name_key"], {})[r["deck_name"]] = r["qty"]
+    return out
+
+
+def owned_deck_names(profile_id: int) -> dict[str, list[str]]:
+    """``{name_key: [deck names]}``, sorted (see ``owned_deck_quantities``)."""
+    return {k: sorted(v) for k, v in owned_deck_quantities(profile_id).items()}
 
 
 def deck_names(profile_id: int) -> list[str]:
@@ -682,26 +738,26 @@ def deck_names(profile_id: int) -> list[str]:
 def deck_memberships(profile_id: int) -> dict[str, list[dict]]:
     """``{deck_name: [{name_key, raw_name, qty}, …]}`` from the ManaBox decks.
 
-    Built from the copies flagged "Binder Type" = deck at import. Rows imported
-    before deck names were stored land under the "" key, so pre-existing
-    collections still produce a (single, unnamed) deck signal rather than none.
-    A printing sleeved in several decks lists the card under each of them.
+    Built from the copies flagged "Binder Type" = deck at import, with each
+    deck's own copy count. In-deck copies whose deck has no name land under the
+    "" key, so such collections still produce a (single, unnamed) deck signal
+    rather than none.
     """
     with get_conn() as conn:
         rows = conn.execute(
-            """SELECT name_key, MIN(raw_name) AS raw_name, deck_names,
-                      SUM(deck_qty) AS qty
-               FROM collection WHERE profile_id=? AND deck_qty>0
-               GROUP BY name_key, deck_names ORDER BY raw_name""",
+            """SELECT d.deck_name, d.name_key, d.qty,
+                      (SELECT MIN(c.raw_name) FROM collection c
+                       WHERE c.profile_id=d.profile_id AND c.name_key=d.name_key) AS raw_name
+               FROM collection_decks d WHERE d.profile_id=? AND d.qty>0
+               ORDER BY raw_name""",
             (int(profile_id),),
         ).fetchall()
     decks: dict[str, list[dict]] = {}
     for r in rows:
-        names = [n for n in (r["deck_names"] or "").split("|") if n] or [""]
-        for deck in names:
-            decks.setdefault(deck, []).append(
-                {"name_key": r["name_key"], "raw_name": r["raw_name"], "qty": r["qty"]}
-            )
+        decks.setdefault(r["deck_name"], []).append(
+            {"name_key": r["name_key"], "raw_name": r["raw_name"] or r["name_key"],
+             "qty": r["qty"]}
+        )
     return decks
 
 

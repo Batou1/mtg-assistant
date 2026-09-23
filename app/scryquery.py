@@ -707,6 +707,29 @@ class Query:
     def match(self, card: dict | None, extra: dict | None = None) -> bool:
         return self._node.match(card or {}, extra or {})
 
+    def deck_scope(self):
+        """A predicate on ManaBox deck names if the query is *about* decks,
+        else ``None``.
+
+        A query that requires ``indeck:<x>`` (a positive term reachable
+        through ANDs only) selects cards by where their copies sit, so the
+        copies it is about are the ones in the matching decks — the collection
+        page counts those, not every copy owned. Under ``or``/``-`` the query
+        no longer says which copies it means, so it scopes nothing.
+        """
+        terms = []
+        stack = [self._node]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, _And):
+                stack.extend(node.parts)
+            elif (isinstance(node, _Term) and node.key in ("indeck", "deckname")
+                  and node.op in (":", "=")):
+                terms.append(node)
+        if not terms:
+            return None
+        return lambda deck: all(_text_result(t, deck) for t in terms)
+
     def __call__(self, card, extra=None):
         return self.match(card, extra)
 

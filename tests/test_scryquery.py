@@ -214,3 +214,14 @@ def test_quote_only_quotes_when_needed():
     assert sq.quote("goblin") == "goblin"
     assert sq.quote("draw a card") == '"draw a card"'
     assert sq.quote("  ") == ""
+
+
+def test_deck_scope_only_for_a_required_deck_term():
+    """The collection page counts a deck's copies only when the query is
+    unambiguously about that deck."""
+    scope = sq.parse('t:land indeck="Dandan"').deck_scope()
+    assert scope("Dandan") is True and scope("Dandan v2") is False
+    assert sq.parse("indeck:dan").deck_scope()("Dandan v2") is True
+    for text in ("", "t:land", "is:indeck", "-indeck:dandan",
+                 "indeck:dandan or t:land", "indeck!=Dandan"):
+        assert sq.parse(text).deck_scope() is None, text
