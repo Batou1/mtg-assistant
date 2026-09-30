@@ -41,7 +41,7 @@ un message explicite.
 ## Stack et architecture
 
 FastAPI + Jinja2 (rendu serveur, pas de build JS) + SQLite (`data/app.db`) + httpx.
-LLM : API Anthropic (`claude-sonnet-5` par défaut, `MTG_ANTHROPIC_MODEL` pour changer).
+LLM : API Anthropic (`claude-sonnet-5-5` par défaut, `MTG_ANTHROPIC_MODEL` pour changer).
 Un seul worker uvicorn ; l'état en mémoire (caches, registre `_inflight` du chat)
 suppose ce déploiement mono-process.
 

@@ -765,6 +765,102 @@ def test_serialize_content_preserves_thinking_blocks(env):
     assert out[2]["type"] == "text" and out[3]["type"] == "tool_use"
 
 
+# --- Live thinking summary (the "réfléchit…" bubble) ----------------------
+
+def test_create_message_streams_summarized_thinking(env, monkeypatch):
+    """With on_thinking, the request asks for summarized thinking, streams, and
+    hands every summary delta over; one paragraph per thinking block."""
+    llm = env.chat.llm
+    final = _resp([_text_block("ok")], "end_turn")
+    captured = {}
+    events = [
+        types.SimpleNamespace(type="content_block_start",
+                              content_block=types.SimpleNamespace(type="thinking")),
+        types.SimpleNamespace(type="content_block_delta",
+                              delta=types.SimpleNamespace(type="thinking_delta",
+                                                          thinking="Je compare ")),
+        types.SimpleNamespace(type="content_block_delta",
+                              delta=types.SimpleNamespace(type="thinking_delta",
+                                                          thinking="deux commandants.")),
+        types.SimpleNamespace(type="content_block_delta",
+                              delta=types.SimpleNamespace(type="text_delta", text="ok")),
+    ]
+
+    class FakeStream:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def __iter__(self):
+            return iter(events)
+
+        def get_final_message(self):
+            return final
+
+    def fake_stream(**kwargs):
+        captured.update(kwargs)
+        return FakeStream()
+
+    client = types.SimpleNamespace(messages=types.SimpleNamespace(
+        stream=fake_stream,
+        create=lambda **k: pytest.fail("must stream when on_thinking is set")))
+    monkeypatch.setattr(llm, "is_available", lambda: True)
+    monkeypatch.setattr(llm, "_get_client", lambda: client)
+
+    deltas = []
+    resp = llm.create_message("sys", [{"role": "user", "content": "?"}],
+                              on_thinking=deltas.append)
+    assert resp is final
+    assert captured["thinking"] == {"type": "adaptive", "display": "summarized"}
+    assert "".join(deltas) == "\n\nJe compare deux commandants."
+
+
+def test_background_turn_exposes_thinking_until_reply(env, monkeypatch):
+    """A background turn's thinking is readable while it runs, then dropped
+    with the in-flight flag; synchronous turns get no sink at all."""
+    import threading
+    db, chat = env.db, env.chat
+    pid = db.ensure_default_profile()
+    cid = db.create_conversation(pid)
+    seen, release, done = {}, threading.Event(), threading.Event()
+
+    def fake_create(system, messages, tools=None, max_tokens=None,
+                    tool_choice=None, on_thinking=None):
+        seen["sink"] = on_thinking
+        if on_thinking:
+            on_thinking("Je regarde la collection…")
+            seen["during"] = chat.thinking_text(cid)
+            release.wait(2)
+        return _resp([_text_block("Voilà.")], "end_turn")
+
+    monkeypatch.setattr(chat.llm, "is_available", lambda: True)
+    monkeypatch.setattr(chat.llm, "create_message", fake_create)
+    orig_worker = chat._worker
+
+    def worker(*a, **k):
+        try:
+            orig_worker(*a, **k)
+        finally:
+            done.set()
+
+    monkeypatch.setattr(chat, "_worker", worker)
+    chat.start_turn(cid, pid, "Salut")
+    for _ in range(100):
+        if "during" in seen:
+            break
+        release.wait(0.02)
+    assert seen["during"] == "Je regarde la collection…"
+    release.set()
+    assert done.wait(2)
+    assert not chat.is_pending(cid) and chat.thinking_text(cid) == ""
+
+    seen.clear()
+    chat.run_turn(cid, pid, "Encore")        # synchronous: nobody polls
+    assert seen["sink"] is None
+
+
 def test_research_archetype_tool_passes_owned_only(env, monkeypatch):
     db, chat = env.db, env.chat
     pid = db.ensure_default_profile()

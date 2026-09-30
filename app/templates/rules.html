@@ -111,6 +111,7 @@
         <div class="bubble typing">
           <span class="typing-dots"><span></span><span></span><span></span></span>
           <span class="muted small">Le juge consulte les règles… (recherche dans les CR, texte des cartes, rulings)</span>
+          <div class="thinking-text" hidden></div>
         </div>
       </div>
       {% endif %}
@@ -179,6 +180,7 @@
         + '<div class="bubble typing">'
         + '<span class="typing-dots"><span></span><span></span><span></span></span>'
         + '<span class="muted small">Le juge consulte les règles… (recherche dans les CR, texte des cartes, rulings)</span>'
+        + '<div class="thinking-text" hidden></div>'
         + '</div>';
       thread.appendChild(el);
       thread.scrollTop = thread.scrollHeight;
@@ -200,11 +202,23 @@
         .catch(function () { window.location.reload(); });
     }
 
+    // Live summary of the model's reasoning, streamed server-side while the
+    // turn runs; dropped with the bubble when the reply lands.
+    function showThinking(text) {
+      var box = document.querySelector('#pending-bubble .thinking-text');
+      if (!box || !text) return;
+      var stick = box.scrollHeight - box.scrollTop - box.clientHeight < 8;
+      box.textContent = text;
+      box.hidden = false;
+      if (stick) box.scrollTop = box.scrollHeight;
+      if (thread) thread.scrollTop = thread.scrollHeight;
+    }
+
     function poll() {
       fetch('/rules/status?conversation_id=' + convId, { cache: 'no-store' })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          if (d && d.pending) { setTimeout(poll, 1500); }
+          if (d && d.pending) { showThinking(d.thinking); setTimeout(poll, 1500); }
           else { refreshThread(); }
         })
         .catch(function () { setTimeout(poll, 3000); });

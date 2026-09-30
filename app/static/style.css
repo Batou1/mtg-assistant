@@ -900,7 +900,13 @@ details.buylist > .buy-grid { padding: 14px; margin-top: 0; }
 }
 
 /* "Assistant is thinking" bubble while a turn runs in the background. */
-.bubble.typing { display: flex; align-items: center; gap: 10px; }
+.bubble.typing { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+/* Streamed thinking summary under the dots: the tail of the running
+   reasoning, scrollable, visually secondary to the reply that follows. */
+.thinking-text { flex-basis: 100%; max-height: 9.5em; overflow-y: auto;
+  white-space: pre-wrap; font-size: .85em; font-style: italic; line-height: 1.45;
+  color: var(--muted); border-left: 2px solid var(--accent); padding-left: 10px; }
+.thinking-text[hidden] { display: none; }
 .typing-dots { display: inline-flex; gap: 4px; }
 .typing-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
   display: inline-block; animation: typing-bounce 1.2s infinite ease-in-out; }
