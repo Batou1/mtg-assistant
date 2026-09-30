@@ -83,7 +83,7 @@ class Settings:
 
     # --- LLM (Anthropic / Claude) ------------------------------------------
     # The API key is read by the SDK from ANTHROPIC_API_KEY (kept in .env).
-    anthropic_model: str = os.environ.get("MTG_ANTHROPIC_MODEL", "claude-sonnet-5")
+    anthropic_model: str = os.environ.get("MTG_ANTHROPIC_MODEL", "claude-sonnet-5-5")
     # Sonnet 5 runs adaptive thinking by default and thinking tokens count
     # against max_tokens, so the budget must leave room for BOTH the (invisible)
     # reasoning and the actual text. 2700 proved too tight: on hard prompts the

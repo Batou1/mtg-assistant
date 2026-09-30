@@ -1309,9 +1309,13 @@ def _agent_loop(api_messages: list[dict], profile_id: int, system: str,
     artifacts: list[dict] = []
     ctx = {"conversation_id": conversation_id}
     retried_truncation = False
+    # Background turns stream the thinking summary to the waiting bubble;
+    # synchronous ones (tests, key-free CLI) have nobody polling.
+    sink = _thinking_sink(conversation_id)
+    live = {"on_thinking": sink} if sink else {}
 
     for _ in range(settings.chat_max_tool_iterations):
-        resp = llm.create_message(system, api_messages, tools=tools)
+        resp = llm.create_message(system, api_messages, tools=tools, **live)
         if resp is not None and resp.stop_reason == "max_tokens" \
                 and not _has_text(resp) and not retried_truncation:
             # Adaptive thinking can eat the whole token budget before any text
@@ -1320,7 +1324,8 @@ def _agent_loop(api_messages: list[dict], profile_id: int, system: str,
             # large (deck-sized) budget gives the model room to think AND answer.
             retried_truncation = True
             resp = llm.create_message(system, api_messages, tools=tools,
-                                      max_tokens=settings.anthropic_deck_max_tokens)
+                                      max_tokens=settings.anthropic_deck_max_tokens,
+                                      **live)
         if resp is None:
             texts.append(
                 "Désolé, le service Claude est momentanément indisponible. Réessaie."
@@ -1360,7 +1365,7 @@ def _agent_loop(api_messages: list[dict], profile_id: int, system: str,
         # after a long turn. tool_choice "none" keeps the transcript (which
         # contains tool blocks) valid while forbidding further calls.
         resp = llm.create_message(system, api_messages, tools=tools,
-                                  tool_choice={"type": "none"})
+                                  tool_choice={"type": "none"}, **live)
         if resp is not None:
             for b in resp.content:
                 if b.type == "text" and b.text.strip():
@@ -1491,6 +1496,38 @@ def create_pool_conversation(profile_id: int, pool_items, fmt: str, intent: dict
 # in-memory — fine for the single-worker personal deployment.
 _inflight: set[int] = set()
 _inflight_lock = threading.Lock()
+# Thinking summary of the running turn, shown in the waiting bubble. Ephemeral
+# like the rest of the intra-turn transcript (invariant 6): dropped with the
+# in-flight flag, never persisted.
+_thinking: dict[int, str] = {}
+_THINKING_TAIL = 1500
+
+
+def _thinking_sink(conversation_id):
+    """Callback accumulating thinking deltas for a background turn, else None."""
+    try:
+        cid = int(conversation_id)
+    except (TypeError, ValueError):
+        return None
+    with _inflight_lock:
+        if cid not in _inflight:
+            return None
+
+    def sink(delta: str) -> None:
+        with _inflight_lock:
+            if cid in _inflight:
+                _thinking[cid] = (_thinking.get(cid, "") + delta)[-_THINKING_TAIL:]
+    return sink
+
+
+def thinking_text(conversation_id) -> str:
+    """Latest thinking summary of the conversation's running turn ("" if none)."""
+    try:
+        cid = int(conversation_id)
+    except (TypeError, ValueError):
+        return ""
+    with _inflight_lock:
+        return _thinking.get(cid, "").strip()
 
 
 def is_pending(conversation_id) -> bool:
@@ -1520,6 +1557,7 @@ def _worker(conversation_id: int, profile_id: int, user_text: str,
         # poll always finds the new message.
         with _inflight_lock:
             _inflight.discard(conversation_id)
+            _thinking.pop(conversation_id, None)
     # Every exchange feeds the player-style memory (background, coalesced).
     if learn_style:
         playerprofile.schedule_refresh(profile_id)
@@ -1554,4 +1592,5 @@ def start_turn(conversation_id: int, profile_id: int, user_text: str,
         # the flag so the conversation isn't stuck on a spinner forever.
         with _inflight_lock:
             _inflight.discard(cid)
+            _thinking.pop(cid, None)
         raise

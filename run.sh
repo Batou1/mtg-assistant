@@ -22,7 +22,7 @@ pip install --quiet -r requirements.txt
 PORT="${MTG_PORT:-8000}"
 echo "MTG Assistant → http://127.0.0.1:${PORT}"
 if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-  echo "LLM (Anthropic) → ${MTG_ANTHROPIC_MODEL:-claude-sonnet-5}"
+  echo "LLM (Anthropic) → ${MTG_ANTHROPIC_MODEL:-claude-sonnet-5-5}"
 else
   echo "LLM → aucune clé ANTHROPIC_API_KEY : parsing heuristique, pas de chat complet"
 fi

@@ -295,7 +295,8 @@ def test_rules_message_runs_a_turn_and_keeps_tabs_apart(client, env):
         if not chat.is_pending(conv_id):
             break
         time.sleep(0.05)
-    assert client.get(f"/rules/status?conversation_id={conv_id}").json() == {"pending": False}
+    assert client.get(f"/rules/status?conversation_id={conv_id}").json() == {
+        "pending": False, "thinking": ""}
 
     page = client.get("/rules")
     assert 'class="ruling-answer"' in page.text

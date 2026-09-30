@@ -19,7 +19,7 @@ from . import (
 )
 from .config import settings
 
-APP_VERSION = "2.12"
+APP_VERSION = "2.13"
 
 logger = logging.getLogger(__name__)
 
@@ -591,7 +591,8 @@ def chat_status(request: Request, conversation_id: str = ""):
     conv = db.get_conversation(conversation_id)
     if conv is None or conv["profile_id"] != profile["id"]:
         return JSONResponse({"pending": False})
-    return JSONResponse({"pending": chat.is_pending(conv["id"])})
+    return JSONResponse({"pending": chat.is_pending(conv["id"]),
+                         "thinking": chat.thinking_text(conv["id"])})
 
 
 @app.post("/chat/new")
@@ -669,7 +670,8 @@ def rules_status(request: Request, conversation_id: str = ""):
     conv = db.get_conversation(conversation_id)
     if conv is None or conv["profile_id"] != profile["id"]:
         return JSONResponse({"pending": False})
-    return JSONResponse({"pending": chat.is_pending(conv["id"])})
+    return JSONResponse({"pending": chat.is_pending(conv["id"]),
+                         "thinking": chat.thinking_text(conv["id"])})
 
 
 @app.post("/rules/new")
