@@ -140,3 +140,30 @@ def test_buylist_quotes_the_cheapest_printing(fresh):
     assert result["to_buy"][0]["price_eur"] == 0.61
     assert result["to_buy"][0]["set_code"] == "VOC"
     assert result["total_eur"] == 0.61
+
+
+def test_rarity_index_records_every_paper_or_mtgo_printing(fresh):
+    """Pauper Commander's commander rule needs ANY uncommon printing — even an
+    unbuyable or digital-on-MTGO one — not just the cheapest buyable one."""
+    _db, prices = fresh
+    prices.build_index([
+        printing("Mayhem Devil", 0.5, "war", rarity="uncommon"),
+        printing("Mayhem Devil", 9.0, "sld", rarity="rare"),
+        printing("Arena Thing", None, "ymid", rarity="uncommon", games=["arena"]),
+        printing("Old Legend", 3.0, "me1", rarity="uncommon", games=["mtgo"]),
+    ])
+    assert prices.printed_rarities("Mayhem Devil") == {"uncommon", "rare"}
+    assert prices.printed_rarities("Arena Thing") == set()
+    assert prices.printed_rarities("Old Legend") == {"uncommon"}
+    assert prices.printed_rarities("Unknown Card") == set()
+
+
+def test_an_index_built_before_rarities_is_rebuilt_once(fresh):
+    db, prices = fresh
+    card = printing("Sol Ring", 0.61, "voc", rarity="uncommon")
+    db.set_card(f"id:{card['id']}", card)
+    prices.rebuild_from_cache()
+    assert prices.needs_rebuild() is False
+    # Stamp written by the previous index version (no "v2:" prefix).
+    db.set_meta(prices.SOURCE_META_KEY, db.get_meta("bulk_all_cards_updated_at") or "")
+    assert prices.needs_rebuild() is True

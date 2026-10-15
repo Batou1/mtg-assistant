@@ -68,7 +68,7 @@
           {% for c in r.color_identity %}<span class="pip pip-{{ c }}">{{ c }}</span>{% endfor %}
           {% if not r.color_identity %}<span class="pip pip-C">incolore</span>{% endif %}
         </p>
-        <p class="muted small">{{ "{:,}".format(r.num_decks).replace(",", " ") }} decks sur EDHREC{% if r.below_threshold %} · sous le seuil habituel{% endif %}</p>
+        <p class="muted small">{{ "{:,}".format(r.num_decks).replace(",", " ") }} decks sur {{ r.source.label if r.source else "EDHREC" }}{% if r.source and r.source.fallback %} (repli : {{ r.source.fallback_reason }}){% endif %}{% if r.below_threshold %} · sous le seuil habituel{% endif %}</p>
 
         {% if r.owned is defined and not r.owned %}
         <p class="muted small">Commandant à acquérir :

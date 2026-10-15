@@ -21,13 +21,35 @@ def test_duelcommander_requires_duel_legality():
     assert commanders.is_eligible_commander(legal, "duelcommander")
 
 
-def test_paupercommander_requires_paupercommander_legality():
-    # A legendary creature not eligible as a Pauper Commander (e.g. too rare).
-    ineligible = _card("Legendary Creature — Human", {"paupercommander": "not_legal"})
-    assert not commanders.is_eligible_commander(ineligible, "paupercommander")
+def test_paupercommander_commander_is_an_uncommon_creature_legendary_or_not():
+    # Scryfall marks uncommons "not_legal" in paupercommander (they are illegal
+    # in the 99): that status must NOT reject them as commander.
+    devil = {**_card("Creature — Devil", {"paupercommander": "not_legal"}),
+             "rarity": "uncommon"}
+    assert commanders.is_eligible_commander(devil, "paupercommander")
 
-    eligible = _card("Legendary Creature — Human", {"paupercommander": "legal"})
-    assert commanders.is_eligible_commander(eligible, "paupercommander")
+    rare_legend = {**_card("Legendary Creature — Goblin", {"paupercommander": "not_legal"}),
+                   "rarity": "rare"}
+    assert not commanders.is_eligible_commander(rare_legend, "paupercommander")
+
+    common = {**_card("Creature — Elf", {"paupercommander": "legal"}), "rarity": "common"}
+    assert not commanders.is_eligible_commander(common, "paupercommander")
+
+    banned = {**_card("Creature — Human", {"paupercommander": "banned"}),
+              "rarity": "uncommon"}
+    assert not commanders.is_eligible_commander(banned, "paupercommander")
+
+    background = {**_card("Legendary Enchantment — Background"), "rarity": "uncommon"}
+    assert commanders.is_eligible_commander(background, "paupercommander")
+
+
+def test_paupercommander_uses_any_uncommon_printing(monkeypatch):
+    # The canonical printing is a rare reprint, but the card was printed at
+    # uncommon once: the printing index (bulk import) makes it eligible.
+    monkeypatch.setattr(commanders.prices, "printed_rarities",
+                        lambda name: {"uncommon", "rare"})
+    card = {**_card("Creature — Elf"), "rarity": "rare"}
+    assert commanders.is_eligible_commander(card, "paupercommander")
 
 
 def test_non_commander_card_never_eligible():

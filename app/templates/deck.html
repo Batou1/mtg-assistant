@@ -7,7 +7,7 @@
 
 {% if not deck %}
   <div class="notice warn">
-    Impossible de générer le deck pour « {{ commander }} » — page EDHREC introuvable
+    Impossible de générer le deck pour « {{ commander }} » — aucune donnée (EDHREC, PDHREC ou MTGTop8)
     ou commandant non reconnu par Scryfall.
   </div>
 {% else %}
@@ -47,6 +47,8 @@
         augmente le budget{% if deck.max_card_price_eur is not none %} ou le plafond par carte{% endif %} pour compléter le deck.
       </p>
       {% endif %}
+      {% if deck.commander_warning %}<p class="notice warn small">{{ deck.commander_warning }}</p>{% endif %}
+        {% if deck.source %}<p class="muted small">Cartes issues de {% if deck.source.url %}<a href="{{ deck.source.url }}" target="_blank" rel="noopener">{{ deck.source.label }}</a>{% else %}{{ deck.source.label }}{% endif %}{% if deck.source.sample_size %} · {{ deck.source.sample_size }} decklists de tournoi agrégées{% endif %}{% if deck.source.num_decks %} · {{ deck.source.num_decks }} decks{% endif %}{% if deck.source.fallback %} — repli : {{ deck.source.fallback_reason }}, liste filtrée par légalité{% endif %}</p>{% endif %}
     </div>
   </div>
 

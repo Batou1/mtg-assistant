@@ -70,6 +70,29 @@ class Settings:
     edhrec_tags_json: str = os.environ.get(
         "MTG_EDHREC_TAGS_JSON", "https://json.edhrec.com/pages/tags"
     )
+    # Commander-variant sources (see app/variants.py). EDHREC only aggregates
+    # regular multiplayer Commander: Pauper Commander comes from PDHREC, Duel
+    # Commander from MTGTop8's tournament results (format code "EDH" there).
+    pdhrec_url: str = os.environ.get("MTG_PDHREC_URL", "https://www.pdhrec.com")
+    mtgtop8_url: str = os.environ.get("MTG_MTGTOP8_URL", "https://mtgtop8.com")
+    # Official Duel Commander banlist: its "banned as commander" section (cards
+    # legal in the 99 but not as commander) is not in Scryfall's legalities.
+    duel_banlist_url: str = os.environ.get(
+        "MTG_DUEL_BANLIST_URL", "https://www.duelcommander.org/banlist/"
+    )
+    # MTGTop8 metagame windows: "Last 6 Months" first, "All Commander decks"
+    # (newest first) when a commander has too few recent results.
+    mtgtop8_metas: tuple = tuple(
+        os.environ.get("MTG_MTGTOP8_METAS", "209,56").split(",")
+    )
+    # Tournament decklists downloaded (newest first) to aggregate a Duel
+    # Commander card pool: one text export per deck, cached like EDHREC.
+    duel_decks_sample: int = int(os.environ.get("MTG_DUEL_DECKS_SAMPLE", "20"))
+    # Smaller sample when ranking many candidate commanders at once (analysis).
+    duel_scoring_sample: int = int(os.environ.get("MTG_DUEL_SCORING_SAMPLE", "8"))
+    # Under this many tournament decks, the aggregate is too thin to trust and
+    # the EDHREC page (filtered by Duel legality) is used instead.
+    duel_min_decks: int = int(os.environ.get("MTG_DUEL_MIN_DECKS", "3"))
     request_delay: float = float(os.environ.get("MTG_REQUEST_DELAY", "0.1"))
     # Parallel workers for the per-candidate EDHREC/Scryfall fetches during a
     # Commander analysis. Kept small on purpose: each worker still honours

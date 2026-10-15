@@ -50,7 +50,8 @@ suppose ce déploiement mono-process.
 ```
 wish (texte FR) → intent.parse_intent (LLM + fallback heuristique, backfill croisé)
   → format Commander ?  → analysis.analyze  (candidats = commandants POSSÉDÉS
-  |                        + discovery des non-possédés via pages carte EDHREC)
+  |                        + discovery des non-possédés via pages carte EDHREC ;
+  |                        données par variante via variants.py : PDHREC, MTGTop8)
   |    « hors collection » → analysis.find_commanders (pages thème EDHREC + pool
   |                          Scryfall local, marche avec collection vide)
   → format 60 cartes ?  → formats60.analyze (Brave Search → LLM propose un deck
@@ -136,6 +137,11 @@ alimentée par les questions de règles.
 | `intent.py` | Wish FR → intent structuré. LLM d'abord, heuristique en secours, backfill croisé. |
 | `analysis.py` | Suggestions de commandants (possédés + discovery + finder par thème). |
 | `edhrec.py` | Client EDHREC (endpoints json.edhrec.com non officiels) + extraction défensive. |
+| `variants.py` | Choix de la source par variante (EDHREC / PDHREC / MTGTop8), repli EDHREC signalé, complément de pool, `source_info`. |
+| `pdhrec.py` | Client PDHREC (Pauper Commander) : pages commandant, staples, listes par couleur → payload forme EDHREC. |
+| `mtgtop8.py` | Client MTGTop8 (Duel Commander) : decklists de tournoi agrégées + `deck_stats` manabase, métagame récent. |
+| `duelbans.py` | Liste officielle Duel Commander « bannis comme commandant » (duelcommander.org), mémoïsée, repli Scryfall `restricted`. |
+| `webfetch.py` | GET HTML/texte poli (en-têtes navigateur, throttle, backoff) pour les sources scrapées. |
 | `scryfall.py` | Résolution nom/id → carte (batch `/cards/collection`), accesseurs (prix **de ce printing**, image…), rulings officiels (`rulings`, cachés dans `meta`). |
 | `prices.py` | Index « édition la moins chère » par nom (prix d'ACHAT), construit depuis le bulk. |
 | `bulk_data.py` | Import des exports bulk Scryfall + rafraîchissement auto en thread démon. |
@@ -164,11 +170,35 @@ alimentée par les questions de règles.
    liste des possédées (`pool_bonus`). Si tu ajoutes un usage LLM qui produit des
    noms de cartes, ajoute la validation correspondante.
 
-2. **EDHREC n'a que des pages Commander classique.** Duel Commander et Pauper
-   Commander réutilisent la même page, filtrée par la légalité Scryfall
-   (`commanders.SCRYFALL_LEGALITY` : `duel`, `paupercommander`) appliquée au
-   commandant ET à chaque carte recommandée. Ne jamais construire d'URL EDHREC
-   spécifique à ces variantes.
+2. **Une source de cartes par variante Commander** (`variants.fetch_commander`).
+   EDHREC n'agrège que le Commander multijoueur : filtrer sa page par légalité
+   donnait du « Commander moins les cartes illégales », pas du Duel ni du PDH.
+   Commander → EDHREC ; **Pauper Commander → PDHREC** (`pdhrec.py`, HTML
+   scrapé, pages par commandant + staples + listes par couleur) ;
+   **Duel Commander → MTGTop8** (`mtgtop8.py`, format `EDH` là-bas : les N
+   decklists de tournoi les plus récentes du commandant sont agrégées, avec
+   `deck_stats` = nb moyen de terrains/bases, qui dimensionne la manabase de
+   `deckgen`). Toutes renvoient la forme de payload EDHREC. Si la source
+   dédiée n'a rien, repli sur la page EDHREC, **signalé** (`_fallback`,
+   affiché dans l'UI et dans le texte d'outil du chat). Pour un deck
+   (`complete=True`), un pool trop court est complété par EDHREC puis les
+   staples PDH, en tier STRICTEMENT inférieur (`complement`, rempli après
+   épuisement du pool natif). La légalité Scryfall (`commanders.SCRYFALL_LEGALITY` :
+   `duel`, `paupercommander`) reste appliquée à chaque carte, quelle que soit
+   la source. Ne jamais construire d'URL EDHREC spécifique à ces variantes.
+   **Commandant PDH = créature (ou Background) avec une impression peu
+   commune, légendaire ou non** (`commanders.is_pdh_commander`) : Scryfall
+   marque ces cartes `not_legal` en `paupercommander` (illégales dans les 99),
+   ce statut ne doit donc PAS les rejeter ; la rareté vient de l'index
+   `card_rarities` (construit avec `card_prices` à l'import `all_cards`).
+   **Duel Commander a une liste « bannis comme commandant »** (jouables dans
+   les 99 : Edgar Markov, Yuriko…) : Scryfall les marque `restricted` en
+   `duel`, que `scryfall.legal_in` compte comme légal (juste pour les 99).
+   `duelbans.py` lit la liste officielle (duelcommander.org/banlist), qui
+   prime ; dernière copie gardée dans `meta`, et sans aucune copie repli sur
+   `restricted`. Appliqué par `commanders.is_eligible_commander`.
+   Le mode `scoring=True` (analyse de nombreux candidats) n'agrège MTGTop8
+   que pour les commandants du métagame récent, avec un échantillon réduit.
 
 3. **Sentinelles EDHREC** : `edhrec.fetch_*` renvoie `{"_not_found": True}` (mis en
    cache) ou `{"_error": True}` (JAMAIS mis en cache, pour réessayer plus tard).
@@ -311,7 +341,9 @@ alimentée par les questions de règles.
 - **UI et prompts LLM en français ; code, docstrings et commentaires en anglais.**
   Les réponses du modèle destinées à l'utilisateur sont en français.
 - Docstrings expliquant le *pourquoi* (contraintes, pièges), pas le *quoi*.
-- Tests dans `tests/`, sans réseau : les appels httpx/LLM sont monkeypatchés,
+- Tests dans `tests/`, sans réseau : les appels httpx/LLM sont monkeypatchés
+  (`conftest.py` bloque `webfetch.get_text` pour TOUS les tests : PDHREC et
+  MTGTop8 y apparaissent en erreur, donc en repli EDHREC),
   la DB pointe vers un fichier temporaire via `MTG_DB_PATH` (voir les fixtures
   existantes). Toute nouvelle fonctionnalité suit ce modèle.
 - Piège Jinja connu : ne pas nommer une clé de dict `items` (collision avec

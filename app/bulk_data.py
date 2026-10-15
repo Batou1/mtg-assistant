@@ -159,6 +159,7 @@ def _import_all_cards(cards) -> int:
             batch = []
     total += db.bulk_set_cards(batch)
     db.replace_card_prices(index.rows())
+    db.replace_card_rarities(index.rarity_rows())
     prices.clear_cache()
     return total
 

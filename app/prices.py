@@ -22,6 +22,7 @@ by-product of the import it already runs, and rebuilt from the cached printings
 for an install whose cache predates this index.
 """
 import logging
+import sqlite3
 
 from . import db, scryfall
 
@@ -29,6 +30,14 @@ logger = logging.getLogger(__name__)
 
 #: meta key holding the ``all_cards`` bulk version the index was built from.
 SOURCE_META_KEY = "card_prices_source"
+#: Bumped when the index gains content (v2: ``card_rarities``), so an install
+#: whose index predates it rebuilds once from the cache instead of waiting for
+#: the next bulk version.
+_INDEX_VERSION = "v2"
+
+
+def _stamp() -> str:
+    return f"{_INDEX_VERSION}:{db.get_meta('bulk_all_cards_updated_at') or ''}"
 
 # Set types whose printings are collectibles or jokes rather than cards you can
 # sleeve up. Several of them are genuinely the cheapest listing for a card — a
@@ -48,12 +57,14 @@ _EXCLUDED_BORDERS = frozenset({"gold", "silver"})
 # and saves a SQLite round-trip per card on every deck build — the same
 # trade-off app/cardsearch.py makes with the card pool.
 _cache: dict[str, tuple] | None = None
+_rarity_cache: dict[str, str] | None = None
 
 
 def clear_cache() -> None:
-    """Drop the in-memory index (after a rebuild, or in tests)."""
-    global _cache
+    """Drop the in-memory indexes (after a rebuild, or in tests)."""
+    global _cache, _rarity_cache
     _cache = None
+    _rarity_cache = None
 
 
 def is_buyable(card: dict) -> bool:
@@ -94,10 +105,14 @@ class Index:
 
     def __init__(self) -> None:
         self.best: dict[str, tuple[float, str, str]] = {}
+        self.rarities: dict[str, set[str]] = {}
 
     def add(self, card: dict) -> None:
         name = card.get("name") or ""
-        if not name or not is_buyable(card):
+        if not name:
+            return
+        self._add_rarity(name, card)
+        if not is_buyable(card):
             return
         price = scryfall.price_eur(card)
         if price is None:
@@ -108,8 +123,23 @@ class Index:
             if current is None or price < current[0]:
                 self.best[key] = entry
 
+    def _add_rarity(self, name: str, card: dict) -> None:
+        """Record the printing's rarity — any paper or MTGO printing counts
+        (Pauper Commander's rule), unlike prices which need a buyable one."""
+        rarity = card.get("rarity")
+        if not rarity or card.get("layout") in scryfall.NON_GAME_LAYOUTS:
+            return
+        games = card.get("games")
+        if games is not None and not ({"paper", "mtgo"} & set(games)):
+            return
+        for key in _keys(name):
+            self.rarities.setdefault(key, set()).add(rarity)
+
     def rows(self):
         return [(key, eur, code, name) for key, (eur, code, name) in self.best.items()]
+
+    def rarity_rows(self):
+        return [(key, ",".join(sorted(r))) for key, r in self.rarities.items()]
 
 
 def build_index(cards) -> int:
@@ -124,13 +154,14 @@ def build_index(cards) -> int:
         index.add(card)
     rows = index.rows()
     db.replace_card_prices(rows)
+    db.replace_card_rarities(index.rarity_rows())
     clear_cache()
     return len(rows)
 
 
 def mark_indexed() -> None:
     """Record which ``all_cards`` version the current index was built from."""
-    db.set_meta(SOURCE_META_KEY, db.get_meta("bulk_all_cards_updated_at") or "")
+    db.set_meta(SOURCE_META_KEY, _stamp())
 
 
 def needs_rebuild() -> bool:
@@ -147,7 +178,7 @@ def needs_rebuild() -> bool:
     if db.card_prices_count() == 0:
         return True
     stamp = db.get_meta(SOURCE_META_KEY)
-    return stamp is None or stamp != (db.get_meta("bulk_all_cards_updated_at") or "")
+    return stamp is None or stamp != _stamp()
 
 
 def rebuild_from_cache() -> int:
@@ -187,6 +218,19 @@ def buy_price_eur(card: dict | None) -> float | None:
     if found is None:
         return own
     return found[0] if own is None else min(found[0], own)
+
+
+def printed_rarities(name: str) -> set[str]:
+    """Every rarity ``name`` was printed at (paper/MTGO); empty when unknown
+    (no bulk import yet) — callers fall back to the card's own rarity."""
+    global _rarity_cache
+    if _rarity_cache is None:
+        try:
+            _rarity_cache = db.all_card_rarities()
+        except sqlite3.OperationalError:  # schema not initialised (bare tests)
+            return set()
+    found = _rarity_cache.get((name or "").strip().lower(), "")
+    return set(found.split(",")) if found else set()
 
 
 def buy_printing(card: dict | None) -> tuple[str, str]:

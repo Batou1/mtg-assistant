@@ -469,14 +469,37 @@ def pool_bonus(spec, archetype: dict, deck_cards: list[str], colors: list[str],
     return chat_json(system, "\n".join(parts))
 
 
-def deck_gameplan(commander_name: str, card_names: list[str], theme: str = "") -> str | None:
+# What changes the game plan in each Commander variant — injected into the
+# game-plan prompt so the model doesn't describe a 4-player EDH game for a
+# 1-vs-1 Duel deck or a commons-only PDH deck.
+VARIANT_NOTES = {
+    "commander": "Commander multijoueur (4 joueurs, 40 points de vie).",
+    "duelcommander": (
+        "Duel Commander : 1 contre 1, 20 points de vie, banlist dédiée, format "
+        "compétitif et rapide (courbe basse, interaction efficace, peu de cartes "
+        "multijoueurs). La pression et le tempo comptent plus que la valeur lente."
+    ),
+    "paupercommander": (
+        "Pauper Commander (PDH) : commandant créature peu commune, les 99 autres "
+        "cartes sont des communes, 30 points de vie, multijoueur. Les menaces sont "
+        "plus modestes : synergies, avantage de cartes et résilience priment."
+    ),
+}
+
+
+def deck_gameplan(commander_name: str, card_names: list[str], theme: str = "",
+                  fmt: str = "commander") -> str | None:
     """Write a short French game-plan summary from the chosen cards.
 
     The model is given the actual card names, so it describes the deck rather
-    than inventing cards. Returns None when the LLM is unavailable.
+    than inventing cards, and the variant's rules (``VARIANT_NOTES``) so the
+    plan fits the real game (Duel = 1v1 at 20 life). Returns None when the LLM
+    is unavailable.
     """
     system = (
-        "Tu es un expert Magic: the Gathering (format Commander). On te donne un "
+        "Tu es un expert Magic: the Gathering (format Commander). "
+        f"Format du deck : {VARIANT_NOTES.get(fmt, VARIANT_NOTES['commander'])} "
+        "On te donne un "
         "commandant et une sélection de cartes RÉELLES du deck. Rédige en français "
         "le plan de jeu en TEXTE BRUT UNIQUEMENT (aucun Markdown : pas de #, pas de "
         "**, pas de listes à puces), organisé en EXACTEMENT 3 paragraphes séparés "

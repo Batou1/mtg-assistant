@@ -32,6 +32,17 @@ _JOIN_TIMEOUT_SECONDS = 15.0
 
 
 @pytest.fixture(autouse=True)
+def _no_scraped_sources(monkeypatch):
+    """The Commander-variant sources (PDHREC, MTGTop8) fetch through
+    ``app.webfetch``: block it so no test ever reaches the network. A blocked
+    fetch reads as a transient error — exactly the path where the variants
+    fall back to EDHREC, which existing tests monkeypatch. Tests of the
+    scrapers patch ``get_text`` themselves on top of this."""
+    import app.webfetch as webfetch
+    monkeypatch.setattr(webfetch, "get_text", lambda *a, **k: None)
+
+
+@pytest.fixture(autouse=True)
 def _no_thread_leaks(request):
     """Fail a test that leaves background threads running past its teardown."""
     before = set(threading.enumerate())

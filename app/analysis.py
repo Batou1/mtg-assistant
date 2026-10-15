@@ -10,7 +10,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 
-from . import buylist, cardsearch, commanders, db, edhrec, prices, scryfall
+from . import (
+    buylist, cardsearch, commanders, db, edhrec, mtgtop8, pdhrec, prices, scryfall, variants,
+)
 from .config import settings
 
 
@@ -87,11 +89,11 @@ _BASIC_LANDS = {"plains", "island", "swamp", "mountain", "forest", "wastes"}
 def _legal_recommended(names: list[str], fmt: str, client) -> list[str]:
     """Recommended-card names filtered to those legal in ``fmt``.
 
-    EDHREC only has pages for regular (paper) Commander, so a Duel Commander or
-    Pauper Commander suggestion is built from that same recommended-card list —
-    filtered here against Scryfall's legality for the variant (Duel Commander's
-    banned list, Pauper Commander's commons-only restriction) so completion %
-    and the buylist never count/offer a card that isn't actually legal there.
+    Applied whatever the source (PDHREC, MTGTop8, or the EDHREC fallback):
+    Scryfall's legality for the variant (Duel Commander's banned list, Pauper
+    Commander's commons-only 99) is the arbiter, so completion % and the
+    buylist never count/offer a card that isn't actually legal there — a
+    tournament list from before a ban included.
     """
     legality_key = commanders.SCRYFALL_LEGALITY.get(fmt)
     if not legality_key or not names:
@@ -117,6 +119,7 @@ def _build_result(card: dict, data: dict, owned_keys: set, intent: dict,
     missing_cards = [r for r in ordered if _norm(r) not in owned_keys]
     total = len(ordered)
     num_decks = edhrec.extract_num_decks(data)
+    source = variants.source_info(data, fmt)
     return {
         "name": commanders.front_name(card),
         "full_name": card["name"],
@@ -130,6 +133,10 @@ def _build_result(card: dict, data: dict, owned_keys: set, intent: dict,
         "owned_cards": owned_cards_list,
         "missing_cards": missing_cards,
         "theme_score": _theme_score(intent, ordered, edhrec.extract_tags(data)),
+        "source": source,
+        # Ranked above fallbacks: a pool from the variant's own decks (PDHREC,
+        # tournaments) beats casual-EDH data filtered by legality.
+        "native_source": source["native"],
         "recent": _is_recent(card),
         "owned": owned,
         "price_eur": None if owned else prices.buy_price_eur(card),
@@ -200,7 +207,8 @@ def _discover_unowned(owned_cards: list, owned_keys: set, intent: dict,
         # "Match the budget": a commander you must buy can't exceed it alone.
         if budget is not None and price is not None and price > budget:
             continue
-        data = edhrec.fetch_commander(commanders.front_name(card), client=client)
+        data = variants.fetch_commander(commanders.front_name(card), fmt, client,
+                                        scoring=True)
         if data.get("_error") or data.get("_not_found"):
             continue
         if (edhrec.extract_num_decks(data) < settings.min_decks
@@ -214,8 +222,8 @@ def _discover_unowned(owned_cards: list, owned_keys: set, intent: dict,
     # Strongest collection link first, then theme fit; new-set commanders are
     # demoted at equal fit (see _is_recent) before popularity breaks ties.
     discovered.sort(
-        key=lambda r: (r["link_count"], r["theme_score"], not r["recent"],
-                       r["owned_count"], r["num_decks"]),
+        key=lambda r: (r["link_count"], r["theme_score"], r["native_source"],
+                       not r["recent"], r["owned_count"], r["num_decks"]),
         reverse=True,
     )
     return discovered, stats
@@ -241,6 +249,42 @@ def _attach_buylists(results: list[dict], intent: dict, client) -> None:
 
 
 # --- Theme-first commander finder (independent of the collection) ---------
+
+def _color_subsets(colors: list[str]) -> list[list[str]]:
+    """Every non-empty colour identity within ``colors`` (PDHREC colour pages
+    are exact identities), largest first; bounded to 3 colours (7 pages)."""
+    from itertools import combinations
+    colors = [c for c in "WUBRG" if c in set(colors)]
+    if len(colors) > 3:
+        return []
+    return [list(combo) for size in range(len(colors), 0, -1)
+            for combo in combinations(colors, size)]
+
+
+def _variant_candidates(intent: dict, fmt: str, client) -> list[str]:
+    """Commander names the variant's own source ranks most played.
+
+    PDH: PDHREC's index (or its colour pages for the requested colours).
+    Duel: the MTGTop8 tournament metagame, pre-filtered on colours. Plain
+    Commander: none (EDHREC theme pages already cover it). Every name is
+    still re-resolved and checked for eligibility by the caller.
+    """
+    colors = intent.get("colors") or []
+    if fmt == "paupercommander":
+        subsets = _color_subsets(colors) if colors else []
+        if not subsets:
+            return [r["name"] for r in pdhrec.fetch_commanders(client=client)]
+        names: list[str] = []
+        for subset in subsets:
+            names += [r["name"] for r in pdhrec.fetch_commanders(subset, pages=1,
+                                                                 client=client)]
+        return names
+    if fmt == "duelcommander":
+        allowed = set(colors)
+        return [r["name"] for r in mtgtop8.fetch_metagame(client=client)
+                if not allowed or set(r["colors"]) <= allowed]
+    return []
+
 
 def _theme_slugs(intent: dict) -> list[str]:
     """EDHREC theme/typal page slugs worth probing for this intent (bounded).
@@ -284,7 +328,7 @@ def _scryfall_theme_candidates(intent: dict, fmt: str) -> list[dict]:
     common = {
         "colors": intent.get("colors") or None,
         "legal_in": "commander",
-        "commander_only": True,
+        "commander_format": fmt,
         "limit": settings.finder_pool,
     }
     by_text = cardsearch.search(text_contains=terms, **common)
@@ -328,10 +372,19 @@ def find_commanders(intent: dict, profile_id: int, limit: int | None = None):
     include_low_decks = bool(intent.get("include_low_decks"))
 
     with httpx.Client(timeout=30, headers={"User-Agent": settings.user_agent}) as client:
-        # 1. EDHREC theme/typal pages: commanders most played for the theme,
-        #    already ranked by EDHREC.
+        # 0. The variant's own popularity list comes FIRST (PDHREC for PDH, the
+        #    MTGTop8 tournament metagame for Duel): EDHREC theme pages rank
+        #    casual multiplayer commanders — the wrong metagame for Duel, and
+        #    mostly ineligible (rare legendaries) for PDH.
         ranked: list[str] = []
         seen: set[str] = set()
+        for name in _variant_candidates(intent, fmt, client):
+            if _norm(name) not in seen:
+                seen.add(_norm(name))
+                ranked.append(name)
+
+        # 1. EDHREC theme/typal pages: commanders most played for the theme,
+        #    already ranked by EDHREC.
         themes_found: list[str] = []
         for slug in _theme_slugs(intent):
             data = edhrec.fetch_theme(slug, client=client)
@@ -374,7 +427,8 @@ def find_commanders(intent: dict, profile_id: int, limit: int | None = None):
             # An unowned commander can't alone exceed the total budget.
             if not owned and budget is not None and price is not None and price > budget:
                 continue
-            data = edhrec.fetch_commander(commanders.front_name(card), client=client)
+            data = variants.fetch_commander(commanders.front_name(card), fmt, client,
+                                            scoring=True)
             if data.get("_error") or data.get("_not_found"):
                 continue
             if (edhrec.extract_num_decks(data) < settings.min_decks
@@ -388,8 +442,12 @@ def find_commanders(intent: dict, profile_id: int, limit: int | None = None):
         # Theme fit first; at equal fit, commanders that only exist in a
         # recent set rank below established ones (novelty is not a criterion);
         # raw EDHREC popularity only breaks the remaining ties.
+        # A pool from the variant's own decks outranks an EDHREC fallback, and
+        # deck counts are only compared within one source (PDHREC/tournament
+        # counts are orders of magnitude below EDHREC's).
         results.sort(
-            key=lambda r: (r["theme_score"], not r["recent"], r["num_decks"]),
+            key=lambda r: (r["theme_score"], r["native_source"], not r["recent"],
+                           r["num_decks"]),
             reverse=True,
         )
         results = results[:limit]
@@ -470,7 +528,8 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
 
         def process(card) -> bool:
             nonlocal not_on_edhrec
-            data = edhrec.fetch_commander(commanders.front_name(card), client=client)
+            data = variants.fetch_commander(commanders.front_name(card), fmt, client,
+                                            scoring=True)
             if data.get("_error"):
                 return False
             if data.get("_not_found"):
@@ -516,7 +575,8 @@ def analyze(intent: dict, profile_id: int, limit: int = 12):
         # order (parallel scoring appends in completion order, not input order).
         results.sort(key=lambda r: r["name"])
         results.sort(
-            key=lambda r: (r["theme_score"], r["owned_count"], r["num_decks"]),
+            key=lambda r: (r["theme_score"], r["native_source"], r["owned_count"],
+                           r["num_decks"]),
             reverse=True,
         )
         results = results[:limit]

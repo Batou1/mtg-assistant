@@ -25,7 +25,7 @@ import threading
 
 from . import (
     analysis, cardsearch, commanders, db, deckgen, edhrec, formats60, intent,
-    llm, playerprofile, poolbuild, prices, scryfall,
+    llm, playerprofile, poolbuild, prices, scryfall, variants,
 )
 from .config import settings
 
@@ -128,6 +128,25 @@ SYSTEM_PROMPT = (
     "suggest_commanders avec le paramètre format adéquat (commander, "
     "duelcommander ou paupercommander). Pour Standard, Modern, Pioneer, Pauper, "
     "Legacy, Vintage, Premodern (60 cartes), appelle research_archetype.\n"
+    "- VARIANTES COMMANDER : passe TOUJOURS le même format (duelcommander ou "
+    "paupercommander) à suggest_commanders, find_commanders ET "
+    "generate_decklist pendant toute la conversation — sinon le deck retombe "
+    "sur des données Commander multijoueur. Les sources diffèrent : "
+    "Commander = EDHREC ; Duel Commander = decklists de TOURNOIS (MTGTop8) ; "
+    "Pauper Commander = PDHREC (decks PDH). Le résultat d'outil indique la "
+    "source réellement utilisée : s'il signale un REPLI sur EDHREC, dis-le au "
+    "joueur (liste moins représentative du format). Raisonne selon le format : "
+    "Duel Commander = 1 contre 1, 20 points de vie, banlist propre, format "
+    "rapide et compétitif, avec une liste officielle de cartes « bannies comme "
+    "commandant » (jouables dans les 99 seulement : Edgar Markov, Derevi, "
+    "Yuriko…) que les outils appliquent — ne propose jamais l'une d'elles comme "
+    "commandant Duel — ; privilégie courbe basse, interaction efficace "
+    "(contresorts, removal ciblé), pression et tempo ; déconseille les cartes "
+    "multijoueurs (« chaque adversaire », group hug, politique) et la rampe "
+    "lente. Pauper Commander = le commandant est une CRÉATURE PEU COMMUNE "
+    "(légendaire ou non : Mayhem Devil, Soulherder…), les 99 autres cartes "
+    "sont des COMMUNES uniquement, 30 points de vie, multijoueur ; ne propose "
+    "jamais une rare/mythique ni une peu commune dans les 99.\n"
     "- DEPUIS UNE LISTE : le joueur peut importer une LISTE de cartes (page "
     "« Depuis une liste ») et demander le meilleur deck d'un format donné "
     "(Limité, Commander, Modern, Pauper…). Si une liste a déjà été importée (voir "
@@ -249,9 +268,11 @@ TOOLS = [
         "description": (
             "Cherche des commandants potentiels pour un thème/des caractéristiques "
             "donnés, INDÉPENDAMMENT de la collection du joueur : interroge les "
-            "pages de thème EDHREC (commandants les plus joués du thème) et la "
-            "base Scryfall locale (légendaires dont le texte ou le type colle au "
-            "thème). Chaque candidat est ensuite comparé à la collection à titre "
+            "pages de thème EDHREC (commandants les plus joués du thème), le "
+            "métagame de tournoi MTGTop8 (duelcommander) ou les commandants les "
+            "plus joués de PDHREC (paupercommander), et la base Scryfall locale "
+            "(commandants éligibles dont le texte ou le type colle au thème). "
+            "Chaque candidat est ensuite comparé à la collection à titre "
             "indicatif (complétude, liste d'achat, possédé ou non). Utilise-le "
             "quand le joueur veut explorer les commandants possibles au-delà de "
             "ses cartes, puis demande-lui lesquels il RETIENT avant de générer "
@@ -330,9 +351,12 @@ TOOLS = [
         "description": (
             "Génère (ou RÉGÉNÈRE) une decklist Commander complète (100 cartes) "
             "pour un commandant choisi : cartes possédées réutilisées, manquantes "
-            "achetées dans le budget, terrains complétés. Pour modifier un deck "
-            "déjà généré (ajouter/retirer des cartes précises), rappelle cet outil "
-            "avec include_cards / exclude_cards."
+            "achetées dans le budget, terrains complétés. Sources : EDHREC "
+            "(commander), decklists de tournoi MTGTop8 (duelcommander, manabase "
+            "calibrée sur ces listes), PDHREC (paupercommander) ; repli EDHREC "
+            "filtré par légalité si la source dédiée n'a rien. Pour modifier un "
+            "deck déjà généré (ajouter/retirer des cartes précises), rappelle cet "
+            "outil avec include_cards / exclude_cards."
         ),
         "input_schema": {
             "type": "object",
@@ -343,8 +367,10 @@ TOOLS = [
                     "enum": sorted(commanders.FORMATS),
                     "description": (
                         "Variante Commander visée (défaut \"commander\") ; reprends "
-                        "celle déjà utilisée pour ce commandant dans la conversation "
-                        "(suggest_commanders) si elle est connue."
+                        "OBLIGATOIREMENT celle déjà utilisée pour ce commandant dans "
+                        "la conversation (suggest_commanders/find_commanders) : un "
+                        "deck Duel ou PDH généré en \"commander\" utilise les "
+                        "mauvaises données."
                     ),
                 },
                 "budget_eur": {"type": "number", "description": "Budget TOTAL d'achat en euros."},
@@ -436,6 +462,15 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "Nom du commandant (ou de la carte légendaire)."},
+                "format": {
+                    "type": "string",
+                    "enum": sorted(commanders.FORMATS),
+                    "description": (
+                        "Variante visée (défaut \"commander\") : \"duelcommander\" "
+                        "lit les decklists de tournoi MTGTop8, \"paupercommander\" "
+                        "les données PDHREC."
+                    ),
+                },
             },
             "required": ["name"],
         },
@@ -590,7 +625,7 @@ def _exec_suggest_commanders(args: dict, profile_id: int, ctx: dict | None = Non
         if _is_owned(r):
             lines.append(
                 f"- {r['name']} (possédé) : {r['pct']}% complété ({r['owned_count']}/"
-                f"{r['total_recommended']}), {r['num_decks']} decks EDHREC, "
+                f"{r['total_recommended']}), {r['num_decks']} decks {_source_tag(r)}, "
                 f"achat {buy.get('total_eur', 0)} € ({buy.get('bought_count', 0)} cartes)"
                 f"{_cap_suffix(buy.get('max_card_price_eur'))}"
             )
@@ -600,9 +635,18 @@ def _exec_suggest_commanders(args: dict, profile_id: int, ctx: dict | None = Non
             lines.append(
                 f"- {r['name']} (à acquérir, {price_txt} ; {r.get('link_count', 0)} "
                 f"de tes cartes y mènent) : {r['pct']}% complété ({r['owned_count']}/"
-                f"{r['total_recommended']}), coût total ~{r.get('total_cost_eur', 0)} €"
+                f"{r['total_recommended']}, {_source_tag(r)}), coût total "
+                f"~{r.get('total_cost_eur', 0)} €"
             )
     return "Commandants proposés :\n" + "\n".join(lines), artifact
+
+
+def _source_tag(result: dict) -> str:
+    """Short source label for a commander result line (e.g. "PDHREC",
+    "EDHREC (repli)") — the model must know when Duel/PDH data is a fallback."""
+    src = result.get("source") or {}
+    label = src.get("label") or "EDHREC"
+    return f"{label} (repli)" if src.get("fallback") else label
 
 
 def _exec_find_commanders(args: dict, profile_id: int, ctx: dict | None = None):
@@ -639,13 +683,13 @@ def _exec_find_commanders(args: dict, profile_id: int, ctx: dict | None = None):
                    else "à acquérir, prix indisponible")
         lines.append(
             f"- {r['name']} ({tag}) : {r['pct']}% complété ({r['owned_count']}/"
-            f"{r['total_recommended']}), {r['num_decks']} decks EDHREC, "
+            f"{r['total_recommended']}), {r['num_decks']} decks {_source_tag(r)}, "
             f"achat {buy.get('total_eur', 0)} € ({buy.get('bought_count', 0)} cartes)"
             f"{_cap_suffix(buy.get('max_card_price_eur'))}"
         )
     text = (
-        "Commandants trouvés pour ce thème (recherche EDHREC + Scryfall, "
-        "indépendante de la collection) :\n" + "\n".join(lines) +
+        "Commandants trouvés pour ce thème (recherche indépendante de la "
+        "collection) :\n" + "\n".join(lines) +
         "\n\nDemande au joueur lesquels il retient avant de générer une decklist."
     )
     return text, artifact
@@ -751,7 +795,7 @@ def _exec_generate_decklist(args: dict, profile_id: int, ctx: dict | None = None
     if not deck:
         return (
             f"Impossible de générer le deck pour « {commander} » "
-            "(page EDHREC introuvable ou commandant non reconnu).",
+            "(aucune page EDHREC/PDHREC/MTGTop8 ou commandant non reconnu).",
             None,
         )
 
@@ -763,8 +807,12 @@ def _exec_generate_decklist(args: dict, profile_id: int, ctx: dict | None = None
     text = (
         f"Decklist {commander} générée : {c['total']} cartes, {c['owned']} possédées"
         f"{from_decks}, {c['to_buy']} à acheter pour {deck['buy_total_eur']} €"
-        f"{_cap_suffix(deck.get('max_card_price_eur'))}."
+        f"{_cap_suffix(deck.get('max_card_price_eur'))}, {c.get('lands')} terrains."
     )
+    if deck.get("source"):
+        text += " " + variants.describe(deck["source"])
+    if deck.get("commander_warning"):
+        text += " ATTENTION : " + deck["commander_warning"]
     # Explicitly confirm/deny each requested card so the model never claims a
     # card was "not kept" when it actually made the deck (or vice versa).
     if deck.get("forced_cards"):
@@ -855,18 +903,24 @@ def _exec_commander_overview(args: dict, profile_id: int, ctx: dict | None = Non
             "(ni créature légendaire, ni texte l'y autorisant)."
         )
 
-    data = edhrec.fetch_commander(commanders.front_name(card))
+    fmt = (args.get("format") or "commander").lower()
+    if fmt not in commanders.FORMATS:
+        fmt = "commander"
+    if fmt != "commander" and fmt not in eligible:
+        lines.append("ATTENTION : " + (deckgen.commander_warning(card, fmt)
+                                       or f"pas un commandant légal en {fmt}."))
+    data = variants.fetch_commander(commanders.front_name(card), fmt)
     if data.get("_error"):
-        lines.append("Données EDHREC momentanément indisponibles (réessaie plus tard).")
+        lines.append("Données de popularité momentanément indisponibles (réessaie plus tard).")
     elif data.get("_not_found") or not eligible:
         if eligible:
             lines.append(
-                "Aucune page EDHREC : ce commandant n'est pas (ou très peu) joué — "
-                "signe d'un choix original, pas forcément mauvais."
+                "Aucune donnée (EDHREC/PDHREC/MTGTop8) : ce commandant n'est pas "
+                "(ou très peu) joué — signe d'un choix original, pas forcément mauvais."
             )
     else:
-        num_decks = edhrec.extract_num_decks(data)
-        lines.append(f"Popularité EDHREC : {num_decks} decks recensés.")
+        info = variants.source_info(data, fmt)
+        lines.append(variants.describe(info))
         tags = edhrec.extract_tags(data)
         if tags:
             lines.append("Thèmes/archétypes associés : " + ", ".join(tags[:10]) + ".")
@@ -1073,6 +1127,10 @@ def _snapshot_decklist(art: dict) -> str:
         f"({counts.get('total', 0)} cartes : {counts.get('owned', 0)} possédées, "
         f"{counts.get('to_buy', 0)} à acheter pour {deck.get('buy_total_eur', 0)} €)."
     ]
+    if fmt != "commander":
+        lines.append(f"Format : {fmt} (à repasser dans format= si le deck est régénéré).")
+    if deck.get("source"):
+        lines.append(variants.describe(deck["source"]))
     if deck.get("gameplan"):
         lines.append(f"Plan de jeu : {deck['gameplan']}")
     # Player-forced inclusions/exclusions must survive turns: on the next
