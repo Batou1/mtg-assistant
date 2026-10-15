@@ -173,17 +173,19 @@ def _wire_resolver(analysis, monkeypatch, registry):
 
 
 def test_analyze_filters_recommended_cards_by_paupercommander_legality(env, monkeypatch):
-    """EDHREC has no Pauper Commander page: the regular Commander page's
-    recommended cards are reused, but only those Scryfall marks legal in Pauper
-    Commander (commons-only) count towards completion / the buylist."""
+    """When PDHREC has nothing (here: unreachable — the test suite blocks the
+    network), the regular EDHREC page is the fallback, but only the cards
+    Scryfall marks legal in Pauper Commander (commons-only) count towards
+    completion / the buylist."""
     db, analysis = env.db, env.analysis
     pid = db.ensure_default_profile()
     db.replace_collection(pid, [_row("Krenko, Mob Boss"), _row("Goblin Recruiter")])
     _wire(analysis, monkeypatch)
     _wire_resolver(analysis, monkeypatch, {
         **_REGISTRY,
-        "krenko, mob boss": {**_REGISTRY["krenko, mob boss"],
-                             "legalities": {"paupercommander": "legal"}},
+        # PDH commander = a creature with an uncommon printing.
+        "krenko, mob boss": {**_REGISTRY["krenko, mob boss"], "rarity": "uncommon",
+                             "legalities": {"paupercommander": "not_legal"}},
         "goblin recruiter": {**_REGISTRY["goblin recruiter"],
                              "legalities": {"paupercommander": "legal"}},
         # Rares recommended by the regular page but not legal in Pauper Commander.
@@ -199,6 +201,8 @@ def test_analyze_filters_recommended_cards_by_paupercommander_legality(env, monk
     assert krenko["owned_count"] == 1
     assert krenko["pct"] == 100.0
     assert krenko["missing_cards"] == []
+    assert krenko["source"]["fallback"] is True
+    assert krenko["native_source"] is False
 
 
 def test_analyze_excludes_commander_banned_in_duelcommander(env, monkeypatch):

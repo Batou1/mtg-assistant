@@ -22,7 +22,7 @@ _cache_token: str | None = None
 # eligibility, the chat's result line incl. price) — a full Scryfall card dict
 # is ~10x bigger. Anything richer is re-resolved by name via scryfall/db.
 _FIELDS = ("id", "name", "mana_cost", "type_line", "oracle_text", "keywords",
-           "color_identity", "cmc", "legalities", "prices")
+           "color_identity", "cmc", "legalities", "prices", "rarity")
 _FACE_FIELDS = ("name", "mana_cost", "type_line", "oracle_text")
 
 
@@ -93,6 +93,7 @@ def search(
     max_cmc: float | None = None,
     exclude_names=None,
     commander_only: bool = False,
+    commander_format: str | None = None,
     limit: int = 40,
 ) -> list[dict]:
     """Return up to ``limit`` cards matching every given criterion.
@@ -105,7 +106,9 @@ def search(
     oracle text — the way to search a *theme* that isn't a formal keyword
     (e.g. "sacrifice a creature", "return...from your graveyard").
     ``commander_only`` keeps only cards that can structurally BE a commander
-    (legendary creatures / "can be your commander").
+    (legendary creatures / "can be your commander"); ``commander_format``
+    instead keeps the cards that can be a commander in that variant (Pauper
+    Commander's commander is any uncommon creature, legendary or not).
 
     Results are real cards straight from the local database: safe to name
     directly once returned here.
@@ -122,7 +125,10 @@ def search(
             continue
         if not _color_identity_ok(card, colors, exact_colors):
             continue
-        if commander_only and not commanders.is_commander(card):
+        if commander_format:
+            if not commanders.is_eligible_commander(card, commander_format):
+                continue
+        elif commander_only and not commanders.is_commander(card):
             continue
         if legal_in and not scryfall.legal_in(card, legal_in):
             continue

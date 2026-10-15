@@ -1,7 +1,9 @@
-"""Build a full 100-card Commander decklist from an EDHREC commander page.
+"""Build a full 100-card Commander decklist from a commander's recommendation page.
 
-Deterministic: the deck is assembled from EDHREC's most-included cards for the
-commander. Freely available owned cards are added first. Missing cards are
+The page is EDHREC's for Commander, PDHREC's for Pauper Commander and an
+aggregate of MTGTop8 tournament lists for Duel Commander (``app.variants``) —
+all in EDHREC's payload shape. Deterministic: the deck is assembled from the
+most-included cards for the commander. Freely available owned cards are added first. Missing cards are
 bought within budget — ranked by popularity-per-euro so the deck fills out with
 cheap staples first and stays *complete* (without a budget, missing cards are
 ranked by raw popularity instead). Owned cards whose every copy already sits in
@@ -16,7 +18,7 @@ The function takes ``cards_by_name`` (a name->Scryfall-card map the caller has
 already resolved) instead of doing network I/O itself, which keeps it unit
 testable and lets the caller batch/caches Scryfall calls.
 """
-from . import commanders, prices, scryfall
+from . import commanders, duelbans, prices, scryfall
 
 # EDHREC section tags grouped by role.
 _LAND_TAGS = {"lands", "utilitylands"}
@@ -79,6 +81,9 @@ def _pool(data: dict, commander_name: str) -> dict:
                     "inclusion": inclusion,
                     "is_land": is_land,
                     "category": cat,
+                    # Top-up from another source (variants._with_complement):
+                    # only used once the primary pool is exhausted.
+                    "complement": bool(cv.get("complement")),
                 }
             else:
                 entry["inclusion"] = max(entry["inclusion"], inclusion)
@@ -166,10 +171,10 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
     sits in another of the user's decks): they are used last, and flagged
     ``from_deck`` so the UI can show they'd be borrowed from an existing deck.
 
-    ``fmt``'s EDHREC page is always the regular (paper) Commander one — EDHREC
-    has no separate Duel/Pauper Commander section — so for those variants the
-    pool is additionally filtered here to cards Scryfall marks legal in ``fmt``
-    (Duel Commander's banned list, Pauper Commander's commons-only restriction).
+    For Duel/Pauper Commander the pool is filtered here to cards Scryfall marks
+    legal in ``fmt`` (Duel Commander's banned list, Pauper Commander's
+    commons-only 99) whatever the source — a tournament list predating a ban,
+    a PDHREC entry or an EDHREC fallback page alike.
 
     ``include_cards`` are player-requested cards the deck MUST contain: they are
     seated before any popularity/budget ordering and deliberately bypass both
@@ -281,6 +286,17 @@ def build_deck(commander_card: dict, data: dict, owned_keys: set[str],
         return sorted(entries, key=value, reverse=True)
 
     def fill(entries: list, target: int) -> list:
+        """Primary-source cards first (all passes), then the complement tier
+        for whatever slots remain — so neither an owned nor a cheap EDHREC
+        top-up card can displace a PDHREC/tournament card."""
+        primary = [e for e in entries if not e.get("complement") or e.get("forced")]
+        items = fill_tier(primary, target)
+        if len(items) < target:
+            items += fill_tier([e for e in entries if e not in primary],
+                               target - len(items))
+        return items
+
+    def fill_tier(entries: list, target: int) -> list:
         nonlocal buy_total
         items: list[dict] = []
         # Player-requested cards first: they claim their slot regardless of
@@ -450,9 +466,11 @@ def generate_full_deck(commander_name: str, budget, theme: str, profile_id: int,
                        exclude_cards: list[str] | None = None):
     """Resolve cards, build the decklist and write an LLM game plan.
 
-    ``fmt`` (see ``commanders.FORMATS``) picks the Commander variant to build
-    for: the EDHREC page is always the regular Commander one, but ``build_deck``
-    filters it down to cards legal in ``fmt`` for Duel/Pauper Commander.
+    ``fmt`` (see ``commanders.FORMATS``) picks the Commander variant, hence the
+    card source (``variants.fetch_commander``: EDHREC, PDHREC or MTGTop8
+    tournament lists, EDHREC as fallback) and the legality filter. A source
+    that measured real decks (MTGTop8's ``deck_stats``) also sizes the
+    manabase: Duel lists run more lands and far fewer basics than casual EDH.
 
     ``include_cards`` / ``exclude_cards`` come from the chat when the player
     asks to add or remove specific cards: includes are validated first (see
@@ -466,10 +484,10 @@ def generate_full_deck(commander_name: str, budget, theme: str, profile_id: int,
     """
     import httpx
 
-    from . import db, edhrec, llm
+    from . import db, llm, variants
     from .config import settings
 
-    data = edhrec.fetch_commander(commander_name)
+    data = variants.fetch_commander(commander_name, fmt, complete=True)
     if data.get("_not_found") or data.get("_error"):
         return None, data
 
@@ -487,21 +505,77 @@ def generate_full_deck(commander_name: str, budget, theme: str, profile_id: int,
         include_cards or [], resolved, commander_card, fmt
     )
 
+    target_lands, min_basics = manabase_targets(
+        data, settings.deck_lands, settings.deck_min_basics
+    )
+
     quantities = db.owned_quantities(profile_id)
     owned = set(quantities)
     # Cards whose every owned copy already sits in another deck: use them last.
     in_deck = {k for k, (qty, deck_qty) in quantities.items() if qty - deck_qty <= 0}
     deck = build_deck(
         commander_card, data, owned, budget, resolved,
-        target_lands=settings.deck_lands, deck_size=settings.deck_size,
+        target_lands=target_lands, deck_size=settings.deck_size,
         sideboard_size=settings.deck_sideboard, max_card_price=max_card_price,
         fmt=fmt, in_deck_keys=in_deck,
         include_cards=valid_includes, exclude_cards=exclude_cards,
-        min_basics=settings.deck_min_basics,
+        min_basics=min_basics,
     )
     deck["rejected_includes"] = rejected_includes
     deck["excluded_cards"] = list(exclude_cards or [])
+    deck["source"] = variants.source_info(data, fmt)
+    deck["commander_warning"] = commander_warning(commander_card, fmt)
 
-    key_cards = [c["name"] for g in deck["groups"] for c in g["cards"] if not c["is_basic"]]
-    deck["gameplan"] = llm.deck_gameplan(commander_name, key_cards, theme=theme)
+    # Gameplan from the most-played cards first: the alphabetical display
+    # order would hand the model a random-looking sample.
+    pool = _pool(data, commander_card["name"])
+    key_cards = sorted(
+        (c["name"] for g in deck["groups"] for c in g["cards"] if not c["is_basic"]),
+        key=lambda n: -(pool.get(_norm(n)) or {}).get("inclusion", 0),
+    )
+    deck["gameplan"] = llm.deck_gameplan(commander_name, key_cards, theme=theme, fmt=fmt)
     return deck, data
+
+
+def manabase_targets(data: dict, default_lands: int, default_basics: int) -> tuple[int, int]:
+    """(target_lands, min_basics) for this deck.
+
+    A source that counted real decklists (MTGTop8 ``deck_stats``: average land
+    and basic-land counts over the sampled tournament lists) wins over the
+    casual-EDH defaults — a competitive Duel list plays ~38 lands with a dozen
+    basics, not 36 with 18. Clamped so an odd sample can't produce a silly
+    manabase.
+    """
+    stats = data.get("deck_stats") or {}
+    lands, basics = default_lands, default_basics
+    if stats.get("lands"):
+        lands = max(30, min(42, round(stats["lands"])))
+    if stats.get("basics") is not None:
+        basics = max(0, min(lands, round(stats["basics"])))
+    return lands, min(basics, lands)
+
+
+_FORMAT_NAMES = {"commander": "Commander", "duelcommander": "Duel Commander",
+                 "paupercommander": "Pauper Commander"}
+
+
+def commander_warning(commander_card: dict, fmt: str) -> str | None:
+    """French warning when the commander can't lead a deck in ``fmt``.
+
+    The deck is still built (the player named that commander explicitly), but
+    a PDH deck around a rare legendary, or a Duel deck around a banned
+    commander, must never be presented as legal.
+    """
+    if commanders.is_eligible_commander(commander_card, fmt):
+        return None
+    name = commander_card.get("name", "")
+    if fmt == "paupercommander":
+        return (f"{name} n'est pas un commandant légal en Pauper Commander : il faut "
+                "une créature avec une impression peu commune (uncommon).")
+    if fmt == "duelcommander" and duelbans.is_banned_as_commander(name, commander_card):
+        updated = duelbans.banlist().get("updated")
+        source = (f"liste officielle duelcommander.org"
+                  f"{', mise à jour ' + updated if updated else ''}") if updated else "Scryfall"
+        return (f"{name} est banni COMME COMMANDANT en Duel Commander ({source}) : "
+                "il reste jouable dans les 99, pas dans la zone de commandement.")
+    return f"{name} n'est pas un commandant légal en {_FORMAT_NAMES.get(fmt, fmt)}."

@@ -596,7 +596,7 @@ def test_commander_overview_handles_edhrec_sentinels(env, monkeypatch):
     monkeypatch.setattr(chat.edhrec, "fetch_commander",
                         lambda name, client=None: {"_not_found": True})
     text, _ = chat._exec_commander_overview({"name": "Radagast of Rhosgobel"}, pid)
-    assert "Aucune page EDHREC" in text
+    assert "Aucune donnée" in text
 
 
 def test_commander_overview_flags_non_commander(env, monkeypatch):

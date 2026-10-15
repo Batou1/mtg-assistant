@@ -121,6 +121,14 @@ def init_db() -> None:
                 set_code TEXT NOT NULL DEFAULT '',
                 set_name TEXT NOT NULL DEFAULT ''
             );
+            -- Every rarity a card name was printed at (paper or MTGO), built
+            -- with card_prices from the all_cards pass. Pauper Commander needs
+            -- it: a commander must be a creature with an UNCOMMON printing,
+            -- which the canonical printing alone can't tell (app.commanders).
+            CREATE TABLE IF NOT EXISTS card_rarities (
+                name_key TEXT PRIMARY KEY,
+                rarities TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS edhrec (
                 slug TEXT PRIMARY KEY,
                 data TEXT NOT NULL,
@@ -430,6 +438,27 @@ def all_card_prices() -> dict[str, tuple]:
 def card_prices_count() -> int:
     with get_conn() as conn:
         return conn.execute("SELECT COUNT(*) AS n FROM card_prices").fetchone()["n"]
+
+
+def replace_card_rarities(rows) -> None:
+    """Swap the whole rarity index for ``rows`` — ``(name_key, "common,uncommon")``."""
+    with get_conn() as conn:
+        conn.execute("DELETE FROM card_rarities")
+        conn.executemany(
+            "INSERT OR REPLACE INTO card_rarities (name_key, rarities) VALUES (?, ?)",
+            list(rows),
+        )
+
+
+def all_card_rarities() -> dict[str, str]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT name_key, rarities FROM card_rarities").fetchall()
+    return {r["name_key"]: r["rarities"] for r in rows}
+
+
+def card_rarities_count() -> int:
+    with get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) AS n FROM card_rarities").fetchone()["n"]
 
 
 # --- EDHREC cache --------------------------------------------------------
