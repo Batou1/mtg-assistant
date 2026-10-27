@@ -21,6 +21,7 @@ the same shape:
 import re
 
 from . import llm
+from .config import settings
 
 VALID_COLORS = {"W", "U", "B", "R", "G"}
 VALID_FORMATS = {"commander", "duelcommander", "paupercommander", "standard", "modern",
@@ -336,7 +337,7 @@ def parse_intent(text: str) -> dict:
     if not text:
         return coerce({"theme": "", "source": "heuristic"})
 
-    data = llm.chat_json(_SYSTEM_PROMPT, text)
+    data = llm.chat_json(_SYSTEM_PROMPT, text, effort=settings.effort_intent)
     if data is not None:
         intent = coerce({**data, "source": "llm"})
         heur = _heuristic(text)

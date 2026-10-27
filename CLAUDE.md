@@ -41,7 +41,13 @@ un message explicite.
 ## Stack et architecture
 
 FastAPI + Jinja2 (rendu serveur, pas de build JS) + SQLite (`data/app.db`) + httpx.
-LLM : API Anthropic (`claude-sonnet-5-5` par défaut, `MTG_ANTHROPIC_MODEL` pour changer).
+LLM : API Anthropic (`claude-opus-5-5` par défaut, `MTG_ANTHROPIC_MODEL` pour changer).
+Réflexion adaptative toujours active ; sa profondeur est réglée **par tâche** via
+`output_config.effort` (`settings.effort_*`, env `MTG_EFFORT_*`) : `low` pour les
+transformations courtes (intent, requête Scryfall, mémoire du style, plan de jeu),
+`high` pour choisir des cartes (pool/Limité/60 cartes), le chat et le juge. Tout
+nouvel appel LLM passe un effort explicite (le défaut d'Opus 5.5 est `medium`) et un
+`max_tokens` qui couvre la réflexion EN PLUS du texte (sinon réponse vide).
 Un seul worker uvicorn ; l'état en mémoire (caches, registre `_inflight` du chat)
 suppose ce déploiement mono-process.
 

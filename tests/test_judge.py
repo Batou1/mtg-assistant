@@ -94,6 +94,27 @@ def test_build_artifact(env):
 
 # --- Agent turn with a mocked LLM ---------------------------------------
 
+def test_turn_uses_the_judge_effort_not_the_chat_one(env, monkeypatch):
+    """The judge reuses the chat's agent loop but reasons at its own level."""
+    import dataclasses
+    db, chat, judge = env.db, env.chat, env.judge
+    pid = db.ensure_default_profile()
+    cid = db.create_conversation(pid, kind="rules")
+    monkeypatch.setattr(judge.llm, "is_available", lambda: True)
+    monkeypatch.setattr(judge, "settings",
+                        dataclasses.replace(judge.settings, effort_judge="max"))
+    efforts = []
+
+    def fake_create(system, messages, tools=None, max_tokens=None, tool_choice=None, effort=None):
+        efforts.append(effort)
+        return _resp([_text_block(ANSWER)], "end_turn")
+
+    monkeypatch.setattr(chat.llm, "create_message", fake_create)
+    judge.run_turn(cid, pid, "Le piétinement et le contact mortel ?")
+    assert efforts == ["max"]
+
+
+
 def test_turn_searches_rules_then_answers(env, monkeypatch):
     db, chat, judge = env.db, env.chat, env.judge
     pid = db.ensure_default_profile()
@@ -105,7 +126,7 @@ def test_turn_searches_rules_then_answers(env, monkeypatch):
 
     calls = []
 
-    def fake_create(system, messages, tools=None, max_tokens=None, tool_choice=None):
+    def fake_create(system, messages, tools=None, max_tokens=None, tool_choice=None, effort=None):
         calls.append({"system": system, "messages": list(messages), "tools": tools})
         if len(calls) == 1:
             return _resp([_tool_block("t1", "search_rules", {"query": "trample lethal damage"}),

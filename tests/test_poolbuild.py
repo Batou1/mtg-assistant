@@ -254,8 +254,9 @@ def test_pool_deck_llm_gets_large_token_budget(monkeypatch):
 
     captured = {}
 
-    def fake_message(system, user, max_tokens):
+    def fake_message(system, user, max_tokens, effort):
         captured["max_tokens"] = max_tokens
+        captured["effort"] = effort
         return None
 
     monkeypatch.setattr(llm, "is_available", lambda: True)
@@ -263,6 +264,26 @@ def test_pool_deck_llm_gets_large_token_budget(monkeypatch):
     llm.pool_deck(poolbuild.SPECS["commander"], {}, ["- Krenko, Mob Boss"])
     assert captured["max_tokens"] == settings.anthropic_deck_max_tokens
     assert captured["max_tokens"] > settings.anthropic_max_tokens
+    # Choosing the cards is the hard part: it gets the deck-building effort.
+    assert captured["effort"] == settings.effort_deck
+
+
+def test_gameplan_gets_room_to_think_at_low_effort(monkeypatch):
+    """The Commander game plan is 3 short paragraphs, but thinking tokens count
+    against max_tokens: the former 800 left the reply empty (plan dropped)."""
+    from app.config import settings
+
+    captured = {}
+
+    def fake_message(system, user, max_tokens, effort):
+        captured.update(max_tokens=max_tokens, effort=effort)
+        return "Plan."
+
+    monkeypatch.setattr(llm, "is_available", lambda: True)
+    monkeypatch.setattr(llm, "_message", fake_message)
+    assert llm.deck_gameplan("Krenko, Mob Boss", ["Goblin Bombardment"]) == "Plan."
+    assert captured["max_tokens"] == settings.anthropic_gameplan_max_tokens >= 4000
+    assert captured["effort"] == settings.effort_gameplan == "low"
 
 
 def test_duelcommander_spec_enforces_duel_legality(monkeypatch):
