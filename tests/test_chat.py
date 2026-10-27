@@ -102,7 +102,7 @@ def test_agent_loop_executes_tool_and_stores_artifact(env, monkeypatch):
     ]
     calls = {"n": 0}
 
-    def fake_create(system, messages, tools=None, max_tokens=None):
+    def fake_create(system, messages, tools=None, max_tokens=None, effort=None):
         r = responses[calls["n"]]
         calls["n"] += 1
         return r
@@ -169,7 +169,7 @@ def test_context_snapshot_replays_deck_without_regenerating(env, monkeypatch):
 
     captured = {}
 
-    def fake_create(system, messages, tools=None, max_tokens=None):
+    def fake_create(system, messages, tools=None, max_tokens=None, effort=None):
         captured["system"] = system
         return _resp(
             [_text_block("La courbe est basse : surtout des gobelins à 1-2 manas.")],
@@ -196,7 +196,7 @@ def test_no_snapshot_when_nothing_generated_yet(env, monkeypatch):
 
     captured = {}
 
-    def fake_create(system, messages, tools=None, max_tokens=None):
+    def fake_create(system, messages, tools=None, max_tokens=None, effort=None):
         captured["system"] = system
         return _resp([_text_block("Quel format et quelles couleurs vises-tu ?")], "end_turn")
 
@@ -274,7 +274,7 @@ def test_build_pool_deck_tool_rebuilds_from_stored_pool(env, monkeypatch):
     ]
     calls = {"n": 0}
 
-    def fake_create(system, messages, tools=None, max_tokens=None):
+    def fake_create(system, messages, tools=None, max_tokens=None, effort=None):
         r = responses[calls["n"]]
         calls["n"] += 1
         return r
@@ -660,7 +660,7 @@ def test_reflection_turn_discusses_without_generating(env, monkeypatch):
     ]
     calls = {"n": 0}
 
-    def fake_create(system, messages, tools=None, max_tokens=None, tool_choice=None):
+    def fake_create(system, messages, tools=None, max_tokens=None, tool_choice=None, effort=None):
         r = responses[calls["n"]]
         calls["n"] += 1
         return r
@@ -689,7 +689,7 @@ def test_thinking_truncation_retries_with_bigger_budget(env, monkeypatch):
 
     budgets = []
 
-    def fake_create(system, messages, tools=None, max_tokens=None, tool_choice=None):
+    def fake_create(system, messages, tools=None, max_tokens=None, tool_choice=None, effort=None):
         budgets.append(max_tokens)
         if len(budgets) == 1:
             return _resp([], "max_tokens")  # all tokens went to thinking
@@ -712,7 +712,7 @@ def test_exhausted_tool_iterations_force_final_text(env, monkeypatch):
 
     calls = {"n": 0, "final": None}
 
-    def fake_create(system, messages, tools=None, max_tokens=None, tool_choice=None):
+    def fake_create(system, messages, tools=None, max_tokens=None, tool_choice=None, effort=None):
         calls["n"] += 1
         if tool_choice == {"type": "none"}:
             calls["final"] = tool_choice
@@ -738,7 +738,7 @@ def test_empty_reply_fallback_is_explicit_not_daccord(env, monkeypatch):
     monkeypatch.setattr(chat.llm, "is_available", lambda: True)
     monkeypatch.setattr(
         chat.llm, "create_message",
-        lambda system, messages, tools=None, max_tokens=None, tool_choice=None:
+        lambda system, messages, tools=None, max_tokens=None, tool_choice=None, effort=None:
             _resp([], "end_turn"),
     )
 
@@ -814,6 +814,7 @@ def test_create_message_streams_summarized_thinking(env, monkeypatch):
                               on_thinking=deltas.append)
     assert resp is final
     assert captured["thinking"] == {"type": "adaptive", "display": "summarized"}
+    assert captured["output_config"] == {"effort": llm.settings.effort_chat}
     assert "".join(deltas) == "\n\nJe compare deux commandants."
 
 
@@ -827,7 +828,7 @@ def test_background_turn_exposes_thinking_until_reply(env, monkeypatch):
     seen, release, done = {}, threading.Event(), threading.Event()
 
     def fake_create(system, messages, tools=None, max_tokens=None,
-                    tool_choice=None, on_thinking=None):
+                    tool_choice=None, on_thinking=None, effort=None):
         seen["sink"] = on_thinking
         if on_thinking:
             on_thinking("Je regarde la collection…")

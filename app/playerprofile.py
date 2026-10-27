@@ -23,6 +23,7 @@ import threading
 import time
 
 from . import db, llm, scryfall
+from .config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -290,7 +291,7 @@ def _allowed_card_keys(signals: dict) -> set[str]:
 
 
 def _synthesize_llm(signals: dict) -> dict | None:
-    raw = llm.chat_json(_SYNTH_SYSTEM, _signals_text(signals))
+    raw = llm.chat_json(_SYNTH_SYSTEM, _signals_text(signals), effort=settings.effort_profile)
     if not raw or not isinstance(raw, dict):
         return None
     summary = (raw.get("summary") or "").strip()

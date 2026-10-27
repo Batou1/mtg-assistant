@@ -1355,7 +1355,7 @@ def _has_text(resp) -> bool:
 
 def _agent_loop(api_messages: list[dict], profile_id: int, system: str,
                 conversation_id: int | None = None, tools: list[dict] | None = None,
-                executors: dict | None = None):
+                executors: dict | None = None, effort: str | None = None):
     """Run the tool-use loop. Returns (final_text, artifacts).
 
     ``tools``/``executors`` default to the deckbuilding set; the rules judge
@@ -1371,6 +1371,7 @@ def _agent_loop(api_messages: list[dict], profile_id: int, system: str,
     # synchronous ones (tests, key-free CLI) have nobody polling.
     sink = _thinking_sink(conversation_id)
     live = {"on_thinking": sink} if sink else {}
+    live["effort"] = effort or settings.effort_chat
 
     for _ in range(settings.chat_max_tool_iterations):
         resp = llm.create_message(system, api_messages, tools=tools, **live)

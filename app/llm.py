@@ -33,7 +33,7 @@ def _get_client() -> anthropic.Anthropic:
     return _client
 
 
-def _message(system: str, user: str, max_tokens: int) -> str | None:
+def _message(system: str, user: str, max_tokens: int, effort: str) -> str | None:
     """Single-turn request; returns the concatenated text, or None on failure."""
     if not is_available():
         return None
@@ -41,6 +41,7 @@ def _message(system: str, user: str, max_tokens: int) -> str | None:
         resp = _get_client().messages.create(
             model=settings.anthropic_model,
             max_tokens=max_tokens,
+            output_config={"effort": effort},
             system=system,
             messages=[{"role": "user", "content": user}],
         )
@@ -51,7 +52,7 @@ def _message(system: str, user: str, max_tokens: int) -> str | None:
 
 def create_message(system: str, messages: list[dict], tools: list[dict] | None = None,
                    max_tokens: int | None = None, tool_choice: dict | None = None,
-                   on_thinking=None):
+                   on_thinking=None, effort: str | None = None):
     """Low-level call returning the full Anthropic response (or None on failure).
 
     Unlike ``chat_json``/``chat_text``, this exposes the raw response so callers
@@ -63,12 +64,16 @@ def create_message(system: str, messages: list[dict], tools: list[dict] | None =
     thinking and each summary delta is handed over as it arrives (the chat's
     "réfléchit…" bubble). The default display is "omitted" — thinking blocks
     come back empty — so without this the reasoning is billed but invisible.
+
+    ``effort`` defaults to the deckbuilding chat's level; the rules judge
+    passes its own.
     """
     if not is_available():
         return None
     kwargs = {
         "model": settings.anthropic_model,
         "max_tokens": max_tokens or settings.anthropic_max_tokens,
+        "output_config": {"effort": effort or settings.effort_chat},
         "system": system,
         "messages": messages,
     }
@@ -93,7 +98,8 @@ def create_message(system: str, messages: list[dict], tools: list[dict] | None =
         return None
 
 
-def chat_json(system: str, user: str, max_tokens: int | None = None) -> dict | None:
+def chat_json(system: str, user: str, max_tokens: int | None = None,
+              effort: str | None = None) -> dict | None:
     """Ask for a strict JSON object back. Returns the parsed dict or None.
 
     ``max_tokens`` must cover the model's adaptive-thinking spend PLUS the JSON
@@ -105,7 +111,8 @@ def chat_json(system: str, user: str, max_tokens: int | None = None) -> dict | N
         + "\n\nRéponds UNIQUEMENT avec un objet JSON valide, sans texte autour "
         "ni balises Markdown."
     )
-    content = _message(system, user, max_tokens or settings.anthropic_max_tokens)
+    content = _message(system, user, max_tokens or settings.anthropic_max_tokens,
+                       effort or settings.effort_deck)
     if content is None:
         return None
     content = _FENCE_RE.sub("", content).strip()
@@ -115,9 +122,9 @@ def chat_json(system: str, user: str, max_tokens: int | None = None) -> dict | N
         return None
 
 
-def chat_text(system: str, user: str) -> str | None:
+def chat_text(system: str, user: str, max_tokens: int, effort: str) -> str | None:
     """Ask for free-form text back, or None if unavailable."""
-    return _message(system, user, 800) or None
+    return _message(system, user, max_tokens, effort) or None
 
 
 # Filter vocabulary handed to the model for collection search. It mirrors
@@ -188,7 +195,9 @@ def collection_query(question: str, previous: str | None = None,
             f"recherche l'a refusée : {parse_error}\n"
             "Corrige-la en n'utilisant QUE les filtres autorisés."
         )
-    return _message(_QUERY_SYSTEM, user, 300)
+    # 300 tokens fit the query itself but not the thinking spent before it:
+    # a truncated answer comes back empty and falls to the keyword heuristic.
+    return _message(_QUERY_SYSTEM, user, 2000, settings.effort_query)
 
 
 def _budget_rules(intent: dict) -> list[str]:
@@ -514,4 +523,5 @@ def deck_gameplan(commander_name: str, card_names: list[str], theme: str = "",
     if theme:
         user += f"Thème souhaité : {theme}\n"
     user += f"Cartes clés du deck : {sample}"
-    return chat_text(system, user)
+    return chat_text(system, user, settings.anthropic_gameplan_max_tokens,
+                     settings.effort_gameplan)

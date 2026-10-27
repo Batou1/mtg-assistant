@@ -142,7 +142,7 @@ def test_event_updates_fingerprint_and_profile(env):
 def test_llm_profile_drops_invented_cards_and_colors(env, monkeypatch):
     pid = _seed(env)
     monkeypatch.setattr(env.pp.llm, "is_available", lambda: True)
-    monkeypatch.setattr(env.pp.llm, "chat_json", lambda system, user: {
+    monkeypatch.setattr(env.pp.llm, "chat_json", lambda system, user, effort=None: {
         "summary": "Tu aimes les gobelins agressifs.",
         "style_tags": ["gobelins", "aggro"],
         "colors": ["R", "Z"],
@@ -160,7 +160,7 @@ def test_llm_profile_drops_invented_cards_and_colors(env, monkeypatch):
 def test_llm_failure_falls_back_to_heuristic(env, monkeypatch):
     pid = _seed(env)
     monkeypatch.setattr(env.pp.llm, "is_available", lambda: True)
-    monkeypatch.setattr(env.pp.llm, "chat_json", lambda system, user: None)
+    monkeypatch.setattr(env.pp.llm, "chat_json", lambda system, user, effort=None: None)
     profile = env.pp.refresh(pid)
     assert profile["source"] == "heuristic"
 
@@ -169,7 +169,7 @@ def test_key_arrival_upgrades_heuristic_profile(env, monkeypatch):
     pid = _seed(env)
     assert env.pp.refresh(pid)["source"] == "heuristic"
     monkeypatch.setattr(env.pp.llm, "is_available", lambda: True)
-    monkeypatch.setattr(env.pp.llm, "chat_json", lambda system, user: {
+    monkeypatch.setattr(env.pp.llm, "chat_json", lambda system, user, effort=None: {
         "summary": "Tu aimes le rouge.", "style_tags": [], "colors": ["R"],
         "formats": [], "favorite_cards": [],
     })

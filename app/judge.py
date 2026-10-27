@@ -20,6 +20,7 @@ import re
 from markupsafe import Markup, escape
 
 from . import chat, db, llm, rules, scryfall
+from .config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -330,7 +331,8 @@ def generate_reply(conversation_id: int, profile_id: int, user_text: str):
         system += "\n\nATTENTION : " + _not_loaded()
     api_messages = chat._history_messages(conversation_id)
     text, _arts = chat._agent_loop(api_messages, profile_id, system, conversation_id,
-                                   tools=TOOLS, executors=_EXECUTORS)
+                                   tools=TOOLS, executors=_EXECUTORS,
+                                   effort=settings.effort_judge)
     return text, [build_artifact(text)]
 
 

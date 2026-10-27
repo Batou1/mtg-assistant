@@ -106,17 +106,35 @@ class Settings:
 
     # --- LLM (Anthropic / Claude) ------------------------------------------
     # The API key is read by the SDK from ANTHROPIC_API_KEY (kept in .env).
-    anthropic_model: str = os.environ.get("MTG_ANTHROPIC_MODEL", "claude-sonnet-5-5")
-    # Sonnet 5 runs adaptive thinking by default and thinking tokens count
-    # against max_tokens, so the budget must leave room for BOTH the (invisible)
-    # reasoning and the actual text. 2700 proved too tight: on hard prompts the
-    # whole budget went to thinking and the response was truncated before any
-    # text (stop_reason=max_tokens, empty content), which callers see as a
-    # failed/None LLM call.
+    anthropic_model: str = os.environ.get("MTG_ANTHROPIC_MODEL", "claude-opus-5-5")
+    # Opus 5.5 always runs adaptive thinking (it cannot be disabled) and
+    # thinking tokens count against max_tokens, so the budget must leave room
+    # for BOTH the (invisible) reasoning and the actual text. 2700 proved too
+    # tight: on hard prompts the whole budget went to thinking and the
+    # response was truncated before any text (stop_reason=max_tokens, empty
+    # content), which callers see as a failed/None LLM call.
     anthropic_max_tokens: int = int(os.environ.get("MTG_ANTHROPIC_MAX_TOKENS", "8000"))
     # Deck-proposal calls (pool_deck for a 100-card singleton list, 60-card
     # archetypes) must emit up to ~90 JSON entries on top of the thinking spend.
     anthropic_deck_max_tokens: int = int(os.environ.get("MTG_ANTHROPIC_DECK_MAX_TOKENS", "16000"))
+    # Commander game-plan text: 3 short paragraphs, but the budget must also
+    # absorb the thinking spend. The former hard-coded 800 left the reply
+    # empty whenever the model thought first, silently dropping the plan.
+    anthropic_gameplan_max_tokens: int = int(
+        os.environ.get("MTG_ANTHROPIC_GAMEPLAN_MAX_TOKENS", "4000"))
+    # Thinking depth per task (output_config.effort: low|medium|high|xhigh|max).
+    # Effort is the only depth control on Opus 5.5 (thinking cannot be turned
+    # off) and its API default is "medium", so every call states its level.
+    # Short structured transforms stay "low" (faster, cheaper, no measurable
+    # gain from deeper thinking); choosing cards and reasoning over the rules
+    # get "high".
+    effort_intent: str = os.environ.get("MTG_EFFORT_INTENT", "low")       # wish → intent JSON
+    effort_query: str = os.environ.get("MTG_EFFORT_QUERY", "low")         # FR → Scryfall query
+    effort_profile: str = os.environ.get("MTG_EFFORT_PROFILE", "low")     # play-style memory
+    effort_gameplan: str = os.environ.get("MTG_EFFORT_GAMEPLAN", "low")   # Commander game plan
+    effort_deck: str = os.environ.get("MTG_EFFORT_DECK", "high")          # pool / limited / 60-card decks
+    effort_chat: str = os.environ.get("MTG_EFFORT_CHAT", "high")          # deckbuilding chat agent
+    effort_judge: str = os.environ.get("MTG_EFFORT_JUDGE", "high")        # rules judge agent
 
     # --- Iterative chat (Phase 3) ------------------------------------------
     # How many tool-call rounds a single chat turn may take before stopping.
